@@ -1,0 +1,98 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admins")
+}
+
+model Student {
+  id        String   @id @default(cuid())
+  name      String
+  regNo     String   @unique
+  course    String
+  email     String   @unique
+  phone     String
+  gender    String
+  year      Int
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("students")
+}
+
+model User {
+  id              String   @id @default(cuid())
+  name            String
+  email           String   @unique
+  phone           String?
+  role            String
+  businessName    String?
+  status          String   @default("pending")
+  password        String
+  rejectionReason String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Property {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  price       Float    @default(0)
+  location    String?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("properties")
+}
+
+model MarketplaceItem {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  price       Float    @default(0)
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("marketplace_items")
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  eventType   String
+  userType    String
+  userId      String?
+  userName    String
+  userEmail   String?
+  action      String
+  description String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  timestamp   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@map("audit_events")
+}
