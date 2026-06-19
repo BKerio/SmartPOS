@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ClipboardList, Plus } from "lucide-react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 
 interface Expense {
   id: string; category: string; amount: number; description: string; date: string;
@@ -18,7 +18,7 @@ const ExpensesPage = () => {
       const { data } = await API.get("/finance/expenses");
       setExpenses(data);
     } catch (e: any) {
-      Swal.fire({ icon: "error", text: e.response?.data?.message });
+      toast.error("Error", e.response?.data?.message);
     }
   };
 
@@ -34,9 +34,9 @@ const ExpensesPage = () => {
       });
       setForm({ category: "Ingredients", amount: "", description: "", date: "" });
       fetchExpenses();
-      Swal.fire({ icon: "success", title: "Expense recorded", timer: 1200, showConfirmButton: false });
+      toast.success("Expense recorded");
     } catch (e: any) {
-      Swal.fire({ icon: "error", text: e.response?.data?.message });
+      toast.error("Error", e.response?.data?.message);
     }
   };
 

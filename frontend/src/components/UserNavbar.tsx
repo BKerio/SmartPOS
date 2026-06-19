@@ -1,5 +1,5 @@
 import { LogOut, User as UserIcon, Users, PieChart, UtensilsCrossed } from "lucide-react";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import React from "react";
@@ -22,12 +22,13 @@ const UserNavbar = () => {
     const role = (localStorage.getItem("role") || "parent").toLowerCase();
 
     const handleLogout = async () => {
-        const result = await Swal.fire({
-            title: "Logout?", icon: "warning", showCancelButton: true,
-            confirmButtonColor: "#0A1F44", confirmButtonText: "Yes, Logout",
+        const confirmed = await toast.confirm("Logout?", {
+            description: "Are you sure you want to end your session?",
+            confirmLabel: "Logout",
         });
-        if (result.isConfirmed) {
+        if (confirmed) {
             localStorage.clear();
+            toast.success("Logged out");
             navigate("/login");
         }
     };

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ShoppingCart, Search, Trash2, Plus, Minus } from "lucide-react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 
 interface MenuItem { id: string; name: string; price: number; category: string; isAvailable: boolean; }
 interface CartItem { menuItemId: string; name: string; price: number; quantity: number; }
@@ -30,7 +30,7 @@ const PosTerminal = () => {
       setStudent(data);
     } catch {
       setStudent(null);
-      Swal.fire({ icon: "error", title: "Student not found", text: `No student with reg no: ${regNo}` });
+      toast.error("Student not found", `No student with reg no: ${regNo}`);
     }
   };
 
@@ -53,8 +53,8 @@ const PosTerminal = () => {
   };
 
   const processSale = async () => {
-    if (!student) return Swal.fire({ icon: "warning", title: "Look up a student first" });
-    if (cart.length === 0) return Swal.fire({ icon: "warning", title: "Cart is empty" });
+    if (!student) return toast.warning("Look up a student first");
+    if (cart.length === 0) return toast.warning("Cart is empty");
 
     setLoading(true);
     try {
@@ -62,17 +62,14 @@ const PosTerminal = () => {
         studentRegNo: student.regNo,
         items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
       });
-      Swal.fire({
-        icon: "success",
-        title: "Sale Complete",
-        html: `<p>Receipt: <strong>${data.receipt.id.slice(-8)}</strong></p>
-               <p>Total: <strong>KES ${total}</strong></p>
-               <p>New balance: <strong>KES ${data.newBalance}</strong></p>`,
-      });
+      toast.success(
+        "Sale complete",
+        `Receipt #${data.receipt.id.slice(-8)} · KES ${total} · Balance: KES ${data.newBalance}`
+      );
       setCart([]);
       setStudent({ ...student, walletBalance: data.newBalance });
     } catch (e: any) {
-      Swal.fire({ icon: "error", title: "Sale failed", text: e.response?.data?.message });
+      toast.error("Sale failed", e.response?.data?.message);
     } finally {
       setLoading(false);
     }

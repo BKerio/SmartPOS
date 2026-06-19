@@ -4,7 +4,7 @@ import {
   GraduationCap, Users, PieChart, UtensilsCrossed, Plus, Edit, Trash2, X, Eye,
 } from "lucide-react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 
 type Tab = "students" | "parents" | "finance" | "restaurant";
 
@@ -45,7 +45,7 @@ const ManageUsers: React.FC = () => {
       setParents(p.data);
       setStaff(u.data);
     } catch (e: any) {
-      Swal.fire({ icon: "error", text: e.response?.data?.message || "Failed to load data" });
+      toast.error("Failed to load data", e.response?.data?.message);
     } finally {
       setLoading(false);
     }
@@ -75,10 +75,10 @@ const ManageUsers: React.FC = () => {
       } else {
         await API.post("/students", payload);
       }
-      Swal.fire({ icon: "success", title: editId ? "Updated" : "Added", timer: 1200, showConfirmButton: false });
+      toast.success(editId ? "Updated" : "Added");
       closeForm(); fetchAll();
     } catch (e: any) {
-      Swal.fire({ icon: "error", text: e.response?.data?.message });
+      toast.error("Operation failed", e.response?.data?.message);
     }
   };
 
@@ -92,8 +92,8 @@ const ManageUsers: React.FC = () => {
   };
 
   const deleteStudent = async (id: string) => {
-    const r = await Swal.fire({ title: "Delete student?", icon: "warning", showCancelButton: true });
-    if (!r.isConfirmed) return;
+    const r = await toast.confirm("Delete student?", { confirmLabel: "Delete" });
+    if (!r) return;
     await API.delete(`/students/${id}`);
     fetchAll();
   };
@@ -110,10 +110,10 @@ const ManageUsers: React.FC = () => {
       } else {
         await API.post("/parents", payload);
       }
-      Swal.fire({ icon: "success", title: editId ? "Updated" : "Added", timer: 1200, showConfirmButton: false });
+      toast.success(editId ? "Updated" : "Added");
       closeForm(); fetchAll();
     } catch (e: any) {
-      Swal.fire({ icon: "error", text: e.response?.data?.message });
+      toast.error("Operation failed", e.response?.data?.message);
     }
   };
 
@@ -127,8 +127,8 @@ const ManageUsers: React.FC = () => {
   };
 
   const deleteParent = async (id: string) => {
-    const r = await Swal.fire({ title: "Delete parent?", icon: "warning", showCancelButton: true });
-    if (!r.isConfirmed) return;
+    const r = await toast.confirm("Delete parent?", { confirmLabel: "Delete" });
+    if (!r) return;
     await API.delete(`/parents/${id}`);
     fetchAll();
   };
@@ -154,10 +154,10 @@ const ManageUsers: React.FC = () => {
       } else {
         await API.post("/users", { ...staffForm, role });
       }
-      Swal.fire({ icon: "success", title: editId ? "Updated" : "Added", timer: 1200, showConfirmButton: false });
+      toast.success(editId ? "Updated" : "Added");
       closeForm(); fetchAll();
     } catch (e: any) {
-      Swal.fire({ icon: "error", text: e.response?.data?.message });
+      toast.error("Operation failed", e.response?.data?.message);
     }
   };
 
@@ -168,8 +168,8 @@ const ManageUsers: React.FC = () => {
   };
 
   const deleteStaff = async (id: string) => {
-    const r = await Swal.fire({ title: "Delete staff member?", icon: "warning", showCancelButton: true });
-    if (!r.isConfirmed) return;
+    const r = await toast.confirm("Delete staff member?", { confirmLabel: "Delete" });
+    if (!r) return;
     await API.delete(`/users/${id}`);
     fetchAll();
   };

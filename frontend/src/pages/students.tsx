@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus, Eye, Edit, Trash2, X, User, Phone, Mail, BookOpen, Clock } from "lucide-react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 
 interface Student {
   _id: string;
@@ -29,10 +29,10 @@ const students: React.FC = () => {
   const deleteStudent = async (id: string) => {
     try {
       await API.delete(`/students/${id}`);
-      Swal.fire({ icon: "success", title: "Student deleted!", timer: 1200, showConfirmButton: false });
+      toast.success("Student deleted!");
       fetchStudents();
     } catch (error: any) {
-      Swal.fire({ icon: "error", title: "Error deleting student", text: error.response?.data?.message || error.message });
+      toast.error("Error deleting student", error.response?.data?.message || error.message);
     }
   };
 
@@ -55,15 +55,15 @@ const students: React.FC = () => {
       const payload = { ...editForm };
       if (!payload.password) delete payload.password;
       await API.put(`/students/${editId}`, payload);
-      Swal.fire({ icon: "success", title: "Student updated!", timer: 1300, showConfirmButton: false });
+      toast.success("Student updated!");
       setEditId(null);
       setEditForm(null);
       fetchStudents();
     } catch (error: any) {
       if (error.response?.status === 409) {
-        Swal.fire({ icon: "warning", title: "Student already exists!", text: error.response.data.message });
+        toast.warning("Student already exists", error.response.data.message);
       } else {
-        Swal.fire({ icon: "error", title: "Error updating student", text: error.response?.data?.message || error.message });
+        toast.error("Error updating student", error.response?.data?.message || error.message);
       }
     }
   };

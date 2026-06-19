@@ -11,6 +11,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
+    include: ['sonner'],
     exclude: ['lucide-react'],
   },
 });

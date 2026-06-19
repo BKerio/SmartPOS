@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import Swal from "sweetalert2";
+import { X } from "lucide-react";
+import { toast } from "@/services/toast";
 import API from "@/services/api";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -17,6 +18,8 @@ const PendingApprovals: React.FC = () => {
     const [users, setUsers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<"pending" | "approved" | "rejected" | "all">("pending");
+    const [rejectTarget, setRejectTarget] = useState<{ id: string; name: string } | null>(null);
+    const [rejectReason, setRejectReason] = useState("");
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -33,39 +36,32 @@ const PendingApprovals: React.FC = () => {
     useEffect(() => { fetchUsers(); }, []);
 
     const handleApprove = async (id: string, name: string) => {
-        const conf = await Swal.fire({
-            icon: "question",
-            title: `Approve ${name}?`,
-            text: "This will grant the user full access to the platform.",
-            showCancelButton: true,
-            confirmButtonColor: "#16a34a",
-            confirmButtonText: "Yes, Approve",
+        const confirmed = await toast.confirm(`Approve ${name}?`, {
+            description: "This will grant the user full access to the platform.",
+            confirmLabel: "Approve",
         });
-        if (!conf.isConfirmed) return;
+        if (!confirmed) return;
         try {
             await API.patch(`/users/${id}/approve`);
-            Swal.fire({ icon: "success", title: "Approved!", timer: 1200, showConfirmButton: false });
+            toast.success("Approved!");
             fetchUsers();
-        } catch { Swal.fire({ icon: "error", title: "Failed to approve" }); }
+        } catch {
+            toast.error("Failed to approve");
+        }
     };
 
-    const handleReject = async (id: string, name: string) => {
-        const { value: reason, isConfirmed } = await Swal.fire({
-            icon: "warning",
-            title: `Reject ${name}?`,
-            input: "textarea",
-            inputLabel: "Reason for rejection (optional)",
-            inputPlaceholder: "e.g. Incomplete information provided",
-            showCancelButton: true,
-            confirmButtonColor: "#dc2626",
-            confirmButtonText: "Reject",
-        });
-        if (!isConfirmed) return;
+    const submitReject = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!rejectTarget) return;
         try {
-            await API.patch(`/users/${id}/reject`, { reason });
-            Swal.fire({ icon: "info", title: "Rejected", timer: 1200, showConfirmButton: false });
+            await API.patch(`/users/${rejectTarget.id}/reject`, { reason: rejectReason });
+            toast.info("User rejected");
+            setRejectTarget(null);
+            setRejectReason("");
             fetchUsers();
-        } catch { Swal.fire({ icon: "error", title: "Failed to reject" }); }
+        } catch {
+            toast.error("Failed to reject");
+        }
     };
 
     const filtered = users.filter((u) => filter === "all" ? true : u.status === filter);
@@ -83,7 +79,6 @@ const PendingApprovals: React.FC = () => {
                 <p className="text-gray-500 text-sm">Review and manage registration requests from platform users</p>
             </div>
 
-            {/* Stats */}
             <div className="grid grid-cols-3 gap-4 mb-8">
                 {[
                     { label: "Pending Review", count: stats.pending, color: "border-yellow-400 bg-yellow-50", text: "text-yellow-700" },
@@ -97,14 +92,12 @@ const PendingApprovals: React.FC = () => {
                 ))}
             </div>
 
-            {/* Filter tabs */}
             <div className="flex gap-2 mb-6">
                 {(["pending", "approved", "rejected", "all"] as const).map((f) => (
                     <button
                         key={f}
                         onClick={() => setFilter(f)}
-                        className={`px-4 py-1.5 rounded-full text-sm font-medium capitalize transition ${filter === f ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                            }`}
+                        className={`px-4 py-1.5 rounded-full text-sm font-medium capitalize transition ${filter === f ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
                     >
                         {f}
                     </button>
@@ -133,8 +126,7 @@ const PendingApprovals: React.FC = () => {
                                     </span>
                                 </div>
                                 <p className="text-gray-600 text-sm">{user.email}</p>
-                                {user.phone && <p className="text-gray-500 text-sm">📞 {user.phone}</p>}
-                                {user.businessName && <p className="text-gray-500 text-sm">🏢 {user.businessName}</p>}
+                                {user.phone && <p className="text-gray-500 text-sm">{user.phone}</p>}
                                 {user.rejectionReason && (
                                     <p className="text-red-500 text-xs mt-1">Reason: {user.rejectionReason}</p>
                                 )}
@@ -145,40 +137,51 @@ const PendingApprovals: React.FC = () => {
 
                             {user.status === "pending" && (
                                 <div className="flex gap-2 shrink-0">
-                                    <button
-                                        onClick={() => handleApprove(user._id, user.name)}
-                                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
-                                    >
-                                        ✓ Approve
+                                    <button onClick={() => handleApprove(user._id, user.name)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">
+                                        Approve
                                     </button>
-                                    <button
-                                        onClick={() => handleReject(user._id, user.name)}
-                                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
-                                    >
-                                        ✗ Reject
+                                    <button onClick={() => setRejectTarget({ id: user._id, name: user.name })} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">
+                                        Reject
                                     </button>
                                 </div>
                             )}
 
                             {user.status === "approved" && (
-                                <button
-                                    onClick={() => handleReject(user._id, user.name)}
-                                    className="bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-700 px-4 py-2 rounded-lg text-sm font-semibold transition"
-                                >
+                                <button onClick={() => setRejectTarget({ id: user._id, name: user.name })} className="bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-700 px-4 py-2 rounded-lg text-sm font-semibold transition">
                                     Revoke
                                 </button>
                             )}
 
                             {user.status === "rejected" && (
-                                <button
-                                    onClick={() => handleApprove(user._id, user.name)}
-                                    className="bg-gray-100 hover:bg-green-100 text-gray-600 hover:text-green-700 px-4 py-2 rounded-lg text-sm font-semibold transition"
-                                >
+                                <button onClick={() => handleApprove(user._id, user.name)} className="bg-gray-100 hover:bg-green-100 text-gray-600 hover:text-green-700 px-4 py-2 rounded-lg text-sm font-semibold transition">
                                     Re-approve
                                 </button>
                             )}
                         </div>
                     ))}
+                </div>
+            )}
+
+            {rejectTarget && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md p-6">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-gray-800">Reject {rejectTarget.name}?</h3>
+                            <button onClick={() => { setRejectTarget(null); setRejectReason(""); }} className="text-gray-400"><X size={20} /></button>
+                        </div>
+                        <form onSubmit={submitReject} className="space-y-3">
+                            <textarea
+                                placeholder="Reason for rejection (optional)"
+                                value={rejectReason}
+                                onChange={(e) => setRejectReason(e.target.value)}
+                                rows={3}
+                                className="w-full px-3 py-2 border rounded-lg text-sm resize-none"
+                            />
+                            <button type="submit" className="w-full py-2.5 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700">
+                                Confirm Rejection
+                            </button>
+                        </form>
+                    </div>
                 </div>
             )}
         </div>

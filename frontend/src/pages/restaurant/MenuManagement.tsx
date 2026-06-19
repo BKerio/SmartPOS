@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Pencil, Trash2, ClipboardList } from "lucide-react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 
 interface MenuItem {
   id: string; name: string; description?: string; price: number;
@@ -20,7 +20,7 @@ const MenuManagement = () => {
       const { data } = await API.get("/menu/all");
       setItems(data);
     } catch (e: any) {
-      Swal.fire({ icon: "error", text: e.response?.data?.message });
+      toast.error("Error", e.response?.data?.message);
     }
   };
 
@@ -38,9 +38,9 @@ const MenuManagement = () => {
       setForm({ name: "", description: "", price: "", category: "Lunch" });
       setEditing(null);
       fetchItems();
-      Swal.fire({ icon: "success", title: editing ? "Updated" : "Added", timer: 1200, showConfirmButton: false });
+      toast.success(editing ? "Updated" : "Added");
     } catch (e: any) {
-      Swal.fire({ icon: "error", text: e.response?.data?.message });
+      toast.error("Error", e.response?.data?.message);
     }
   };
 
@@ -55,8 +55,8 @@ const MenuManagement = () => {
   };
 
   const deleteItem = async (id: string) => {
-    const r = await Swal.fire({ title: "Delete item?", icon: "warning", showCancelButton: true });
-    if (!r.isConfirmed) return;
+    const r = await toast.confirm("Delete item?", { confirmLabel: "Delete" });
+    if (!r) return;
     await API.delete(`/menu/${id}`);
     fetchItems();
   };

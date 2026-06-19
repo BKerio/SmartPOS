@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 
@@ -21,12 +21,7 @@ const AddStudent: React.FC = () => {
     e.preventDefault();
     try {
       await API.post("/students", form);
-      Swal.fire({
-        icon: "success",
-        title: "Student added!",
-        timer: 1500,
-        showConfirmButton: false,
-      });
+      toast.success("Student added!");
       setForm({
         name: "",
         course: "",
@@ -38,17 +33,9 @@ const AddStudent: React.FC = () => {
       });
     } catch (error: any) {
       if (error.response?.status === 409) {
-        Swal.fire({
-          icon: "warning",
-          title: "Student already exists!",
-          text: error.response.data.message,
-        });
+        toast.warning("Student already exists", error.response.data.message);
       } else {
-        Swal.fire({
-          icon: "error",
-          title: "Error adding student",
-          text: error.response?.data?.message || error.message,
-        });
+        toast.error("Error adding student", error.response?.data?.message || error.message);
       }
     }
   };

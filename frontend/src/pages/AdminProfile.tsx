@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 import { Save } from "lucide-react";
 
 const AdminProfile: React.FC = () => {
@@ -21,11 +21,7 @@ const AdminProfile: React.FC = () => {
         password: "",
       });
     } catch (error: any) {
-      Swal.fire({
-        icon: "error",
-        title: "Failed to load profile",
-        text: error.response?.data?.message || error.message,
-      });
+      toast.error("Failed to load profile", error.response?.data?.message || error.message);
     }
   };
 
@@ -35,19 +31,10 @@ const AdminProfile: React.FC = () => {
       await API.put("/admin/me", form, {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
       });
-      Swal.fire({
-        icon: "success",
-        title: "Profile updated successfully",
-        timer: 1200,
-        showConfirmButton: false,
-      });
+      toast.success("Profile updated successfully");
       setForm({ ...form, password: "" });
     } catch (error: any) {
-      Swal.fire({
-        icon: "error",
-        title: "Update failed",
-        text: error.response?.data?.message || error.message,
-      });
+      toast.error("Update failed", error.response?.data?.message || error.message);
     }
   };
 

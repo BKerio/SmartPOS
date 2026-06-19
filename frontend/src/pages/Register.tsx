@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Mail, Lock, User, Phone, ChevronDown, ArrowRight, Users, PieChart, UtensilsCrossed } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 import API from "@/services/api";
 
 type RoleValue = "parent" | "finance" | "restaurant";
@@ -24,25 +24,21 @@ const Register: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.role) return Swal.fire({ icon: "warning", title: "Select a role", text: "Choose your account type." });
-    if (form.password !== form.confirmPassword) return Swal.fire({ icon: "error", title: "Passwords don't match" });
+    if (!form.role) return toast.warning("Select a role", "Choose your account type.");
+    if (form.password !== form.confirmPassword) return toast.error("Passwords don't match");
 
     setLoading(true);
     try {
       if (form.role === "parent") {
         await API.post("/parents/register", { name: form.name, email: form.email, password: form.password, phone: form.phone });
-        await Swal.fire({ icon: "success", title: "Account Created!", text: "You can now log in as a parent.", confirmButtonColor: "#0A1F44" });
+        toast.success("Account created!", "You can now log in as a parent.");
       } else {
         await API.post("/users/register", { name: form.name, email: form.email, password: form.password, phone: form.phone, role: form.role });
-        await Swal.fire({
-          icon: "success", title: "Registration Submitted!",
-          html: "Your account is <strong>pending admin approval</strong>. You'll receive access once reviewed.",
-          confirmButtonColor: "#0A1F44",
-        });
+        toast.info("Registration submitted", "Your account is pending admin approval.");
       }
       navigate("/login");
     } catch (err: any) {
-      Swal.fire({ icon: "error", title: "Registration Failed", text: err.response?.data?.message || "Please try again." });
+      toast.error("Registration failed", err.response?.data?.message || "Please try again.");
     } finally {
       setLoading(false);
     }

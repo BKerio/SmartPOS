@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 import { Users, GraduationCap, DollarSign, UtensilsCrossed, TrendingUp, TrendingDown } from "lucide-react";
 
 const Reports: React.FC = () => {
@@ -26,7 +26,7 @@ const Reports: React.FC = () => {
           setFinance(f.data);
         } catch { /* ok */ }
       } catch (e: any) {
-        Swal.fire({ icon: "error", title: "Failed to load reports", text: e.response?.data?.message });
+        toast.error("Failed to load reports", e.response?.data?.message);
       } finally {
         setLoading(false);
       }

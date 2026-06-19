@@ -1,5 +1,5 @@
 import { LogOut, Shield } from "lucide-react";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 
@@ -8,24 +8,13 @@ const AdminNavbar = () => {
   const adminName = localStorage.getItem("adminName") || "Admin";
 
   const handleLogout = async () => {
-    const result = await Swal.fire({
-      title: "Logout from Admin Dashboard?",
-      text: "You will be required to log in again to continue.",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#dc2626",
-      cancelButtonColor: "#6b7280",
-      confirmButtonText: "Logout",
+    const confirmed = await toast.confirm("Logout from Admin Dashboard?", {
+      description: "You will need to log in again to continue.",
+      confirmLabel: "Logout",
     });
-
-    if (result.isConfirmed) {
+    if (confirmed) {
       localStorage.clear();
-      Swal.fire({
-        icon: "success",
-        title: "Logged out successfully",
-        timer: 1000,
-        showConfirmButton: false,
-      });
+      toast.success("Logged out successfully");
       navigate("/login");
     }
   };

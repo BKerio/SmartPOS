@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, ChevronDown, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 import API from "@/services/api";
 import logo from "@/assets/LOGO.png";
 
@@ -71,10 +71,10 @@ const Login: React.FC = () => {
         localStorage.setItem("userName", data.name || "");
       }
       localStorage.setItem("token", data.token);
-      await Swal.fire({ icon: "success", title: `Welcome, ${data.name || currentRole.label}!`, timer: 1200, showConfirmButton: false });
+      toast.success(`Welcome, ${data.name || currentRole.label}!`);
       navigate(DASHBOARD_PATHS[role]);
     } catch (error: any) {
-      Swal.fire({ icon: "error", title: "Login Error", text: error.response?.data?.message || "Login failed" });
+      toast.error("Login failed", error.response?.data?.message);
     } finally {
       setLoading(false);
     }
@@ -116,7 +116,7 @@ const Login: React.FC = () => {
                   className="w-full flex items-center justify-between p-3 bg-[#0A1F44]/5 border border-[#0A1F44]/10 rounded-xl hover:bg-[#0A1F44]/10 transition-colors"
                 >
                   <div className="flex items-center gap-2.5">
-                    <img src={logo} alt="" className="w-8 h-8 object-contain rounded-md" />
+                    <img src={logo} draggable={false} alt="" className="w-8 h-8 object-contain rounded-md" />
                     <div className="text-left">
                       <span className="block text-sm font-semibold text-[#0A1F44]">{currentRole.label}</span>
                       <span className="block text-[10px] text-gray-500">{currentRole.description}</span>
@@ -261,7 +261,6 @@ const Login: React.FC = () => {
                                 : "bg-gray-50 border-gray-100 hover:border-[#0A1F44]/20"
                             }`}
                           >
-                            <img src={logo} draggable={false} alt="" className="w-9 h-9 object-contain shrink-0" />
                             <div className="text-left flex-1">
                               <span className="block text-sm font-bold text-[#0A1F44]">{option.label}</span>
                               <span className="block text-[10px] text-gray-500">{option.description}</span>

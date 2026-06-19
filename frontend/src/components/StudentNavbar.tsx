@@ -1,5 +1,5 @@
 import { LogOut } from "lucide-react";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 
@@ -7,23 +7,13 @@ const StudentNavbar = () => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    const result = await Swal.fire({
-      title: "Logout from student portal?",
-      text: "You will need to log in again to access your account.",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#dc2626",
-      cancelButtonColor: "#6b7280",
-      confirmButtonText: "Logout",
+    const confirmed = await toast.confirm("Logout from student portal?", {
+      description: "You will need to log in again to access your account.",
+      confirmLabel: "Logout",
     });
-    if (result.isConfirmed) {
+    if (confirmed) {
       localStorage.clear();
-      Swal.fire({
-        icon: "success",
-        title: "Logged out",
-        timer: 1000,
-        showConfirmButton: false,
-      });
+      toast.success("Logged out");
       navigate("/login");
     }
   };

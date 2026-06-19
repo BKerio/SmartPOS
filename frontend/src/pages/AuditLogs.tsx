@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 import {
   Search,
   Filter,
@@ -81,11 +81,7 @@ const AuditLogs: React.FC = () => {
       const { data } = await API.get(`/audit/events?${params.toString()}`, { headers: authHeader });
       setData(data);
     } catch (error: any) {
-      Swal.fire({
-        icon: "error",
-        title: "Failed to load audit logs",
-        text: error.response?.data?.message || error.message,
-      });
+      toast.error("Failed to load audit logs", error.response?.data?.message || error.message);
     } finally {
       setLoading(false);
     }

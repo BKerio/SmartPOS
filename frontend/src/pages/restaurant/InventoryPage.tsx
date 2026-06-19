@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Package, AlertTriangle, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 
 interface InventoryItem {
   id: string; name: string; category: string; unit: string;
@@ -18,7 +18,7 @@ const InventoryPage = () => {
       const { data } = await API.get("/inventory/items");
       setItems(data);
     } catch (e: any) {
-      Swal.fire({ icon: "error", text: e.response?.data?.message });
+      toast.error("Error", e.response?.data?.message);
     }
   };
 
@@ -34,9 +34,9 @@ const InventoryPage = () => {
       });
       setNewItem({ name: "", category: "Grains", unit: "kg", reorderLevel: "10", unitCost: "0" });
       fetchItems();
-      Swal.fire({ icon: "success", title: "Item added", timer: 1200, showConfirmButton: false });
+      toast.success("Item added");
     } catch (e: any) {
-      Swal.fire({ icon: "error", text: e.response?.data?.message });
+      toast.error("Error", e.response?.data?.message);
     }
   };
 
@@ -49,9 +49,9 @@ const InventoryPage = () => {
       });
       setMovement({ inventoryItemId: "", type: "IN", quantity: "", reason: "purchase", notes: "" });
       fetchItems();
-      Swal.fire({ icon: "success", title: "Movement recorded", timer: 1200, showConfirmButton: false });
+      toast.success("Movement recorded");
     } catch (e: any) {
-      Swal.fire({ icon: "error", text: e.response?.data?.message });
+      toast.error("Error", e.response?.data?.message);
     }
   };
 

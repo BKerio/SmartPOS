@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Wallet, User, PlusCircle } from "lucide-react";
+import { Wallet, User, PlusCircle, X } from "lucide-react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 
 interface Student {
   id: string;
@@ -16,6 +16,9 @@ interface Student {
 const ParentDashboard = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+  const [topUpStudent, setTopUpStudent] = useState<Student | null>(null);
+  const [topUpForm, setTopUpForm] = useState({ amount: "", reference: "" });
+  const [submitting, setSubmitting] = useState(false);
   const name = localStorage.getItem("userName") || "Parent";
 
   const fetchStudents = async () => {
@@ -23,7 +26,7 @@ const ParentDashboard = () => {
       const { data } = await API.get("/parents/students");
       setStudents(data);
     } catch (e: any) {
-      Swal.fire({ icon: "error", title: "Failed to load students", text: e.response?.data?.message });
+      toast.error("Failed to load students", e.response?.data?.message);
     } finally {
       setLoading(false);
     }
@@ -31,37 +34,32 @@ const ParentDashboard = () => {
 
   useEffect(() => { fetchStudents(); }, []);
 
-  const handleTopUp = async (student: Student) => {
-    const { value: amount } = await Swal.fire({
-      title: `Top up ${student.name}`,
-      input: "number",
-      inputLabel: "Amount (KES)",
-      inputPlaceholder: "e.g. 500",
-      showCancelButton: true,
-      confirmButtonColor: "#0A1F44",
-      inputValidator: (v) => (!v || Number(v) <= 0 ? "Enter a valid amount" : null),
-    });
-    if (!amount) return;
+  const openTopUp = (student: Student) => {
+    setTopUpStudent(student);
+    setTopUpForm({ amount: "", reference: "" });
+  };
 
-    const { value: reference } = await Swal.fire({
-      title: "Payment reference (optional)",
-      input: "text",
-      inputPlaceholder: "M-Pesa code",
-      showCancelButton: true,
-      confirmButtonColor: "#0A1F44",
-    });
+  const submitTopUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!topUpStudent) return;
+    const amount = Number(topUpForm.amount);
+    if (!amount || amount <= 0) return toast.error("Enter a valid amount");
 
+    setSubmitting(true);
     try {
       const { data } = await API.post("/wallet/deposit", {
-        studentId: student.id,
-        amount: Number(amount),
-        reference: reference || undefined,
+        studentId: topUpStudent.id,
+        amount,
+        reference: topUpForm.reference || undefined,
         description: "Parent wallet top-up",
       });
-      Swal.fire({ icon: "success", title: "Top-up successful", text: `New balance: KES ${data.newBalance.toLocaleString()}` });
+      toast.success("Top-up successful", `New balance: KES ${data.newBalance.toLocaleString()}`);
+      setTopUpStudent(null);
       fetchStudents();
     } catch (e: any) {
-      Swal.fire({ icon: "error", title: "Top-up failed", text: e.response?.data?.message });
+      toast.error("Top-up failed", e.response?.data?.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -100,7 +98,7 @@ const ParentDashboard = () => {
               </div>
 
               <button
-                onClick={() => handleTopUp(s)}
+                onClick={() => openTopUp(s)}
                 className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 transition"
               >
                 <PlusCircle size={18} /> Top Up Wallet
@@ -134,6 +132,24 @@ const ParentDashboard = () => {
           <Wallet size={16} /> Settings
         </Link>
       </div>
+
+      {topUpStudent && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-[#0A1F44]">Top up {topUpStudent.name}</h3>
+              <button onClick={() => setTopUpStudent(null)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <form onSubmit={submitTopUp} className="space-y-3">
+              <input type="number" placeholder="Amount (KES)" value={topUpForm.amount} onChange={(e) => setTopUpForm({ ...topUpForm, amount: e.target.value })} required min="1" className="w-full px-3 py-2 border rounded-lg text-sm" />
+              <input type="text" placeholder="M-Pesa reference (optional)" value={topUpForm.reference} onChange={(e) => setTopUpForm({ ...topUpForm, reference: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              <button type="submit" disabled={submitting} className="w-full py-2.5 bg-[#0A1F44] text-white rounded-xl font-semibold disabled:opacity-50">
+                {submitting ? "Processing..." : "Confirm Top-up"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

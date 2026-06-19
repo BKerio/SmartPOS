@@ -1,5 +1,5 @@
 import { useState, useEffect, FormEvent } from "react";
-import Swal from "sweetalert2";
+import { toast } from "@/services/toast";
 import { Loader2, Smartphone } from "lucide-react";
 import API from "@/services/api";
 
@@ -18,26 +18,23 @@ const PayWithMpesa = () => {
     e.preventDefault();
     const numericAmount = Number(amount);
     if (!/^(01|07)\d{8}$/.test(phone)) {
-      return Swal.fire({ icon: "error", title: "Invalid phone", text: "Enter a valid 10-digit Kenyan number (e.g. 0712345678)" });
+      return toast.error("Invalid phone", "Enter a valid 10-digit Kenyan number (e.g. 0712345678)");
     }
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      return Swal.fire({ icon: "error", title: "Invalid amount", text: "Enter a valid amount greater than 0" });
+      return toast.error("Invalid amount", "Enter a valid amount greater than 0");
     }
 
     setLoading(true);
     try {
       const { data } = await API.post("/wallet/topup", { phone, amount: numericAmount });
       setBalance(data.newBalance);
-      Swal.fire({
-        icon: "success",
-        title: "Top-up Successful!",
-        html: `<p>KES <strong>${numericAmount}</strong> added to your wallet.</p>
-               <p>New balance: <strong>KES ${data.newBalance.toLocaleString()}</strong></p>
-               <p class="text-xs text-gray-500 mt-2">Ref: ${data.transaction.reference}</p>`,
-      });
+      toast.success(
+        "Top-up successful!",
+        `KES ${numericAmount} added. New balance: KES ${data.newBalance.toLocaleString()}`
+      );
       setAmount("");
     } catch (err: any) {
-      Swal.fire({ icon: "error", title: "Top-up Failed", text: err.response?.data?.message || "Please try again." });
+      toast.error("Top-up failed", err.response?.data?.message || "Please try again.");
     } finally {
       setLoading(false);
     }
