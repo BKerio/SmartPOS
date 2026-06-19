@@ -3,13 +3,8 @@ import Swal from "sweetalert2";
 import API from "@/services/api";
 
 const ROLE_LABELS: Record<string, string> = {
-    tenant: "Non-Student Tenant",
-    alumni: "Alumni User",
-    owner: "Property Owner / Landlord",
-    hostel: "Hostel / Housing Provider",
-    manager: "Property Manager",
-    provider: "Service Provider",
-    merchant: "Marketplace Merchant",
+    finance: "Finance Officer",
+    restaurant: "Restaurant Staff",
 };
 
 const STATUS_COLORS: Record<string, string> = {

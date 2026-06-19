@@ -8,15 +8,59 @@ const router = Router();
 
 const fmt = (u: any) => ({ ...u, _id: u.id });
 
-// ─── POST /api/users/register ─────────────────────────────────────────────────
-router.post('/register', async (req: Request, res: Response): Promise<any> => {
-  const { name, email, password, phone, role, businessName } = req.body;
+// ─── POST /api/users (admin create) ───────────────────────────────────────────
+router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  const { name, email, password, phone, role, status } = req.body;
 
   if (!name || !email || !password || !role) {
     return res.status(422).json({ message: 'Name, email, password and role are required' });
   }
 
-  const allowedRoles = ['tenant', 'alumni', 'owner', 'hostel', 'manager', 'provider', 'merchant'];
+  const allowedRoles = ['finance', 'restaurant'];
+  if (!allowedRoles.includes(role)) {
+    return res.status(422).json({ message: 'Role must be finance or restaurant' });
+  }
+
+  try {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) return res.status(409).json({ message: 'An account with this email already exists' });
+
+    const hashed = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: {
+        name, email, password: hashed, phone, role,
+        status: status === 'pending' ? 'pending' : 'approved',
+      },
+      select: { id: true, name: true, email: true, phone: true, role: true, status: true, createdAt: true },
+    });
+
+    await logAuditEvent({
+      eventType: 'user_created',
+      userType: 'admin',
+      userId: req.user?.id,
+      userName: req.user?.name || 'Admin',
+      action: 'Create Staff User',
+      description: `Admin created ${role} account for ${name} (${email})`,
+      metadata: { role },
+      ipAddress: req.ip,
+    });
+
+    return res.status(201).json(fmt(user));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── POST /api/users/register ─────────────────────────────────────────────────
+router.post('/register', async (req: Request, res: Response): Promise<any> => {
+  const { name, email, password, phone, role,  } = req.body;
+
+  if (!name || !email || !password || !role) {
+    return res.status(422).json({ message: 'Name, email, password and role are required' });
+  }
+
+  const allowedRoles = ['finance', 'restaurant'];
   if (!allowedRoles.includes(role)) {
     return res.status(422).json({ message: 'Invalid role' });
   }
@@ -29,7 +73,7 @@ router.post('/register', async (req: Request, res: Response): Promise<any> => {
 
     const hashed = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
-      data: { name, email, password: hashed, phone, role, businessName, status: 'pending' },
+      data: { name, email, password: hashed, phone, role,  status: 'pending' },
       select: { id: true, name: true, email: true, role: true, status: true, createdAt: true },
     });
 
@@ -108,7 +152,7 @@ router.get('/', ensureAdmin, async (_req: Request, res: Response): Promise<any> 
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, name: true, email: true, phone: true,
-        role: true, businessName: true, status: true,
+        role: true, status: true,
         rejectionReason: true, createdAt: true,
       },
     });
@@ -125,12 +169,54 @@ router.get('/:id', ensureAuthenticated, async (req: Request, res: Response): Pro
       where: { id: (req.params.id as string) },
       select: {
         id: true, name: true, email: true, phone: true,
-        role: true, businessName: true, status: true, createdAt: true,
+        role: true, status: true, createdAt: true,
       },
     });
     if (!user) return res.status(404).json({ message: 'User not found' });
     return res.json(fmt(user));
   } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── PUT /api/users/:id ───────────────────────────────────────────────────────
+router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  const { name, email, phone, password, role, status } = req.body;
+  try {
+    if (email) {
+      const conflict = await prisma.user.findFirst({
+        where: { email, id: { not: req.params.id as string } },
+      });
+      if (conflict) return res.status(409).json({ message: 'Another user uses this email' });
+    }
+
+    const data: any = {};
+    if (name) data.name = name;
+    if (email) data.email = email;
+    if (phone !== undefined) data.phone = phone;
+    if (role && ['finance', 'restaurant'].includes(role)) data.role = role;
+    if (status && ['pending', 'approved', 'rejected'].includes(status)) data.status = status;
+    if (password) data.password = await bcrypt.hash(password, 10);
+
+    const user = await prisma.user.update({
+      where: { id: req.params.id as string },
+      data,
+      select: { id: true, name: true, email: true, phone: true, role: true, status: true, createdAt: true },
+    });
+
+    await logAuditEvent({
+      eventType: 'user_updated',
+      userType: 'admin',
+      userId: req.user?.id,
+      userName: req.user?.name || 'Admin',
+      action: 'Update Staff User',
+      description: `Updated ${user.role} account for ${user.name}`,
+      ipAddress: req.ip,
+    });
+
+    return res.json(fmt(user));
+  } catch (error: any) {
+    if (error.code === 'P2025') return res.status(404).json({ message: 'User not found' });
     return res.status(500).json({ message: 'Something went wrong' });
   }
 });

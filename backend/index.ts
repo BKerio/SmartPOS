@@ -7,9 +7,13 @@ import cors from 'cors';
 import adminRoutes      from '@/routes/admin';
 import studentRoutes    from '@/routes/students';
 import userRoutes       from '@/routes/users';
-import propertyRoutes   from '@/routes/properties';
-import marketplaceRoutes from '@/routes/marketplace';
 import auditRoutes      from '@/routes/audit';
+import walletRoutes     from '@/routes/wallet';
+import menuRoutes       from '@/routes/menu';
+import posRoutes        from '@/routes/pos';
+import inventoryRoutes  from '@/routes/inventory';
+import financeRoutes    from '@/routes/finance';
+import parentRoutes     from '@/routes/parents';
 
 const app = express();
 const PORT         = process.env.PORT         || 5000;
@@ -31,9 +35,13 @@ app.get('/health', (_req: Request, res: Response) => {
 app.use('/api/admin',       adminRoutes);
 app.use('/api/students',    studentRoutes);
 app.use('/api/users',       userRoutes);
-app.use('/api/properties',  propertyRoutes);
-app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/audit',       auditRoutes);
+app.use('/api/wallet',      walletRoutes);
+app.use('/api/menu',        menuRoutes);
+app.use('/api/pos',         posRoutes);
+app.use('/api/inventory',   inventoryRoutes);
+app.use('/api/finance',     financeRoutes);
+app.use('/api/parents',     parentRoutes);
 
 // ─── 404 fallback ─────────────────────────────────────────────────────────────
 app.use((_req: Request, res: Response) => {

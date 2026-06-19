@@ -1,4 +1,4 @@
-import { GraduationCap, ChevronLeft, ChevronRight, LogOut, User, EuroIcon, Home, ShoppingBag } from "lucide-react";
+import { GraduationCap, ChevronLeft, ChevronRight, LogOut, User, Wallet, Smartphone } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
@@ -9,24 +9,18 @@ const StudentSidebar = () => {
   const navigate = useNavigate();
   const menuItems = [
     { name: "Dashboard", icon: GraduationCap, path: "/student-dashboard" },
+    { name: "My Wallet", icon: Wallet, path: "/student-fees" },
+    { name: "Top Up (M-Pesa)", icon: Smartphone, path: "/paymyfees" },
     { name: "Profile", icon: User, path: "/student-profile" },
-    { name: "Pay via M-Pesa", icon: EuroIcon, path: "/paymyfees" },
-    { name: "Housing Search", icon: Home, path: "/search" },
-    { name: "Marketplace", icon: ShoppingBag, path: "/marketplace" },
   ];
 
   const handleLogout = async () => {
     const result = await Swal.fire({
-      title: "Are you sure you want to logout?",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#d33",
-      cancelButtonColor: "#3085d6",
-      confirmButtonText: "Yes, logout",
+      title: "Logout?", icon: "warning", showCancelButton: true,
+      confirmButtonColor: "#d33", confirmButtonText: "Yes, logout",
     });
     if (result.isConfirmed) {
       localStorage.clear();
-      Swal.fire({ icon: "success", title: "Logged out!", timer: 1200, showConfirmButton: false });
       navigate("/login");
     }
   };
@@ -41,19 +35,14 @@ const StudentSidebar = () => {
       </div>
       <nav className="flex-1 mt-4">
         {menuItems.map(({ name, icon: Icon, path }) => (
-          <Link
-            key={name}
-            to={path}
-            className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-800 transition ${location.pathname === path ? "bg-gray-800" : ""}`}
-          >
+          <Link key={name} to={path}
+            className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-800 transition ${location.pathname === path ? "bg-gray-800" : ""}`}>
             <Icon size={20} />
             {!collapsed && <span>{name}</span>}
           </Link>
         ))}
-        <button
-          className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-gray-800 transition mt-8"
-          onClick={handleLogout}
-        >
+        <button onClick={handleLogout}
+          className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-gray-800 transition mt-8">
           <LogOut size={20} />
           {!collapsed && <span>Logout</span>}
         </button>

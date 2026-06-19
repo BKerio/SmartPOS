@@ -51,7 +51,11 @@ router.get('/', ensureAdmin, async (_req: Request, res: Response): Promise<any> 
   try {
     const students = await prisma.student.findMany({
       orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, regNo: true, course: true, email: true, phone: true, gender: true, year: true, createdAt: true },
+      select: {
+        id: true, name: true, regNo: true, course: true, email: true, phone: true,
+        gender: true, year: true, walletBalance: true, parentId: true, createdAt: true,
+        parent: { select: { id: true, name: true, email: true } },
+      },
     });
     return res.json(students.map(fmt));
   } catch (error) {
@@ -61,7 +65,7 @@ router.get('/', ensureAdmin, async (_req: Request, res: Response): Promise<any> 
 
 // ─── POST /api/students ───────────────────────────────────────────────────────
 router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
-  const { name, regNo, course, email, phone, gender, year, password } = req.body;
+  const { name, regNo, course, email, phone, gender, year, password, parentId } = req.body;
   if (!name || !regNo || !course || !email || !phone || !gender || !year || !password) {
     return res.status(422).json({ message: 'All fields are required' });
   }
@@ -75,8 +79,16 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
 
     const hashed = await bcrypt.hash(password, 10);
     const student = await prisma.student.create({
-      data: { name, regNo, course, email, phone, gender, year: Number(year), password: hashed },
-      select: { id: true, name: true, regNo: true, course: true, email: true, phone: true, gender: true, year: true, createdAt: true },
+      data: {
+        name, regNo, course, email, phone, gender,
+        year: Number(year), password: hashed,
+        parentId: parentId || null,
+      },
+      select: {
+        id: true, name: true, regNo: true, course: true, email: true, phone: true,
+        gender: true, year: true, walletBalance: true, parentId: true, createdAt: true,
+        parent: { select: { id: true, name: true, email: true } },
+      },
     });
 
     await logAuditEvent({
@@ -97,6 +109,43 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
   }
 });
 
+// ─── GET /api/students/me ─────────────────────────────────────────────────────
+router.get('/me', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (req.user!.role !== 'student') {
+    return res.status(403).json({ message: 'Student access only' });
+  }
+  try {
+    const student = await prisma.student.findUnique({
+      where: { id: req.user!.id },
+      select: {
+        id: true, name: true, regNo: true, course: true, email: true,
+        phone: true, gender: true, year: true, walletBalance: true, createdAt: true,
+      },
+    });
+    if (!student) return res.status(404).json({ message: 'Student not found' });
+    return res.json(fmt(student));
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── GET /api/students/lookup/:regNo ─────────────────────────────────────────
+router.get('/lookup/:regNo', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (!['admin', 'restaurant', 'finance'].includes(req.user!.role)) {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
+  try {
+    const student = await prisma.student.findUnique({
+      where: { regNo: req.params.regNo as string },
+      select: { id: true, name: true, regNo: true, course: true, walletBalance: true },
+    });
+    if (!student) return res.status(404).json({ message: 'Student not found' });
+    return res.json(fmt(student));
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
 // ─── GET /api/students/:id ────────────────────────────────────────────────────
 router.get('/:id', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
   try {
@@ -113,7 +162,7 @@ router.get('/:id', ensureAuthenticated, async (req: Request, res: Response): Pro
 
 // ─── PUT /api/students/:id ────────────────────────────────────────────────────
 router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
-  const { name, course, email, phone, gender, year, password } = req.body;
+  const { name, course, email, phone, gender, year, password, parentId } = req.body;
   try {
     const existing = await prisma.student.findFirst({
       where: {
@@ -129,11 +178,16 @@ router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
 
     const data: any = { name, course, email, phone, gender, year: year ? Number(year) : undefined };
     if (password) data.password = await bcrypt.hash(password, 10);
+    if (parentId !== undefined) data.parentId = parentId || null;
 
     const student = await prisma.student.update({
       where: { id: (req.params.id as string) },
       data,
-      select: { id: true, name: true, regNo: true, course: true, email: true, phone: true, gender: true, year: true, createdAt: true },
+      select: {
+        id: true, name: true, regNo: true, course: true, email: true, phone: true,
+        gender: true, year: true, walletBalance: true, parentId: true, createdAt: true,
+        parent: { select: { id: true, name: true, email: true } },
+      },
     });
 
     await logAuditEvent({

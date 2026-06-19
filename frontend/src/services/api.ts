@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const defaultBaseUrl = import.meta.env.PROD
-  ? "https://ufms.onrender.com/api"
+  ? "https://smartpos.onrender.com/api"
   : "http://localhost:5000/api";
 
 const API = axios.create({

@@ -1,123 +1,96 @@
 import React, { useEffect, useState } from "react";
 import API from "@/services/api";
-import Swal from "sweetalert2";
-import { Download } from "lucide-react";
+import { Wallet, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 
-interface Course { _id: string; name: string; code: string; fee?: number; }
-interface Enrollment { _id: string; semester: string; totalFee: number; paidAmount?: number; courseIds: Course[] }
+interface WalletTx {
+  id: string; amount: number; type: string; description?: string; reference?: string; createdAt: string;
+}
+
+interface Receipt {
+  id: string; totalAmount: number; createdAt: string;
+  items: { quantity: number; price: number; menuItem: { name: string } }[];
+}
 
 const StudentFees: React.FC = () => {
-  const [latest, setLatest] = useState<Enrollment | null>(null);
-  const [downloading, setDownloading] = useState(false);
-  const authHeader = { Authorization: `Bearer ${localStorage.getItem("token")}` };
+  const [balance, setBalance] = useState(0);
+  const [transactions, setTransactions] = useState<WalletTx[]>([]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const fetchLatest = async () => {
-    try {
-      const { data } = await API.get("/enrollments/me/latest", { headers: authHeader });
-      setLatest(data);
-    } catch (e: any) {
-      setLatest(null);
-      if (e.response?.status !== 404)
-        Swal.fire({ icon: "error", title: "Failed to load fees", text: e.response?.data?.message || e.message });
-    }
-  };
-
-  const downloadFeeStatement = async () => {
-    if (!latest) return;
-    
-    setDownloading(true);
-    try {
-      // Get student ID from localStorage (set during login) or from the enrollment
-      const regNo = localStorage.getItem("regNo");
-      if (!regNo) throw new Error("Student information not found");
-      
-      // Get student data to find student ID
-      const { data: student } = await API.get("/students/me", { headers: authHeader });
-      const studentId = student._id;
-      
-      const token = localStorage.getItem("token");
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/receipts/student/${studentId}/statement`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) throw new Error('Failed to generate statement');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Fee-Statement-${regNo}-${new Date().getTime()}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      Swal.fire({ icon: "success", title: "Statement downloaded!", timer: 1200, showConfirmButton: false });
-    } catch (error: any) {
-      Swal.fire({ icon: "error", title: "Download failed", text: error.message });
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  useEffect(() => { fetchLatest(); }, []);
+  useEffect(() => {
+    Promise.all([
+      API.get("/wallet/balance"),
+      API.get("/wallet/history"),
+      API.get("/pos/receipts/me"),
+    ]).then(([bal, hist, rec]) => {
+      setBalance(bal.data.balance);
+      setTransactions(hist.data);
+      setReceipts(rec.data);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
 
   return (
-    <div className="max-w-xl mx-auto mt-14 bg-white p-8 rounded-xl shadow-md border border-gray-100">
-      <div className="flex justify-between items-center mb-5">
-        <h2 className="text-2xl font-semibold text-gray-800">My Fee Balance</h2>
-        {latest && (
-          <button
-            onClick={downloadFeeStatement}
-            disabled={downloading}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {downloading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Generating...
-              </>
-            ) : (
-              <>
-                <Download size={18} />
-                Download Statement
-              </>
-            )}
-          </button>
-        )}
-      </div>
-      {!latest ? (
-        <p className="text-center text-gray-500">You have not enrolled for any semester yet.</p>
-      ) : (
+    <div className="p-4 md:p-8 bg-[#E8F4FD] min-h-screen font-sans space-y-6">
+      <div className="bg-[#0A1F44] text-white rounded-2xl p-6 flex items-center justify-between">
         <div>
-          <div className="flex justify-between mb-2">
-            <span className="text-gray-700">Semester:</span>
-            <span className="font-medium">{latest.semester}</span>
+          <h2 className="text-2xl font-bold flex items-center gap-2"><Wallet /> My Wallet</h2>
+          <p className="text-blue-200 text-sm mt-1">Balance and transaction history</p>
+        </div>
+        <div className="text-right">
+          <p className="text-blue-200 text-xs">Available Balance</p>
+          <p className="text-3xl font-bold text-green-300">KES {balance.toLocaleString()}</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-center text-gray-500 animate-pulse">Loading wallet data...</p>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-2xl border border-gray-100 p-6">
+            <h3 className="font-bold text-[#0A1F44] mb-4">Wallet Transactions</h3>
+            {transactions.length === 0 ? (
+              <p className="text-gray-400 text-sm">No transactions yet</p>
+            ) : (
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {transactions.map((tx) => (
+                  <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-50">
+                    <div className="flex items-center gap-3">
+                      {tx.amount >= 0
+                        ? <ArrowUpCircle size={18} className="text-green-500" />
+                        : <ArrowDownCircle size={18} className="text-red-500" />}
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">{tx.description || tx.type}</p>
+                        <p className="text-xs text-gray-400">{new Date(tx.createdAt).toLocaleString()}</p>
+                      </div>
+                    </div>
+                    <span className={`font-bold text-sm ${tx.amount >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      {tx.amount >= 0 ? "+" : ""}KES {Math.abs(tx.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="flex justify-between mb-2">
-            <span className="text-gray-700">Total Fees:</span>
-            <span className="font-bold text-xl text-indigo-700">Ksh {Number(latest.totalFee).toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between mb-2">
-            <span className="text-gray-700">Amount Paid:</span>
-            <span className="font-medium text-green-600">Ksh {Number(latest.paidAmount || 0).toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between mb-4 p-3 bg-gray-50 rounded-lg">
-            <span className="text-gray-800 font-semibold">Balance:</span>
-            <span className={`font-bold text-xl ${(latest.totalFee - (latest.paidAmount || 0)) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-              Ksh {(Number(latest.totalFee) - Number(latest.paidAmount || 0)).toLocaleString()}
-            </span>
-          </div>
-          <div className="mt-4">
-            <span className="text-sm text-gray-600 font-semibold">Courses:</span>
-            <ul className="list-disc ml-5 mt-2 text-gray-700">
-              {latest.courseIds.map(c => (
-                <li key={c._id}>{c.name} ({c.code})</li>
-              ))}
-            </ul>
+
+          <div className="bg-white rounded-2xl border border-gray-100 p-6">
+            <h3 className="font-bold text-[#0A1F44] mb-4">Meal Purchase Receipts</h3>
+            {receipts.length === 0 ? (
+              <p className="text-gray-400 text-sm">No cafeteria purchases yet</p>
+            ) : (
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {receipts.map((r) => (
+                  <div key={r.id} className="p-3 bg-gray-50 rounded-xl">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs text-gray-400">#{r.id.slice(-8)} · {new Date(r.createdAt).toLocaleDateString()}</span>
+                      <span className="font-bold text-red-600">-KES {r.totalAmount}</span>
+                    </div>
+                    {r.items.map((item, i) => (
+                      <p key={i} className="text-sm text-gray-600">{item.menuItem.name} × {item.quantity}</p>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

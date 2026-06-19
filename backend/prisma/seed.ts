@@ -21,30 +21,66 @@ async function seed() {
     console.log(`ℹ️   Admin already exists: ${adminEmail}`);
   }
 
-  // ── Sample properties (only if empty) ─────────────────────────────────────
-  const propCount = await prisma.property.count();
-  if (propCount === 0) {
-    await prisma.property.createMany({
+  // ── Sample Menu Items ─────────────────────────────────────
+  const menuCount = await prisma.menuItem.count();
+  if (menuCount === 0) {
+    await prisma.menuItem.createMany({
       data: [
-        { title: 'Studio Apartment — Block A', description: 'Near campus, fully furnished', price: 15000, location: 'Block A' },
-        { title: 'Shared Room — Block B',       description: '2-person sharing, meals included', price: 8000,  location: 'Block B' },
-        { title: 'Self-Contained Unit — C3',    description: 'Private bathroom & kitchenette',   price: 22000, location: 'Block C' },
+        { name: 'Ugali Beef', description: 'Ugali with beef stew and vegetables', price: 150, category: 'Lunch' },
+        { name: 'Chapati Beans', description: 'Two chapatis with bean stew', price: 100,  category: 'Lunch' },
+        { name: 'Tea & Mandazi', description: 'Hot tea with two mandazis',   price: 50, category: 'Breakfast' },
       ],
     });
-    console.log('✅  Sample properties seeded');
+    console.log('✅  Sample menu items seeded');
   }
 
-  // ── Sample marketplace items (only if empty) ───────────────────────────────
-  const mktCount = await prisma.marketplaceItem.count();
-  if (mktCount === 0) {
-    await prisma.marketplaceItem.createMany({
-      data: [
-        { title: 'Study Desk',        description: 'Wooden desk, good condition', price: 3500 },
-        { title: 'Mini Fridge',       description: '40L, barely used',            price: 7000 },
-        { title: 'Textbook Bundle',   description: 'Year 2 Engineering set',       price: 1200 },
-      ],
+  // ── Sample staff accounts (finance & restaurant) ───────────────────────────
+  const staffAccounts = [
+    { email: 'finance@smartpos.com', password: 'Finance@12345', name: 'Finance Officer', role: 'finance' },
+    { email: 'restaurant@smartpos.com', password: 'Restaurant@12345', name: 'Cafeteria Staff', role: 'restaurant' },
+  ];
+
+  for (const acct of staffAccounts) {
+    const exists = await prisma.user.findUnique({ where: { email: acct.email } });
+    if (!exists) {
+      const hashed = await bcrypt.hash(acct.password, 10);
+      await prisma.user.create({
+        data: { name: acct.name, email: acct.email, password: hashed, role: acct.role, status: 'approved' },
+      });
+      console.log(`✅  ${acct.role} user created — email: ${acct.email}  password: ${acct.password}`);
+    }
+  }
+
+  // ── Sample parent & student ────────────────────────────────────────────────
+  const parentEmail = 'parent@smartpos.com';
+  let parent = await prisma.parent.findUnique({ where: { email: parentEmail } });
+  if (!parent) {
+    const hashed = await bcrypt.hash('Parent@12345', 10);
+    parent = await prisma.parent.create({
+      data: { name: 'Jane Parent', email: parentEmail, phone: '0712345678', password: hashed },
     });
-    console.log('✅  Sample marketplace items seeded');
+    console.log('✅  Parent created — email: parent@smartpos.com  password: Parent@12345');
+  }
+
+  const studentRegNo = 'STU001';
+  const existingStudent = await prisma.student.findUnique({ where: { regNo: studentRegNo } });
+  if (!existingStudent) {
+    const hashed = await bcrypt.hash('Student@12345', 10);
+    await prisma.student.create({
+      data: {
+        name: 'John Student',
+        regNo: studentRegNo,
+        course: 'Computer Science',
+        email: 'student@smartpos.com',
+        phone: '0722334455',
+        gender: 'Male',
+        year: 2,
+        password: hashed,
+        walletBalance: 500,
+        parentId: parent.id,
+      },
+    });
+    console.log('✅  Student created — regNo: STU001  password: Student@12345  wallet: KES 500');
   }
 
   console.log('\n🎉  Seed complete!\n');

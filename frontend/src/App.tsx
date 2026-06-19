@@ -7,8 +7,7 @@ import StudentNavbar from "@/components/StudentNavbar";
 import UserSidebar from "@/components/UserSidebar";
 import UserNavbar from "@/components/UserNavbar";
 import Dashboard from "@/pages/Dashboard";
-import Students from "@/pages/students";
-import AddStudent from "@/pages/AddStudent";
+import ManageUsers from "@/pages/admin/ManageUsers";
 import Settings from "@/pages/settings";
 import Register from "@/pages/Register";
 import PendingApprovals from "@/pages/PendingApprovals";
@@ -21,25 +20,30 @@ import StudentFees from "@/pages/StudentFees";
 import PayWithMpesa from "@/pages/paymyfees";
 import Reports from "@/pages/Reports";
 import AuditLogs from "@/pages/AuditLogs";
-import SearchPage from "@/pages/housing/SearchPage";
-import PropertyDetailPage from "@/pages/housing/PropertyDetailPage";
-import BookingPage from "@/pages/housing/BookingPage";
-import MarketplacePage from "@/pages/marketplace/MarketplacePage";
-import UserDashboard from "@/pages/UserDashboard";
+import UserProfile from "@/pages/UserProfile";
+import ParentDashboard from "@/pages/parent/ParentDashboard";
+import PosTerminal from "@/pages/restaurant/PosTerminal";
+import MenuManagement from "@/pages/restaurant/MenuManagement";
+import InventoryPage from "@/pages/restaurant/InventoryPage";
+import FinanceDashboard from "@/pages/finance/FinanceDashboard";
+import ExpensesPage from "@/pages/finance/ExpensesPage";
+import ReceiptsPage from "@/pages/finance/ReceiptsPage";
+
+const USER_ROLES = ["parent", "finance", "restaurant"];
 
 function AppShell() {
   const location = useLocation();
-  const authPages = ["/login", "/register", "/forgot-password"];
+  const authPages = ["/login", "/register"];
   const isAuthPage = authPages.includes(location.pathname);
   const role = (localStorage.getItem("role") || "admin").toLowerCase();
 
-  let SidebarComponent: any = AdminSidebar;
-  let NavbarComponent: any = AdminNavbar;
+  let SidebarComponent: React.FC = AdminSidebar;
+  let NavbarComponent: React.FC = AdminNavbar;
 
   if (role === "student") {
     SidebarComponent = StudentSidebar;
     NavbarComponent = StudentNavbar;
-  } else if (["tenant", "alumni", "owner", "hostel", "manager", "provider", "merchant"].includes(role)) {
+  } else if (USER_ROLES.includes(role)) {
     SidebarComponent = UserSidebar;
     NavbarComponent = UserNavbar;
   }
@@ -52,32 +56,39 @@ function AppShell() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/user-dashboard" element={<UserDashboard />} />
-          <Route path="/tenant-dashboard" element={<UserDashboard />} />
-          <Route path="/alumni-dashboard" element={<UserDashboard />} />
-          <Route path="/owner-dashboard" element={<UserDashboard />} />
-          <Route path="/hostel-dashboard" element={<UserDashboard />} />
-          <Route path="/manager-dashboard" element={<UserDashboard />} />
-          <Route path="/provider-dashboard" element={<UserDashboard />} />
-          <Route path="/merchant-dashboard" element={<UserDashboard />} />
-          <Route path="/pending-approvals" element={<ProtectedRoute><PendingApprovals /></ProtectedRoute>} />
-          <Route path="/student-dashboard" element={<ProtectedRoute><StudentDashboard /></ProtectedRoute>} />
 
+          {/* Admin */}
+          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/manage-users" element={<ProtectedRoute><ManageUsers /></ProtectedRoute>} />
+          <Route path="/students" element={<ProtectedRoute><ManageUsers /></ProtectedRoute>} />
+          <Route path="/add-student" element={<ProtectedRoute><ManageUsers /></ProtectedRoute>} />
+          <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+          <Route path="/audit-logs" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
+          <Route path="/pending-approvals" element={<ProtectedRoute><PendingApprovals /></ProtectedRoute>} />
+          <Route path="/admin-profile" element={<ProtectedRoute><AdminProfile /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+
+          {/* Student */}
+          <Route path="/student-dashboard" element={<ProtectedRoute><StudentDashboard /></ProtectedRoute>} />
+          <Route path="/student-profile" element={<ProtectedRoute><StudentProfile /></ProtectedRoute>} />
           <Route path="/student-fees" element={<ProtectedRoute><StudentFees /></ProtectedRoute>} />
           <Route path="/paymyfees" element={<ProtectedRoute><PayWithMpesa /></ProtectedRoute>} />
 
-          <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-          <Route path="/audit-logs" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
-          <Route path="/admin-profile" element={<ProtectedRoute><AdminProfile /></ProtectedRoute>} />
-          <Route path="/student-profile" element={<ProtectedRoute><StudentProfile /></ProtectedRoute>} />
-          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/students" element={<ProtectedRoute><Students /></ProtectedRoute>} />
-          <Route path="/add-student" element={<ProtectedRoute><AddStudent /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-          <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
-          <Route path="/property/:id" element={<ProtectedRoute><PropertyDetailPage /></ProtectedRoute>} />
-          <Route path="/book/:id" element={<ProtectedRoute><BookingPage /></ProtectedRoute>} />
-          <Route path="/marketplace" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
+          {/* Parent */}
+          <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboard /></ProtectedRoute>} />
+
+          {/* Restaurant */}
+          <Route path="/pos" element={<ProtectedRoute><PosTerminal /></ProtectedRoute>} />
+          <Route path="/menu-management" element={<ProtectedRoute><MenuManagement /></ProtectedRoute>} />
+          <Route path="/inventory" element={<ProtectedRoute><InventoryPage /></ProtectedRoute>} />
+
+          {/* Finance */}
+          <Route path="/finance" element={<ProtectedRoute><FinanceDashboard /></ProtectedRoute>} />
+          <Route path="/expenses" element={<ProtectedRoute><ExpensesPage /></ProtectedRoute>} />
+          <Route path="/receipts" element={<ProtectedRoute><ReceiptsPage /></ProtectedRoute>} />
+
+          {/* Shared */}
+          <Route path="/user-profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
         </Routes>
       </div>
     </div>

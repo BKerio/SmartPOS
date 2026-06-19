@@ -22,29 +22,51 @@ model Admin {
   @@map("admins")
 }
 
-model Student {
-  id        String   @id @default(cuid())
+model Parent {
+  id        String    @id @default(cuid())
   name      String
-  regNo     String   @unique
-  course    String
-  email     String   @unique
-  phone     String
-  gender    String
-  year      Int
+  email     String    @unique
+  phone     String?
   password  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  students  Student[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("parents")
+}
+
+model Student {
+  id            String              @id @default(cuid())
+  name          String
+  regNo         String              @unique
+  course        String
+  email         String              @unique
+  phone         String
+  gender        String
+  year          Int
+  password      String
+  
+  // School Feeding & Wallet
+  walletBalance Float               @default(0)
+  parentId      String?
+  parent        Parent?             @relation(fields: [parentId], references: [id])
+  
+  transactions  WalletTransaction[]
+  receipts      PosTransaction[]
+
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   @@map("students")
 }
 
+// System Users (Finance Officers, Restaurant Staff, etc.)
 model User {
   id              String   @id @default(cuid())
   name            String
   email           String   @unique
   phone           String?
-  role            String
-  businessName    String?
+  role            String   // finance, restaurant, admin, etc.
   status          String   @default("pending")
   password        String
   rejectionReason String?
@@ -54,29 +76,125 @@ model User {
   @@map("users")
 }
 
-model Property {
+model WalletTransaction {
   id          String   @id @default(cuid())
-  title       String
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id])
+  amount      Float    // Positive for top-ups, Negative for purchases
+  type        String   // "deposit", "purchase", "refund"
+  reference   String?  // e.g. receipt ID or M-Pesa code
   description String?
-  price       Float    @default(0)
-  location    String?
-  imageUrl    String?
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
 
-  @@map("properties")
+  @@map("wallet_transactions")
 }
 
-model MarketplaceItem {
+model MenuItem {
   id          String   @id @default(cuid())
-  title       String
+  name        String
   description String?
   price       Float    @default(0)
+  category    String   // Breakfast, Lunch, Drink, Snack
   imageUrl    String?
+  isAvailable Boolean  @default(true)
+  
+  receiptItems PosTransactionItem[]
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@map("marketplace_items")
+  @@map("menu_items")
+}
+
+model PosTransaction {
+  id          String   @id @default(cuid())
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id])
+  cashierId   String   // The User (restaurant staff) who processed it
+  totalAmount Float
+  status      String   @default("completed") // completed, voided
+  
+  items       PosTransactionItem[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("pos_transactions")
+}
+
+model PosTransactionItem {
+  id            String         @id @default(cuid())
+  transactionId String
+  transaction   PosTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  menuItemId    String
+  menuItem      MenuItem       @relation(fields: [menuItemId], references: [id])
+  quantity      Int
+  price         Float          // Price at the time of purchase
+
+  @@map("pos_transaction_items")
+}
+
+model Supplier {
+  id            String          @id @default(cuid())
+  name          String
+  contactPerson String?
+  email         String?
+  phone         String?
+  address       String?
+  
+  stockMovements StockMovement[]
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@map("suppliers")
+}
+
+model InventoryItem {
+  id           String          @id @default(cuid())
+  name         String
+  category     String          // Grains, Vegetables, Meat, Dairy
+  unit         String          // kg, liters, pieces
+  stockLevel   Float           @default(0)
+  reorderLevel Float           @default(0)
+  unitCost     Float           @default(0)
+  
+  movements    StockMovement[]
+
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@map("inventory_items")
+}
+
+model StockMovement {
+  id              String        @id @default(cuid())
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  type            String        // "IN", "OUT"
+  quantity        Float
+  reason          String        // "purchase", "usage", "spoilage"
+  supplierId      String?
+  supplier        Supplier?     @relation(fields: [supplierId], references: [id])
+  reference       String?       // Invoice number
+  notes           String?
+  userId          String        // User who recorded it
+  createdAt       DateTime      @default(now())
+
+  @@map("stock_movements")
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  category    String   // Salaries, Utilities, Maintenance, Ingredients
+  amount      Float
+  description String
+  date        DateTime @default(now())
+  recordedBy  String   // User ID
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("expenses")
 }
 
 model AuditEvent {
