@@ -1,4 +1,4 @@
-import { GraduationCap, ChevronLeft, ChevronRight, LogOut, User, Wallet, Smartphone } from "lucide-react";
+import { UtensilsCrossed, ChevronLeft, ChevronRight, LogOut, User, Wallet, Smartphone } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "@/services/toast";
@@ -8,11 +8,14 @@ const StudentSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const menuItems = [
-    { name: "Dashboard", icon: GraduationCap, path: "/student-dashboard" },
+    { name: "Order Meals", icon: UtensilsCrossed, path: "/student/order" },
     { name: "My Wallet", icon: Wallet, path: "/student-fees" },
     { name: "Top Up (M-Pesa)", icon: Smartphone, path: "/paymyfees" },
     { name: "Profile", icon: User, path: "/student-profile" },
   ];
+
+  const isActive = (path: string) =>
+    location.pathname === path || (path === "/student/order" && location.pathname === "/student-dashboard");
 
   const handleLogout = async () => {
     const confirmed = await toast.confirm("Logout?", {
@@ -37,7 +40,7 @@ const StudentSidebar = () => {
       <nav className="flex-1 mt-4">
         {menuItems.map(({ name, icon: Icon, path }) => (
           <Link key={name} to={path}
-            className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-800 transition ${location.pathname === path ? "bg-gray-800" : ""}`}>
+            className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-800 transition ${isActive(path) ? "bg-gray-800" : ""}`}>
             <Icon size={20} />
             {!collapsed && <span>{name}</span>}
           </Link>

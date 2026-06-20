@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import AdminSidebar from "@/components/AdminSidebar";
 import StudentSidebar from "@/components/StudentSidebar";
 import AdminNavbar from "@/components/AdminNavbar";
@@ -13,7 +13,7 @@ import Register from "@/pages/Register";
 import PendingApprovals from "@/pages/PendingApprovals";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Login from "@/pages/Login";
-import StudentDashboard from "@/pages/StudentDashboard";
+import StudentOrder from "@/pages/student/StudentOrder";
 import AdminProfile from "@/pages/AdminProfile";
 import StudentProfile from "@/pages/StudentProfile";
 import StudentFees from "@/pages/StudentFees";
@@ -69,7 +69,8 @@ function AppShell() {
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
 
           {/* Student */}
-          <Route path="/student-dashboard" element={<ProtectedRoute><StudentDashboard /></ProtectedRoute>} />
+          <Route path="/student/order" element={<ProtectedRoute><StudentOrder /></ProtectedRoute>} />
+          <Route path="/student-dashboard" element={<ProtectedRoute><Navigate to="/student/order" replace /></ProtectedRoute>} />
           <Route path="/student-profile" element={<ProtectedRoute><StudentProfile /></ProtectedRoute>} />
           <Route path="/student-fees" element={<ProtectedRoute><StudentFees /></ProtectedRoute>} />
           <Route path="/paymyfees" element={<ProtectedRoute><PayWithMpesa /></ProtectedRoute>} />
