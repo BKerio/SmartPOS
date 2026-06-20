@@ -54,7 +54,7 @@ function AppShell() {
       <div className="flex-1 flex flex-col h-screen overflow-y-auto">
         {!isAuthPage && <NavbarComponent />}
         <Routes>
-          <Route path="/logikn" element={<Login />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
 
           {/* Admin */}
