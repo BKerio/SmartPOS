@@ -23,7 +23,7 @@ const UserProfile = () => {
   }, [role]);
 
   const fields = [
-    { label: "Namre", value: profile.name || name },
+    { label: "Name", value: profile.name || name },
     { label: "Email", value: profile.email || "—" },
     { label: "Role", value: role.charAt(0).toUpperCase() + role.slice(1) },
     ...(profile.regNo ? [{ label: "Registration No", value: profile.regNo }] : []),
