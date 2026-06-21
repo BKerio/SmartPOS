@@ -50,6 +50,6 @@ app.use((_req: Request, res: Response) => {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`\n🚀  SmartPOS backend running on http://localhost:${PORT}`);
-  console.log(`📡  Accepting requests from: ${FRONTEND_URL}\n`);
+  console.log(`\nSmartPOS backend running on http://localhost:${PORT}`);
+  console.log(`Accepting Origin(CORS) from: ${FRONTEND_URL}\n`);
 });

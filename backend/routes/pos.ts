@@ -133,6 +133,128 @@ router.post('/sale', ensureAuthenticated, async (req: Request, res: Response): P
   }
 });
 
+// ─── POST /api/pos/student-order ──────────────────────────────────────────────
+// Student self-checkout: wallet first, M-Pesa simulated top-up for any shortfall
+router.post('/student-order', ensureAuthenticated, async (req: Request, res: Response): Promise<void> => {
+  if (req.user!.role !== 'student') {
+    res.status(403).json({ message: 'Student access only' });
+    return;
+  }
+
+  const { items, phone } = req.body;
+
+  if (!phone || !Array.isArray(items) || items.length === 0) {
+    res.status(422).json({ message: 'M-Pesa phone number and cart items are required' });
+    return;
+  }
+  if (!/^(01|07)\d{8}$/.test(phone) && !/^254\d{9}$/.test(phone)) {
+    res.status(422).json({ message: 'Enter a valid Kenyan phone number' });
+    return;
+  }
+
+  const studentId = req.user!.id;
+  const mpesaRef = `MPESA-${Date.now()}`;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const student = await tx.student.findUnique({ where: { id: studentId } });
+      if (!student) throw new Error('STUDENT_NOT_FOUND');
+
+      const itemIds = items.map((i: { menuItemId: string }) => i.menuItemId);
+      const menuItems = await tx.menuItem.findMany({ where: { id: { in: itemIds } } });
+
+      let totalAmount = 0;
+      const orderLines = items.map((cartItem: { menuItemId: string; quantity: number }) => {
+        const quantity = Math.floor(Number(cartItem.quantity));
+        const menuItem = menuItems.find((m) => m.id === cartItem.menuItemId);
+
+        if (!menuItem) throw new Error(`ITEM_NOT_FOUND:${cartItem.menuItemId}`);
+        if (!menuItem.isAvailable) throw new Error(`ITEM_UNAVAILABLE:${menuItem.name}`);
+        if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('INVALID_QUANTITY');
+
+        totalAmount += menuItem.price * quantity;
+        return { menuItemId: menuItem.id, quantity, price: menuItem.price };
+      });
+
+      const mpesaTopUp = Math.max(0, totalAmount - student.walletBalance);
+
+      if (mpesaTopUp > 0) {
+        await tx.student.update({
+          where: { id: studentId },
+          data: { walletBalance: { increment: mpesaTopUp } },
+        });
+        await tx.walletTransaction.create({
+          data: {
+            studentId,
+            amount: mpesaTopUp,
+            type: 'deposit',
+            reference: mpesaRef,
+            description: `M-Pesa payment from ${phone} for meal order`,
+          },
+        });
+      }
+
+      const posTx = await tx.posTransaction.create({
+        data: {
+          studentId,
+          cashierId: 'self-service',
+          totalAmount,
+          items: { create: orderLines },
+        },
+        include: { items: { include: { menuItem: { select: { name: true } } } } },
+      });
+
+      const updatedStudent = await tx.student.update({
+        where: { id: studentId },
+        data: { walletBalance: { decrement: totalAmount } },
+        select: { id: true, name: true, regNo: true, walletBalance: true },
+      });
+
+      await tx.walletTransaction.create({
+        data: {
+          studentId,
+          amount: -totalAmount,
+          type: 'purchase',
+          reference: posTx.id,
+          description: `Meal order (Receipt: ${posTx.id.slice(-6)})`,
+        },
+      });
+
+      return { student: updatedStudent, posTx, totalAmount, mpesaTopUp, mpesaRef };
+    });
+
+    await logAuditEvent({
+      eventType: 'student_order',
+      userType: 'student',
+      userId: req.user!.id,
+      userName: req.user!.name,
+      action: 'Student Meal Order',
+      description: `Ordered meals worth KES ${result.totalAmount}${result.mpesaTopUp > 0 ? ` (M-Pesa: KES ${result.mpesaTopUp})` : ''}`,
+      metadata: { receiptId: result.posTx.id, mpesaRef: result.mpesaRef, phone },
+      ipAddress: req.ip,
+    });
+
+    res.status(201).json({
+      message: 'Order placed successfully',
+      receipt: result.posTx,
+      newBalance: result.student.walletBalance,
+      mpesaCharged: result.mpesaTopUp,
+      mpesaReference: result.mpesaTopUp > 0 ? result.mpesaRef : null,
+    });
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    console.error('Student order error:', message);
+
+    const mapped = mapSaleError(message);
+    if (mapped) {
+      res.status(mapped.status).json(mapped.body);
+      return;
+    }
+
+    res.status(500).json({ message: 'Failed to place order' });
+  }
+});
+
 // ─── GET /api/pos/receipts/me ─────────────────────────────────────────────────
 router.get('/receipts/me', ensureAuthenticated, async (req: Request, res: Response): Promise<void> => {
   if (req.user!.role !== 'student') {
