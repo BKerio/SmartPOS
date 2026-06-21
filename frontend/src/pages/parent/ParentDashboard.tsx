@@ -8,7 +8,6 @@ interface Student {
   id: string;
   name: string;
   regNo: string;
-  course: string;
   walletBalance: number;
   transactions: { id: string; amount: number; type: string; description?: string; createdAt: string }[];
 }
@@ -89,7 +88,7 @@ const ParentDashboard = () => {
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="text-lg font-bold text-[#0A1F44]">{s.name}</h3>
-                  <p className="text-sm text-gray-500">{s.regNo} · {s.course}</p>
+                  <p className="text-sm text-gray-500">{s.regNo}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-gray-500">Wallet Balance</p>

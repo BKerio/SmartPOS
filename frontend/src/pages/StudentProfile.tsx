@@ -6,12 +6,9 @@ import { Save } from "lucide-react";
 const StudentProfile: React.FC = () => {
   const [form, setForm] = useState({
     name: "",
-    email: "",
     phone: "",
     regNo: "",
     gender: "male",
-    course: "",
-    year: "",
     password: "",
   });
 
@@ -22,12 +19,9 @@ const StudentProfile: React.FC = () => {
       });
       setForm({
         name: data.name || "",
-        email: data.email || "",
         phone: data.phone || "",
         regNo: data.regNo || "",
         gender: data.gender || "male",
-        course: data.course || "",
-        year: String(data.year || ""),
         password: "",
       });
     } catch (error: any) {
@@ -63,7 +57,6 @@ const StudentProfile: React.FC = () => {
       </h2>
 
       <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {/* Name */}
         <div>
           <label className="text-sm text-gray-600 mb-1 block">Full Name</label>
           <input
@@ -74,18 +67,6 @@ const StudentProfile: React.FC = () => {
           />
         </div>
 
-        {/* Email (read-only) */}
-        <div>
-          <label className="text-sm text-gray-600 mb-1 block">Email</label>
-          <input
-            type="email"
-            value={form.email}
-            readOnly
-            className="w-full bg-gray-100 border border-gray-300 p-2.5 rounded-md text-gray-500 cursor-not-allowed"
-          />
-        </div>
-
-        {/* Phone */}
         <div>
           <label className="text-sm text-gray-600 mb-1 block">Phone</label>
           <input
@@ -96,11 +77,8 @@ const StudentProfile: React.FC = () => {
           />
         </div>
 
-        {/* Admission Number (read-only) */}
         <div>
-          <label className="text-sm text-gray-600 mb-1 block">
-            Admission Number
-          </label>
+          <label className="text-sm text-gray-600 mb-1 block">Admission Number</label>
           <input
             value={form.regNo}
             readOnly
@@ -108,7 +86,6 @@ const StudentProfile: React.FC = () => {
           />
         </div>
 
-        {/* Gender (Dropdown) */}
         <div>
           <label className="text-sm text-gray-600 mb-1 block">Gender</label>
           <select
@@ -122,34 +99,8 @@ const StudentProfile: React.FC = () => {
           </select>
         </div>
 
-        {/* Course */}
-        <div>
-          <label className="text-sm text-gray-600 mb-1 block">Course</label>
-          <input
-            value={form.course}
-            onChange={(e) => setForm({ ...form, course: e.target.value })}
-            className="w-full border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:outline-none p-2.5 rounded-md"
-            placeholder="Enter course name"
-          />
-        </div>
-
-        {/* Year */}
-        <div>
-          <label className="text-sm text-gray-600 mb-1 block">Year</label>
-          <input
-            type="number"
-            value={form.year}
-            onChange={(e) => setForm({ ...form, year: e.target.value })}
-            className="w-full border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:outline-none p-2.5 rounded-md"
-            placeholder="Year of study"
-          />
-        </div>
-
-        {/* Password */}
         <div className="sm:col-span-2">
-          <label className="text-sm text-gray-600 mb-1 block">
-            New Password (optional)
-          </label>
+          <label className="text-sm text-gray-600 mb-1 block">New Password (optional)</label>
           <input
             type="password"
             value={form.password}
@@ -159,7 +110,6 @@ const StudentProfile: React.FC = () => {
           />
         </div>
 
-        {/* Save Button */}
         <button
           type="submit"
           className="sm:col-span-2 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-md transition"

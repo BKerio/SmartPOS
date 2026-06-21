@@ -3,11 +3,68 @@ import bcrypt from 'bcrypt';
 import prisma from '@/services/prisma';
 import { signToken, ensureAdmin, ensureAuthenticated } from '@/middlewares/auth';
 import { logAuditEvent } from '@/services/audit';
+import {
+  assertFingerprintUnique,
+  checkFingerprintUnique,
+  fingerprintEnrollmentData,
+  FingerprintDuplicateError,
+} from '@/services/fingerprint';
 
 const router = Router();
 
 /** Map prisma student → frontend shape (uses _id for MongoDB compat) */
-const fmt = (s: any) => ({ ...s, _id: s.id });
+const fmt = (s: any) => {
+  const { fingerprintTemplate, ...rest } = s;
+  return {
+    ...rest,
+    _id: s.id,
+    hasFingerprint: Boolean(fingerprintTemplate),
+  };
+};
+
+const studentListSelect = {
+  id: true, name: true, regNo: true, phone: true,
+  gender: true, walletBalance: true, parentId: true, createdAt: true,
+  fingerprintTemplate: true, fingerprintEnrolledAt: true,
+  parent: { select: { id: true, name: true, email: true } },
+} as const;
+
+const studentDetailSelect = {
+  ...studentListSelect,
+} as const;
+
+const parseFingerprintTemplate = (value: unknown): string | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (typeof value !== 'string') throw new Error('INVALID_FINGERPRINT');
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const buf = Buffer.from(trimmed, 'base64');
+  if (buf.length < 32) throw new Error('INVALID_FINGERPRINT');
+  return trimmed;
+};
+
+// ─── POST /api/students/check-fingerprint ─────────────────────────────────────
+router.post('/check-fingerprint', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  const { fingerprintTemplate, excludeStudentId } = req.body;
+  try {
+    const template = parseFingerprintTemplate(fingerprintTemplate);
+    if (!template) {
+      return res.status(422).json({ message: 'fingerprintTemplate is required' });
+    }
+    const result = await checkFingerprintUnique(template, excludeStudentId || undefined);
+    if (!result.unique) {
+      return res.status(409).json({
+        unique: false,
+        message: result.message,
+        matchedStudent: result.matchedStudent,
+      });
+    }
+    return res.json({ unique: true });
+  } catch {
+    return res.status(422).json({ message: 'Invalid fingerprint template' });
+  }
+});
 
 // ─── POST /api/students/login ─────────────────────────────────────────────────
 router.post('/login', async (req: Request, res: Response): Promise<any> => {
@@ -32,7 +89,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
       userType: 'student',
       userId: student.id,
       userName: student.name,
-      userEmail: student.email,
+      userEmail: undefined,
       action: 'Student login',
       description: `Student ${student.regNo} logged in`,
       ipAddress: req.ip,
@@ -51,11 +108,7 @@ router.get('/', ensureAdmin, async (_req: Request, res: Response): Promise<any> 
   try {
     const students = await prisma.student.findMany({
       orderBy: { createdAt: 'desc' },
-      select: {
-        id: true, name: true, regNo: true, course: true, email: true, phone: true,
-        gender: true, year: true, walletBalance: true, parentId: true, createdAt: true,
-        parent: { select: { id: true, name: true, email: true } },
-      },
+      select: studentListSelect,
     });
     return res.json(students.map(fmt));
   } catch (error) {
@@ -65,30 +118,43 @@ router.get('/', ensureAdmin, async (_req: Request, res: Response): Promise<any> 
 
 // ─── POST /api/students ───────────────────────────────────────────────────────
 router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
-  const { name, regNo, course, email, phone, gender, year, password, parentId } = req.body;
-  if (!name || !regNo || !course || !email || !phone || !gender || !year || !password) {
-    return res.status(422).json({ message: 'All fields are required' });
+  const { name, regNo, phone, gender, password, parentId, fingerprintTemplate } = req.body;
+  if (!name || !regNo || !phone || !gender || !password) {
+    return res.status(422).json({ message: 'Name, registration number, phone, gender, and password are required' });
   }
   try {
-    const existing = await prisma.student.findFirst({
-      where: { OR: [{ regNo }, { email }] },
-    });
+    const existing = await prisma.student.findUnique({ where: { regNo } });
     if (existing) {
-      return res.status(409).json({ message: 'A student with this registration number or email already exists' });
+      return res.status(409).json({ message: 'A student with this registration number already exists' });
+    }
+
+    let parsedFingerprint: string | null = null;
+    try {
+      const parsed = parseFingerprintTemplate(fingerprintTemplate);
+      if (parsed) parsedFingerprint = parsed;
+    } catch {
+      return res.status(422).json({ message: 'Invalid fingerprint template' });
+    }
+
+    if (parsedFingerprint) {
+      try {
+        await assertFingerprintUnique(parsedFingerprint);
+      } catch (err) {
+        if (err instanceof FingerprintDuplicateError) {
+          return res.status(409).json({ message: err.message, matchedStudent: err.matchedStudent });
+        }
+        throw err;
+      }
     }
 
     const hashed = await bcrypt.hash(password, 10);
     const student = await prisma.student.create({
       data: {
-        name, regNo, course, email, phone, gender,
-        year: Number(year), password: hashed,
+        name, regNo, phone, gender, password: hashed,
         parentId: parentId || null,
+        ...fingerprintEnrollmentData(parsedFingerprint),
       },
-      select: {
-        id: true, name: true, regNo: true, course: true, email: true, phone: true,
-        gender: true, year: true, walletBalance: true, parentId: true, createdAt: true,
-        parent: { select: { id: true, name: true, email: true } },
-      },
+      select: studentDetailSelect,
     });
 
     await logAuditEvent({
@@ -97,8 +163,8 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       userId: req.user?.id,
       userName: req.user?.name || 'Admin',
       action: 'Create Student',
-      description: `Created student ${name} (${regNo})`,
-      metadata: { regNo, email },
+      description: `Created student ${name} (${regNo})${parsedFingerprint ? ' with fingerprint' : ''}`,
+      metadata: { regNo, hasFingerprint: Boolean(parsedFingerprint) },
       ipAddress: req.ip,
     });
 
@@ -118,8 +184,8 @@ router.get('/me', ensureAuthenticated, async (req: Request, res: Response): Prom
     const student = await prisma.student.findUnique({
       where: { id: req.user!.id },
       select: {
-        id: true, name: true, regNo: true, course: true, email: true,
-        phone: true, gender: true, year: true, walletBalance: true, createdAt: true,
+        id: true, name: true, regNo: true,
+        phone: true, gender: true, walletBalance: true, createdAt: true,
       },
     });
     if (!student) return res.status(404).json({ message: 'Student not found' });
@@ -137,7 +203,7 @@ router.get('/lookup/:regNo', ensureAuthenticated, async (req: Request, res: Resp
   try {
     const student = await prisma.student.findUnique({
       where: { regNo: req.params.regNo as string },
-      select: { id: true, name: true, regNo: true, course: true, walletBalance: true },
+      select: { id: true, name: true, regNo: true, walletBalance: true },
     });
     if (!student) return res.status(404).json({ message: 'Student not found' });
     return res.json(fmt(student));
@@ -146,12 +212,84 @@ router.get('/lookup/:regNo', ensureAuthenticated, async (req: Request, res: Resp
   }
 });
 
-// ─── GET /api/students/:id ────────────────────────────────────────────────────
+// ─── PUT /api/students/:id/fingerprint ────────────────────────────────────────
+router.put('/:id/fingerprint', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  const { fingerprintTemplate } = req.body;
+  try {
+    let parsed: string;
+    try {
+      const value = parseFingerprintTemplate(fingerprintTemplate);
+      if (!value) {
+        return res.status(422).json({ message: 'fingerprintTemplate is required' });
+      }
+      parsed = value;
+    } catch {
+      return res.status(422).json({ message: 'Invalid fingerprint template' });
+    }
+
+    try {
+      await assertFingerprintUnique(parsed, req.params.id as string);
+    } catch (err) {
+      if (err instanceof FingerprintDuplicateError) {
+        return res.status(409).json({ message: err.message, matchedStudent: err.matchedStudent });
+      }
+      throw err;
+    }
+
+    const student = await prisma.student.update({
+      where: { id: req.params.id as string },
+      data: fingerprintEnrollmentData(parsed),
+      select: studentDetailSelect,
+    });
+
+    await logAuditEvent({
+      eventType: 'fingerprint_enrolled',
+      userType: 'admin',
+      userId: req.user?.id,
+      userName: req.user?.name || 'Admin',
+      action: 'Enroll Fingerprint',
+      description: `Enrolled fingerprint for ${student.name} (${student.regNo})`,
+      metadata: { studentId: student.id, regNo: student.regNo },
+      ipAddress: req.ip,
+    });
+
+    return res.json(fmt(student));
+  } catch (error: any) {
+    if (error.code === 'P2025') return res.status(404).json({ message: 'Student not found' });
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── DELETE /api/students/:id/fingerprint ─────────────────────────────────────
+router.delete('/:id/fingerprint', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  try {
+    const student = await prisma.student.update({
+      where: { id: req.params.id as string },
+      data: fingerprintEnrollmentData(null),
+      select: studentDetailSelect,
+    });
+
+    await logAuditEvent({
+      eventType: 'fingerprint_removed',
+      userType: 'admin',
+      userId: req.user?.id,
+      userName: req.user?.name || 'Admin',
+      action: 'Remove Fingerprint',
+      description: `Removed fingerprint for ${student.name} (${student.regNo})`,
+      ipAddress: req.ip,
+    });
+
+    return res.json(fmt(student));
+  } catch (error: any) {
+    if (error.code === 'P2025') return res.status(404).json({ message: 'Student not found' });
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
 router.get('/:id', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
   try {
     const student = await prisma.student.findUnique({
       where: { id: (req.params.id as string) },
-      select: { id: true, name: true, regNo: true, course: true, email: true, phone: true, gender: true, year: true, createdAt: true },
+      select: { id: true, name: true, regNo: true, phone: true, gender: true, createdAt: true },
     });
     if (!student) return res.status(404).json({ message: 'Student not found' });
     return res.json(fmt(student));
@@ -162,32 +300,38 @@ router.get('/:id', ensureAuthenticated, async (req: Request, res: Response): Pro
 
 // ─── PUT /api/students/:id ────────────────────────────────────────────────────
 router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
-  const { name, course, email, phone, gender, year, password, parentId } = req.body;
+  const { name, phone, gender, password, parentId, fingerprintTemplate } = req.body;
   try {
-    const existing = await prisma.student.findFirst({
-      where: {
-        AND: [
-          { id: { not: (req.params.id as string) } },
-          { OR: [{ email }] },
-        ],
-      },
-    });
-    if (existing) {
-      return res.status(409).json({ message: 'Another student already uses that email' });
-    }
-
-    const data: any = { name, course, email, phone, gender, year: year ? Number(year) : undefined };
+    const data: any = { name, phone, gender };
     if (password) data.password = await bcrypt.hash(password, 10);
     if (parentId !== undefined) data.parentId = parentId || null;
+
+    if (fingerprintTemplate !== undefined) {
+      try {
+        const parsed = parseFingerprintTemplate(fingerprintTemplate);
+        if (parsed === undefined) {
+          return res.status(422).json({ message: 'Invalid fingerprint template' });
+        }
+        if (parsed) {
+          try {
+            await assertFingerprintUnique(parsed, req.params.id as string);
+          } catch (err) {
+            if (err instanceof FingerprintDuplicateError) {
+              return res.status(409).json({ message: err.message, matchedStudent: err.matchedStudent });
+            }
+            throw err;
+          }
+        }
+        Object.assign(data, fingerprintEnrollmentData(parsed));
+      } catch {
+        return res.status(422).json({ message: 'Invalid fingerprint template' });
+      }
+    }
 
     const student = await prisma.student.update({
       where: { id: (req.params.id as string) },
       data,
-      select: {
-        id: true, name: true, regNo: true, course: true, email: true, phone: true,
-        gender: true, year: true, walletBalance: true, parentId: true, createdAt: true,
-        parent: { select: { id: true, name: true, email: true } },
-      },
+      select: studentDetailSelect,
     });
 
     await logAuditEvent({

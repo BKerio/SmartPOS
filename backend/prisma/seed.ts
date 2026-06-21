@@ -70,11 +70,8 @@ async function seed() {
       data: {
         name: 'John Student',
         regNo: studentRegNo,
-        course: 'Computer Science',
-        email: 'student@smartpos.com',
         phone: '0722334455',
         gender: 'Male',
-        year: 2,
         password: hashed,
         walletBalance: 500,
         parentId: parent.id,

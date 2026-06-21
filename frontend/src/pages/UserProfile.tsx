@@ -24,11 +24,10 @@ const UserProfile = () => {
 
   const fields = [
     { label: "Name", value: profile.name || name },
-    { label: "Email", value: profile.email || "—" },
+    ...(profile.email ? [{ label: "Email", value: profile.email }] : []),
     { label: "Role", value: role.charAt(0).toUpperCase() + role.slice(1) },
     ...(profile.regNo ? [{ label: "Registration No", value: profile.regNo }] : []),
     ...(profile.phone ? [{ label: "Phone", value: profile.phone }] : []),
-    ...(profile.course ? [{ label: "Course", value: profile.course }] : []),
     ...(profile.walletBalance != null ? [{ label: "Wallet Balance", value: `KES ${Number(profile.walletBalance).toLocaleString()}` }] : []),
   ];
 

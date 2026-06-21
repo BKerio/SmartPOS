@@ -1,132 +1,359 @@
-# SmartPOS - School Feeding & Management System
+# SmartPOS — School Feeding & Cafeteria Platform
 
-SmartPOS is a comprehensive web-based platform designed to manage school feeding programs, student accounts, restaurant and cafeteria operations, inventory, finances, and parent engagement.
+SmartPOS is a web-based platform for managing school feeding programs: student wallets, cafeteria POS, inventory, finances, parent engagement, and biometric fingerprint enrollment.
 
-Built with a modern tech stack, the platform offers a robust administrative dashboard for overseeing students, finances, inventory, transactions, and system audits, while providing dedicated access portals for administrators, finance officers, restaurant staff, students, and parents.
+Built with React, Express, Prisma, and PostgreSQL (Supabase). A local **FingerprintScanner** service connects ZKTeco USB scanners (e.g. **ZK9500**) for admin enrollment of student fingerprints.
 
-## ✨ Features
+---
 
-* **Role-Based Access Control:** Distinct portals and permissions for Admins, Finance Officers, Restaurant Staff, Students, and Parents.
-* **Admin Dashboard:** Centralised view to manage users, students, inventory, finances, and system operations.
-* **Student Portal:** Students can log in with their Admission Number or assigned credentials to access their account and meal information.
-* **Parent Portal:** Parents can monitor balances, view transactions, and manage student feeding accounts.
-* **Restaurant & POS Management:** Manage cafeteria sales, meal purchases, receipts, and daily transactions.
-* **Inventory Management:** Track stock levels, suppliers, purchases, stock movements, and low-stock alerts.
-* **Finance Management:** Monitor revenue, expenses, student wallet transactions, and financial reports.
-* **Student Wallet System:** Cashless feeding system where students can purchase meals using their wallet balance.
-* **Audit Logging:** Every mutating action (create, update, delete, login, approval) is silently logged to an audit table to maintain a secure trail of system events.
-* **User Approvals:** Certain user registrations or account actions may require manual admin approval before gaining access.
+## Features
 
-## 🚀 Tech Stack
+| Area | Capabilities |
+|------|----------------|
+| **Admin** | Dashboard, user management (students, parents, staff), reports, audit logs, pending approvals |
+| **Students** | Cafeteria ordering, wallet balance, M-Pesa top-up (simulated), purchase history |
+| **Parents** | Linked students, wallet top-ups, transaction view |
+| **Restaurant** | POS terminal, menu management, inventory |
+| **Finance** | Revenue summary, expenses, receipt records |
+| **Biometrics** | Fingerprint capture during student enrollment; duplicate detection (exact + SDK match) |
+| **Security** | JWT auth, bcrypt passwords, audit logging on mutating actions |
 
-### Frontend
+### Student records
 
-* **React 18** - Component-based UI.
-* **Vite** - Extremely fast frontend tooling.
-* **TypeScript** - Strongly typed codebase.
-* **React Router** - Client-side routing.
-* **Axios** - HTTP client for API requests with JWT interception.
+Students are identified by **registration number** and **password**. Fields stored:
 
-### Backend
+- Name, reg no, phone, gender, password
+- Wallet balance, optional parent link
+- Optional fingerprint template (ZKTeco, base64-encoded)
 
-* **Node.js & Express** - High-performance web server.
-* **TypeScript** - Strongly typed server logic.
-* **Prisma ORM** - Next-generation Node.js and TypeScript ORM.
-* **Supabase (PostgreSQL)** - Managed PostgreSQL database with connection pooling.
-* **JSON Web Tokens (JWT)** - Secure, stateless authentication.
-* **Bcrypt** - Password hashing.
+Course, year, and email are **not** used for students.
 
-## 🛠️ Getting Started
+---
 
-### Prerequisites
+## Tech stack
 
-* [Node.js](https://nodejs.org/) (v18+)
-* A [Supabase](https://supabase.com/) project (or local PostgreSQL database)
+| Layer | Technologies |
+|-------|----------------|
+| **Frontend** | React 18, Vite, TypeScript, Tailwind CSS, React Router, Axios, Sonner |
+| **Backend** | Node.js, Express, TypeScript, Prisma, JWT, Bcrypt |
+| **Database** | PostgreSQL (Supabase) |
+| **Scanner service** | .NET 8, ZKTeco ZKFinger SDK (`libzkfpcsharp`) |
 
-### Installation
+---
 
-1. **Clone the repository:**
+## Prerequisites
 
-   ```bash
-   git clone https://github.com/BKerio/SmartPOS.git
-   cd SmartPOS
-   ```
+- [Node.js](https://nodejs.org/) v18+
+- [Supabase](https://supabase.com/) project (or local PostgreSQL)
+- **Fingerprint enrollment PC (Windows):**
+  - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+  - ZKTeco **ZK9500** (or compatible ZK USB scanner) + official drivers
 
-2. **Setup the Backend:**
+---
 
-   ```bash
-   cd backend
-   npm install
-   ```
+## Installation
 
-   * Copy `.env.example` to `.env` and fill in your Supabase connection strings and JWT secret:
+### 1. Clone the repository
 
-   ```bash
-   cp .env.example .env
-   ```
+```bash
+git clone https://github.com/BKerio/SmartPOS.git
+cd SmartPOS
+```
 
-   * Push the schema to your database and seed it:
+### 2. Backend
 
-   ```bash
-   npx prisma db push
-   npm run db:seed
-   ```
+```bash
+cd backend
+npm install
+cp .env.example .env
+```
 
-3. **Setup the Frontend:**
+Edit `backend/.env` with your Supabase `DATABASE_URL`, `DIRECT_URL`, and `JWT_SECRET`.
 
-   ```bash
-   cd ../frontend
-   npm install
-   ```
+Push the schema and seed sample data:
 
-   * Make sure your frontend `.env` points to the backend (default: `http://localhost:5000/api`).
+```bash
+npx prisma db push
+npm run db:seed
+```
 
-### Running the Application
+### 3. Frontend
 
-You will need two terminal windows to run both servers simultaneously.
+```bash
+cd ../frontend
+npm install
+```
 
-**Terminal 1 (Backend):**
+Optional: create `frontend/.env` to override the API URL:
+
+```env
+VITE_API_URL=http://localhost:5000/api
+VITE_FINGERPRINT_SCANNER_URL=http://127.0.0.1:17890
+```
+
+Default dev API: `http://localhost:5000/api`.
+
+### 4. Fingerprint scanner service (enrollment PC)
+
+See [ZK9500 scanner setup](#zk9500-fingerprint-scanner-setup) below.
+
+---
+
+## Running the application
+
+Use **three terminals** when enrolling fingerprints (scanner service only needed on the admin/enrollment machine).
+
+**Terminal 1 — Backend**
 
 ```bash
 cd backend
 npm run dev
 ```
 
-**Terminal 2 (Frontend):**
+Runs at `http://localhost:5000`.
+
+**Terminal 2 — Frontend**
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-The application will be accessible at `http://localhost:5173`.
+Opens at `http://localhost:5173`.
 
-You can log into the Admin Dashboard using the default seeded credentials (unless changed in your `.env`):
+**Terminal 3 — Fingerprint scanner (Windows, USB scanner attached)**
 
-* **Email:** `admin@smartpos.com`
-* **Password:** `Admin@12345`
+```bash
+cd FingerprintScanner
+dotnet run
+```
 
-## 📂 Project Structure
+Runs at `http://127.0.0.1:17890`.
+
+---
+
+## Default login credentials
+
+Seeded by `npm run db:seed` (change via `SEED_*` in `backend/.env`).
+
+| Role | Login | Password | Lands on |
+|------|--------|----------|----------|
+| **Admin** | `admin@smartpos.com` | `Admin@12345` | `/` (dashboard) |
+| **Student** | `STU001` (reg no) | `Student@12345` | `/student/order` |
+| **Parent** | `parent@smartpos.com` | `Parent@12345` | `/parent-dashboard` |
+| **Finance** | `finance@smartpos.com` | `Finance@12345` | `/finance` |
+| **Restaurant** | `restaurant@smartpos.com` | `Restaurant@12345` | `/pos` |
+
+Sample student wallet: **KES 500**. Sample menu items are seeded (Ugali Beef, Chapati Beans, Tea & Mandazi).
+
+---
+
+## Routes overview
+
+### Frontend
+
+| Path | Role | Description |
+|------|------|-------------|
+| `/login` | Public | Multi-role login |
+| `/` | Admin | Dashboard |
+| `/manage-users` | Admin | Students, parents, finance & restaurant staff |
+| `/student/order` | Student | Cafeteria menu & checkout |
+| `/student-fees` | Student | Wallet & purchase history |
+| `/paymyfees` | Student | M-Pesa top-up |
+| `/parent-dashboard` | Parent | Linked students & top-ups |
+| `/pos` | Restaurant | Staff POS terminal |
+| `/menu-management` | Restaurant | Menu CRUD |
+| `/inventory` | Restaurant / Finance | Stock management |
+| `/finance` | Finance | Revenue dashboard |
+| `/expenses` | Finance | Expense records |
+| `/receipts` | Finance | POS receipts |
+
+### Backend API (prefix `/api`)
+
+| Module | Examples |
+|--------|----------|
+| `admin` | `POST /login`, `GET /profile` |
+| `students` | `POST /login`, `GET /`, `POST /`, `POST /check-fingerprint` |
+| `parents` | `POST /login`, `GET /students` |
+| `users` | Staff CRUD, approve/reject |
+| `wallet` | `GET /balance`, `POST /topup`, `POST /deposit` |
+| `menu` | `GET /`, `POST /` |
+| `pos` | `POST /sale`, `POST /student-order`, `GET /receipts` |
+| `inventory` | Items, movements, suppliers |
+| `finance` | Summary, expenses |
+| `audit` | `GET /events` |
+
+---
+
+## ZK9500 fingerprint scanner setup
+
+The browser cannot access USB fingerprint hardware directly. SmartPOS uses a **local .NET service** (`FingerprintScanner/`) that talks to the ZKTeco SDK; the admin UI calls it over HTTP during enrollment.
+
+```
+[Admin browser]  →  POST /capture          →  [FingerprintScanner :17890]
+       ↓                                              ↓
+  POST /api/students                         ZK9500 USB + drivers
+  { fingerprintTemplate }
+       ↓
+  [PostgreSQL]  students.fingerprintTemplate
+```
+
+### Step 1 — Install hardware drivers
+
+1. Connect the **ZK9500** via USB to the enrollment PC (Windows).
+2. Download and install the **ZKTeco USB fingerprint driver** for your device from [ZKTeco](https://www.zkteco.com/) (or the driver CD / vendor package that ships with the scanner).
+3. Open **Device Manager** → confirm the device appears under **Biometric devices** or **USB devices** without a warning icon.
+4. If Windows installs a generic driver, replace it with ZKTeco’s **ZKFinger** / **ZK9500** driver when prompted.
+
+### Step 2 — Verify SDK libraries
+
+The project includes the ZKFinger C# wrapper in:
+
+```text
+FingerprintScanner/libs/
+├── libzkfpcsharp.dll   # .NET binding
+└── libzkfp.dll         # Native driver (copied to build output)
+```
+
+If capture fails after driver install, copy the matching `libzkfp.dll` and `libzkfpcsharp.dll` from your ZKTeco **ZKFinger SDK** package (must match scanner firmware / SDK version).
+
+### Step 3 — Install .NET 8 SDK
+
+```bash
+dotnet --version   # should be 8.x
+```
+
+Download: https://dotnet.microsoft.com/download/dotnet/8.0
+
+### Step 4 — Build and run the scanner service
+
+```bash
+cd FingerprintScanner
+dotnet build
+dotnet run
+```
+
+Expected output:
+
+```text
+SmartPOS Fingerprint Scanner Service
+Listening on http://127.0.0.1:17890
+Endpoints: GET /health  POST /capture  POST /check-duplicate
+Scanner ready (1 device(s) detected)
+```
+
+**Health check** (browser or curl):
+
+```bash
+curl http://127.0.0.1:17890/health
+```
+
+### Step 5 — Configure backend & frontend
+
+In `backend/.env`:
+
+```env
+FINGERPRINT_SCANNER_URL=http://127.0.0.1:17890
+```
+
+Optional in `frontend/.env`:
+
+```env
+VITE_FINGERPRINT_SCANNER_URL=http://127.0.0.1:17890
+```
+
+Restart the backend after changing env vars.
+
+### Step 6 — Enroll a student fingerprint
+
+1. Start **backend**, **frontend**, and **FingerprintScanner** (`dotnet run`).
+2. Log in as **admin** → **Manage Users** → **Students** → **Add Student** (or edit).
+3. In **Fingerprint Enrollment**, confirm **Scanner connected**.
+4. Click **Capture Fingerprint** and place the finger on the ZK9500.
+5. Save the student — the template is stored in the database.
+
+Duplicate fingers are rejected:
+
+- **Exact** duplicate (same template bytes / hash)
+- **Biometric** duplicate (ZKTeco `DBMatch` via `/check-duplicate`)
+
+### Scanner service environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FINGERPRINT_PORT` | `17890` | HTTP listen port |
+| `FINGERPRINT_CORS_ORIGIN` | `http://localhost:5173` | Allowed frontend origin |
+
+### Troubleshooting ZK9500
+
+| Issue | What to try |
+|-------|-------------|
+| `No device found` | Replug USB; reinstall ZKTeco driver; run as same user session (not RDP without device redirect) |
+| `Init failed` | Wrong `libzkfp.dll` bitness (use x64 on 64-bit Windows); replace DLLs from official SDK |
+| `Scanner offline` in UI | Ensure `dotnet run` is active; check `http://127.0.0.1:17890/health` |
+| Build: file locked | Stop a running `FingerprintScanner.exe` (Ctrl+C) before `dotnet build` |
+| Duplicate not caught | Scanner service must be running for biometric match; exact duplicates still blocked by DB hash |
+| Backend cannot match | `FINGERPRINT_SCANNER_URL` must reach the PC where the scanner is plugged in (localhost for same machine) |
+
+### Maintenance scripts
+
+Backfill fingerprint hashes and remove exact duplicate templates:
+
+```bash
+cd backend
+npx ts-node -r tsconfig-paths/register scripts/dedupe-fingerprints.ts
+```
+
+---
+
+## Project structure
 
 ```text
 SmartPOS/
 ├── backend/
-│   ├── index.ts               # Express entry point
+│   ├── index.ts                 # Express entry
 │   ├── prisma/
-│   │   ├── schema.prisma      # Database schema
-│   │   └── seed.ts            # Default admin & sample data
-│   ├── routes/                # API endpoints (admin, students, finance, inventory, POS)
-│   ├── middlewares/           # JWT and role guards
-│   └── services/              # Prisma and Supabase singletons
-└── frontend/
-    ├── src/
-    │   ├── App.tsx            # Main router and shell
-    │   ├── components/        # Reusable UI components
-    │   ├── pages/             # Route-level components (Login, Dashboard)
-    │   └── services/          # API configurations (Axios)
-    └── index.html             # Vite entry HTML
+│   │   ├── schema.prisma        # Database models
+│   │   └── seed.ts              # Default users & menu
+│   ├── routes/                  # API route modules
+│   ├── middlewares/             # JWT auth guards
+│   ├── services/                # Prisma, audit, fingerprint helpers
+│   └── scripts/                 # DB maintenance (e.g. dedupe fingerprints)
+├── frontend/
+│   └── src/
+│       ├── App.tsx              # Router & shell
+│       ├── pages/               # Role portals (admin, student, parent, …)
+│       ├── components/          # Sidebars, navbars, UI
+│       └── services/            # API client, toasts, fingerprintScanner
+└── FingerprintScanner/          # Local ZKTeco capture service (.NET 8)
+    ├── Program.cs               # HTTP server (/health, /capture, /check-duplicate)
+    ├── FingerprintDevice.cs     # SDK wrapper
+    └── libs/                    # libzkfpcsharp.dll, libzkfp.dll
 ```
 
-## 📜 License
+---
 
-This project is licensed under the ISC License.
+## Database commands
+
+```bash
+cd backend
+npm run db:generate    # Regenerate Prisma client
+npm run db:push        # Apply schema to database
+npm run db:seed        # Seed admin, users, menu, sample student
+npm run db:studio      # Prisma Studio GUI
+```
+
+---
+
+## Production notes
+
+- Set strong `JWT_SECRET` and production `DATABASE_URL` / `FRONTEND_URL` in backend `.env`.
+- M-Pesa integration is **simulated** in development; wire Safaricom Daraja for production.
+- Run `FingerprintScanner` as a Windows service or startup task on each enrollment workstation.
+- Fingerprint templates are sensitive — restrict admin access and use HTTPS in production.
+
+---
+
+## License
+
+ISC License.

@@ -10,11 +10,15 @@
   <ItemGroup>
     <Reference Include="libzkfpcsharp">
       <HintPath>libs\libzkfpcsharp.dll</HintPath>
+      <Private>true</Private>
     </Reference>
   </ItemGroup>
 
   <ItemGroup>
     <None Update="libs\libzkfp.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="libs\libzkfpcsharp.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>

@@ -136,7 +136,7 @@ router.get('/students', ensureAuthenticated, async (req: Request, res: Response)
       include: {
         students: {
           select: {
-            id: true, name: true, regNo: true, course: true, walletBalance: true,
+            id: true, name: true, regNo: true, walletBalance: true,
             transactions: { orderBy: { createdAt: 'desc' }, take: 5 }, // Last 5 transactions
           }
         }
@@ -156,7 +156,7 @@ router.get('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
       where: { id: req.params.id as string },
       select: {
         id: true, name: true, email: true, phone: true, createdAt: true,
-        students: { select: { id: true, name: true, regNo: true, course: true, walletBalance: true } },
+        students: { select: { id: true, name: true, regNo: true, walletBalance: true } },
       },
     });
     if (!parent) return res.status(404).json({ message: 'Parent not found' });

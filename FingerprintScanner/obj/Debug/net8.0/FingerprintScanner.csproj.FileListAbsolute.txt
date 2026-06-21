@@ -17,3 +17,4 @@ C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\refint\Fing
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\FingerprintScanner.pdb
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\FingerprintScanner.genruntimeconfig.cache
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\ref\FingerprintScanner.dll
+C:\Users\brian\PROJECTS\SmartPOS\fingerprintscanner\bin\Debug\net8.0\libs\libzkfpcsharp.dll

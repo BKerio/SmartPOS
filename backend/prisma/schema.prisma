@@ -39,17 +39,19 @@ model Student {
   id            String              @id @default(cuid())
   name          String
   regNo         String              @unique
-  course        String
-  email         String              @unique
   phone         String
   gender        String
-  year          Int
   password      String
   
   // School Feeding & Wallet
   walletBalance Float               @default(0)
   parentId      String?
   parent        Parent?             @relation(fields: [parentId], references: [id])
+
+  // Biometric enrollment (ZKTeco template, base64-encoded)
+  fingerprintTemplate     String?
+  fingerprintTemplateHash String?   @unique
+  fingerprintEnrolledAt   DateTime?
   
   transactions  WalletTransaction[]
   receipts      PosTransaction[]

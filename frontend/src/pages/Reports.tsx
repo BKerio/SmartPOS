@@ -132,8 +132,8 @@ const Reports: React.FC = () => {
             <tr>
               <th className="text-left py-2">Name</th>
               <th className="text-left py-2">Reg No</th>
-              <th className="text-left py-2">Course</th>
-              <th className="text-right py-2">Year</th>
+              <th className="text-left py-2">Phone</th>
+              <th className="text-right py-2">Gender</th>
             </tr>
           </thead>
           <tbody>
@@ -141,8 +141,8 @@ const Reports: React.FC = () => {
               <tr key={s.id || s._id} className="border-t border-gray-50">
                 <td className="py-2">{s.name}</td>
                 <td className="py-2 text-gray-500">{s.regNo}</td>
-                <td className="py-2">{s.course}</td>
-                <td className="py-2 text-right">{s.year}</td>
+                <td className="py-2">{s.phone}</td>
+                <td className="py-2 text-right capitalize">{s.gender}</td>
               </tr>
             ))}
           </tbody>
