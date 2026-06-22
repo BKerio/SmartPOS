@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-    Home, Settings, User, Package, PieChart, ShoppingCart, Users, ClipboardList
+    Home, Settings, User, Package, PieChart, ShoppingCart, ClipboardList
 } from "lucide-react";
 
 const ROLE_CONFIG: Record<string, {
@@ -13,6 +13,7 @@ const ROLE_CONFIG: Record<string, {
         menuItems: [
             { name: "Dashboard", icon: Home, path: "/parent-dashboard" },
             { name: "Profile", icon: User, path: "/user-profile" },
+            { name: "Pay with M-Pesa", icon: ShoppingCart, path: "/pay-mpesa" },
             { name: "Settings", icon: Settings, path: "/settings" },
         ]
     },
