@@ -260,9 +260,10 @@ The browser cannot access USB fingerprint hardware directly. SmartPOS uses a **l
 ### Step 1 — Install hardware drivers
 
 1. Connect the **ZK9500** via USB to the enrollment PC (Windows).
-2. Download and install the **ZKTeco USB fingerprint driver** for your device from [ZKTeco](https://www.zkteco.com/) (or the driver CD / vendor package that ships with the scanner).
-3. Open **Device Manager** → confirm the device appears under **Biometric devices** or **USB devices** without a warning icon.
-4. If Windows installs a generic driver, replace it with ZKTeco’s **ZKFinger** / **ZK9500** driver when prompted.
+2. Get the driver from **Setup**
+3. Download and install the **ZKTeco USB fingerprint driver** for your device from [ZKTeco](https://www.zkteco.com/) (or the driver CD / vendor package that ships with the scanner).
+4. Open **Device Manager** → confirm the device appears under **Biometric devices** or **USB devices** without a warning icon.
+5. If Windows installs a generic driver, replace it with ZKTeco’s **ZKFinger** / **ZK9500** driver when prompted.
 
 ### Step 2 — Verify SDK libraries
 
