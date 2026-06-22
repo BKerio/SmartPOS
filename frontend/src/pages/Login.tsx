@@ -4,6 +4,7 @@ import { Eye, EyeOff, ChevronDown, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/services/toast";
 import API from "@/services/api";
+import Loader from "@/components/ui/loader";
 import logo from "@/assets/LOGO.png";
 
 type Role = "admin" | "student" | "parent" | "finance" | "restaurant";
@@ -204,9 +205,14 @@ const Login: React.FC = () => {
                 type="submit"
                 disabled={loading}
                 style={{ backgroundColor: BRAND }}
-                className="w-full py-3 text-sm font-bold rounded-xl text-white hover:opacity-90 transition disabled:opacity-50"
+                className="w-full py-3 text-sm font-bold rounded-xl text-white hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {loading ? "Authenticating..." : `Login to ${currentRole.label}`}
+                {loading ? (
+                  <>
+                    <Loader size="xs" showText={false} />
+                    Authenticating...
+                  </>
+                ) : `Login to ${currentRole.label}`}
               </button>
             </form>
 

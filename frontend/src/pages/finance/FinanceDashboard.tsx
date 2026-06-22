@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { PieChart, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
 import API from "@/services/api";
+import Loader from "@/components/ui/loader";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 const FinanceDashboard = () => {
@@ -28,7 +29,7 @@ const FinanceDashboard = () => {
       </div>
 
       {loading ? (
-        <p className="text-center text-gray-500 animate-pulse">Loading financial data...</p>
+        <Loader size="sm" title="Loading financial data..." subtitle="Fetching revenue and expense summary" className="py-8" />
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">

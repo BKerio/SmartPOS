@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
-import { Loader2, Smartphone, Coins, ArrowLeft } from 'lucide-react';
+import { Smartphone, Coins, ArrowLeft } from 'lucide-react';
+import Loader from '@/components/ui/loader';
 import { io, Socket } from 'socket.io-client';
 
 const PayWithMpesa = () => {
@@ -354,7 +355,7 @@ const PayWithMpesa = () => {
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-5 h-5 mr-3 animate-spin" />
+                  <Loader size="xs" showText={false} className="mr-3" />
                   Processing...
                 </>
               ) : (

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ShoppingCart, Search, Trash2, Plus, Minus } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
+import Loader from "@/components/ui/loader";
 
 interface MenuItem { id: string; name: string; price: number; category: string; isAvailable: boolean; }
 interface CartItem { menuItemId: string; name: string; price: number; quantity: number; }
@@ -158,9 +159,14 @@ const PosTerminal = () => {
           <button
             onClick={processSale}
             disabled={loading || cart.length === 0 || !student}
-            className="w-full py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 transition"
+            className="w-full py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 transition flex items-center justify-center gap-2"
           >
-            {loading ? "Processing..." : "Complete Sale"}
+            {loading ? (
+              <>
+                <Loader size="xs" showText={false} />
+                Processing...
+              </>
+            ) : "Complete Sale"}
           </button>
         </div>
       </div>

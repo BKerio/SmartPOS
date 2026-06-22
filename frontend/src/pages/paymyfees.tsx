@@ -1,7 +1,8 @@
 import { useState, useEffect, FormEvent } from "react";
 import { toast } from "@/services/toast";
-import { Loader2, Wallet } from "lucide-react";
+import { Wallet } from "lucide-react";
 import API from "@/services/api";
+import Loader from "@/components/ui/loader";
 
 const TopUpWallet = () => {
   const [amount, setAmount] = useState("");
@@ -62,7 +63,12 @@ const TopUpWallet = () => {
 
           <button type="submit" disabled={loading}
             className="w-full flex items-center justify-center py-3 text-sm font-bold text-white bg-green-600 hover:bg-green-700 rounded-xl disabled:opacity-50 transition">
-            {loading ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Processing...</> : `Top Up KES ${Number(amount) || 0}`}
+            {loading ? (
+              <>
+                <Loader size="xs" showText={false} className="mr-2" />
+                Processing...
+              </>
+            ) : `Top Up KES ${Number(amount) || 0}`}
           </button>
         </form>
 

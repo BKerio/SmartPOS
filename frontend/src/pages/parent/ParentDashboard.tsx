@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Wallet, User, Plus, X, Loader2 } from "lucide-react";
+import { Wallet, User, Plus, X } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
+import Loader from "@/components/ui/loader";
 
 interface Student {
   id: string;
@@ -77,7 +78,7 @@ const ParentDashboard = () => {
       </div>
 
       {loading ? (
-        <p className="text-center text-gray-500 animate-pulse">Loading linked students...</p>
+        <Loader size="sm" title="Loading linked students..." subtitle="Fetching your children's accounts" className="py-8" />
       ) : students.length === 0 ? (
         <div className="bg-white rounded-2xl p-8 text-center border border-gray-100">
           <p className="text-gray-600">No students linked to your account yet.</p>
@@ -170,7 +171,7 @@ const ParentDashboard = () => {
               >
                 {submitting ? (
                   <>
-                    <Loader2 size={18} className="animate-spin" />
+                    <Loader size="xs" showText={false} className="mr-2" />
                     Processing…
                   </>
                 ) : (

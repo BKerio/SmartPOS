@@ -4,6 +4,7 @@ import { Mail, Lock, User, Phone, ChevronDown, ArrowRight, Users, PieChart, Uten
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "@/services/toast";
 import API from "@/services/api";
+import Loader from "@/components/ui/loader";
 
 type RoleValue = "parent" | "finance" | "restaurant";
 
@@ -74,7 +75,14 @@ const Register: React.FC = () => {
 
             <button type="submit" disabled={loading}
               className="w-full py-3 bg-[#0A1F44] text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-[#0A1F44]/90 disabled:opacity-50">
-              {loading ? "Submitting..." : <>Register <ArrowRight size={16} /></>}
+              {loading ? (
+                <>
+                  <Loader size="xs" showText={false} />
+                  Submitting...
+                </>
+              ) : (
+                <>Register <ArrowRight size={16} /></>
+              )}
             </button>
           </form>
 

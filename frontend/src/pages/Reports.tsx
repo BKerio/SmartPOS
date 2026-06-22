@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
+import Loader from "@/components/ui/loader";
 import { Users, GraduationCap, DollarSign, UtensilsCrossed, TrendingUp, TrendingDown } from "lucide-react";
 
 const Reports: React.FC = () => {
@@ -41,7 +42,13 @@ const Reports: React.FC = () => {
 
   const totalWallet = students.reduce((s, st) => s + (st.walletBalance || 0), 0);
 
-  if (loading) return <div className="p-8 text-center text-gray-500 animate-pulse">Loading reports...</div>;
+  if (loading) {
+    return (
+      <div className="p-4 md:p-8 bg-[#E8F4FD] min-h-screen font-sans">
+        <Loader size="md" title="Loading reports..." subtitle="Gathering system analytics" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-8 bg-[#E8F4FD] min-h-screen font-sans space-y-6">

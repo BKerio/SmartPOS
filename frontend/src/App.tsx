@@ -7,7 +7,10 @@ import StudentNavbar from "@/components/StudentNavbar";
 import UserSidebar from "@/components/UserSidebar";
 import UserNavbar from "@/components/UserNavbar";
 import Dashboard from "@/pages/Dashboard";
-import ManageUsers from "@/pages/admin/ManageUsers";
+import ManageStudents from "@/pages/admin/ManageStudents";
+import ManageParents from "@/pages/admin/ManageParents";
+import ManageRestaurantStaff from "@/pages/admin/ManageRestaurantStaff";
+import ManageFinanceOfficers from "@/pages/admin/ManageFinanceOfficers";
 import Settings from "@/pages/settings";
 import Register from "@/pages/Register";
 import PendingApprovals from "@/pages/PendingApprovals";
@@ -60,9 +63,12 @@ function AppShell() {
 
           {/* Admin */}
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/manage-users" element={<ProtectedRoute><ManageUsers /></ProtectedRoute>} />
-          <Route path="/students" element={<ProtectedRoute><ManageUsers /></ProtectedRoute>} />
-          <Route path="/add-student" element={<ProtectedRoute><ManageUsers /></ProtectedRoute>} />
+          <Route path="/students" element={<ProtectedRoute><ManageStudents /></ProtectedRoute>} />
+          <Route path="/parents" element={<ProtectedRoute><ManageParents /></ProtectedRoute>} />
+          <Route path="/restaurant-staff" element={<ProtectedRoute><ManageRestaurantStaff /></ProtectedRoute>} />
+          <Route path="/finance-officers" element={<ProtectedRoute><ManageFinanceOfficers /></ProtectedRoute>} />
+          <Route path="/manage-users" element={<Navigate to="/students" replace />} />
+          <Route path="/add-student" element={<Navigate to="/students" replace />} />
           <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
           <Route path="/audit-logs" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
           <Route path="/pending-approvals" element={<ProtectedRoute><PendingApprovals /></ProtectedRoute>} />

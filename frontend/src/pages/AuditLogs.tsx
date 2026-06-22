@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
+import Loader from "@/components/ui/loader";
 import {
   Search,
   Filter,
-  Loader2,
   Shield,
   User,
   GraduationCap,
@@ -256,9 +256,8 @@ const AuditLogs: React.FC = () => {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="text-center p-6 text-gray-500">
-                  <Loader2 className="w-5 h-5 inline-block mr-2 animate-spin" />
-                  Loading audit logs...
+                <td colSpan={6} className="p-6">
+                  <Loader size="sm" title="Loading audit logs..." subtitle="Fetching security events" className="py-4" />
                 </td>
               </tr>
             ) : !data || data.events.length === 0 ? (

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import API from "@/services/api";
+import Loader from "@/components/ui/loader";
 import { Wallet, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 
 interface WalletTx {
@@ -43,7 +44,7 @@ const StudentFees: React.FC = () => {
       </div>
 
       {loading ? (
-        <p className="text-center text-gray-500 animate-pulse">Loading wallet data...</p>
+        <Loader size="sm" title="Loading wallet data..." subtitle="Fetching balance and transactions" className="py-8" />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl border border-gray-100 p-6">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Users, GraduationCap, UtensilsCrossed, DollarSign, AlertCircle } from "lucide-react";
 import API from "@/services/api";
+import Loader from "@/components/ui/loader";
 import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from "recharts";
 
 const COLORS = ["#0A1F44", "#1E3A8A", "#3B82F6", "#10B981"];
@@ -108,7 +109,7 @@ const Dashboard = () => {
       )}
 
       {loading ? (
-        <p className="text-center text-gray-500 animate-pulse">Loading dashboard data...</p>
+        <Loader size="sm" title="Loading dashboard..." subtitle="Fetching platform statistics" className="py-8" />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <DashboardCard title="Students" value={studentCount} icon={<GraduationCap size={24} />} color="#0A1F44" />
@@ -132,9 +133,11 @@ const Dashboard = () => {
               </PieChart>
             </ResponsiveContainer>
           </div>
+        ) : loading ? (
+          <Loader size="sm" title="Loading chart..." subtitle="Preparing platform statistics" className="py-8" />
         ) : (
           <p className="text-center text-gray-400 py-16 text-sm">
-            {loading ? "Loading chart…" : loadError ? "Chart unavailable while offline" : "No data to chart yet"}
+            {loadError ? "Chart unavailable while offline" : "No data to chart yet"}
           </p>
         )}
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Receipt } from "lucide-react";
 import API from "@/services/api";
+import Loader from "@/components/ui/loader";
 
 interface ReceiptItem {
   id: string; totalAmount: number; status: string; createdAt: string;
@@ -36,7 +37,7 @@ const ReceiptsPage = () => {
       </div>
 
       {loading ? (
-        <p className="text-center text-gray-500 animate-pulse">Loading receipts...</p>
+        <Loader size="sm" title="Loading receipts..." subtitle="Fetching POS transaction history" className="py-8" />
       ) : receipts.length === 0 ? (
         <div className="bg-white rounded-2xl p-8 text-center text-gray-500">No receipts yet</div>
       ) : (

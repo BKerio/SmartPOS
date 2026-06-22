@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { toast } from "@/services/toast";
 import API from "@/services/api";
+import Loader from "@/components/ui/loader";
 
 const ROLE_LABELS: Record<string, string> = {
     finance: "Finance Officer",
@@ -105,7 +106,7 @@ const PendingApprovals: React.FC = () => {
             </div>
 
             {loading ? (
-                <p className="text-center text-gray-500 py-12">Loading users...</p>
+                <Loader size="sm" title="Loading users..." subtitle="Fetching pending registrations" className="py-12" />
             ) : (
                 <div className="space-y-4">
                     {filtered.length === 0 && (

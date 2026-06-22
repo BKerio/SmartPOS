@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ShoppingCart, Plus, Minus, Trash2, Wallet } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
+import Loader from "@/components/ui/loader";
 import logo from "@/assets/LOGO.png";
 
 interface MenuItem {
@@ -135,7 +136,7 @@ const StudentOrder = () => {
           </div>
 
           {menuLoading ? (
-            <p className="text-center text-gray-500 animate-pulse py-12">Loading menu...</p>
+            <Loader size="sm" title="Loading menu..." subtitle="Fetching today's cafeteria items" className="py-12" />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {filtered.map((item) => (
@@ -209,7 +210,12 @@ const StudentOrder = () => {
               className="w-full py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 transition flex items-center justify-center gap-2"
             >
               <Wallet size={18} />
-              {loading ? "Processing..." : `Pay KES ${total.toFixed(0)} from Wallet`}
+              {loading ? (
+                <>
+                  <Loader size="xs" showText={false} />
+                  Processing...
+                </>
+              ) : `Pay KES ${total.toFixed(0)} from Wallet`}
             </button>
           </form>
         </div>

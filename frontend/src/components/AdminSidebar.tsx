@@ -1,6 +1,9 @@
 import {
   LayoutDashboard,
   Users,
+  GraduationCap,
+  UtensilsCrossed,
+  PieChart,
   Settings,
   MenuIcon,
   UserCircle,
@@ -24,7 +27,10 @@ const menuSections: { title?: string; items: MenuItem[] }[] = [
   {
     title: "Management",
     items: [
-      { name: "Manage Users", icon: Users, path: "/manage-users" },
+      { name: "Students", icon: GraduationCap, path: "/students" },
+      { name: "Parents", icon: Users, path: "/parents" },
+      { name: "Restaurant Staff", icon: UtensilsCrossed, path: "/restaurant-staff" },
+      { name: "Finance Officers", icon: PieChart, path: "/finance-officers" },
       { name: "Pending Approvals", icon: CheckCircle, path: "/pending-approvals" },
     ],
   },
