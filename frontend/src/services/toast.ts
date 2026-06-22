@@ -1,42 +1,52 @@
-import { toast as sonner } from "sonner";
+import Swal from "sweetalert2";
+
+const fire = (
+  icon: "success" | "error" | "warning" | "info",
+  message: string,
+  description?: string
+) => {
+  if (icon === "success") {
+    return Swal.fire({
+      icon,
+      title: message,
+      text: description,
+      timer: 1200,
+      showConfirmButton: false,
+      timerProgressBar: true,
+    });
+  }
+
+  return Swal.fire({
+    icon,
+    title: message,
+    text: description,
+  });
+};
 
 export const toast = {
   success: (message: string, description?: string) =>
-    sonner.success(message, { description }),
+    fire("success", message, description),
 
   error: (message: string, description?: string) =>
-    sonner.error(message, { description }),
+    fire("error", message, description),
 
   warning: (message: string, description?: string) =>
-    sonner.warning(message, { description }),
+    fire("warning", message, description),
 
   info: (message: string, description?: string) =>
-    sonner.info(message, { description }),
+    fire("info", message, description),
 
-  /** Toast with confirm / cancel actions — resolves true when confirmed */
+  /** Dialog with confirm / cancel — resolves true when confirmed */
   confirm: (
     message: string,
     options?: { description?: string; confirmLabel?: string; cancelLabel?: string }
   ): Promise<boolean> =>
-    new Promise((resolve) => {
-      const id = sonner(message, {
-        description: options?.description,
-        duration: Infinity,
-        action: {
-          label: options?.confirmLabel ?? "Confirm",
-          onClick: () => {
-            sonner.dismiss(id);
-            resolve(true);
-          },
-        },
-        cancel: {
-          label: options?.cancelLabel ?? "Cancel",
-          onClick: () => {
-            sonner.dismiss(id);
-            resolve(false);
-          },
-        },
-        onDismiss: () => resolve(false),
-      });
-    }),
+    Swal.fire({
+      title: message,
+      text: options?.description,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: options?.confirmLabel ?? "Confirm",
+      cancelButtonText: options?.cancelLabel ?? "Cancel",
+    }).then((result) => result.isConfirmed),
 };

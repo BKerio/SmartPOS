@@ -11,8 +11,8 @@ Built with React, Express, Prisma, and PostgreSQL (Supabase). A local **Fingerpr
 | Area | Capabilities |
 |------|----------------|
 | **Admin** | Dashboard, user management (students, parents, staff), reports, audit logs, pending approvals |
-| **Students** | Cafeteria ordering, wallet balance, M-Pesa top-up (simulated), purchase history |
-| **Parents** | Linked students, wallet top-ups, transaction view |
+| **Students** | Cafeteria ordering, wallet balance, M-Pesa top-up, purchase history |
+| **Parents** | Linked students, **M-Pesa STK Push** wallet top-ups (select student + pay) |
 | **Restaurant** | POS terminal, menu management, inventory |
 | **Finance** | Revenue summary, expenses, receipt records |
 | **Biometrics** | Fingerprint capture during student enrollment; duplicate detection (exact + SDK match) |
@@ -34,7 +34,7 @@ Course, year, and email are **not** used for students.
 
 | Layer | Technologies |
 |-------|----------------|
-| **Frontend** | React 18, Vite, TypeScript, Tailwind CSS, React Router, Axios, Sonner |
+| **Frontend** | React 18, Vite, TypeScript, Tailwind CSS, React Router, Axios, SweetAlert2 |
 | **Backend** | Node.js, Express, TypeScript, Prisma, JWT, Bcrypt |
 | **Database** | PostgreSQL (Supabase) |
 | **Scanner service** | .NET 8, ZKTeco ZKFinger SDK (`libzkfpcsharp`) |
@@ -160,7 +160,7 @@ Sample student wallet: **KES 500**. Sample menu items are seeded (Ugali Beef, Ch
 | `/student/order` | Student | Cafeteria menu & checkout |
 | `/student-fees` | Student | Wallet & purchase history |
 | `/paymyfees` | Student | M-Pesa top-up |
-| `/parent-dashboard` | Parent | Linked students & top-ups |
+| `/parent-dashboard` | Parent | Linked students & M-Pesa wallet top-ups |
 | `/pos` | Restaurant | Staff POS terminal |
 | `/menu-management` | Restaurant | Menu CRUD |
 | `/inventory` | Restaurant / Finance | Stock management |
@@ -182,6 +182,65 @@ Sample student wallet: **KES 500**. Sample menu items are seeded (Ugali Beef, Ch
 | `inventory` | Items, movements, suppliers |
 | `finance` | Summary, expenses |
 | `audit` | `GET /events` |
+| `mpesa` | `POST /stkpush`, `POST /stkpush/callback`, `GET /stkpush/status/:id` |
+
+---
+
+## M-Pesa wallet top-ups (Daraja STK Push)
+
+Parents can load a linked student's wallet from **Parent Dashboard → Top Up via M-Pesa**: select the child, enter M-Pesa phone + amount, approve the STK prompt on the phone. On success the wallet is credited automatically and a `WalletTransaction` is recorded.
+
+### Flow
+
+```
+Parent UI  →  POST /api/mpesa/stkpush { studentId, phone, amount }
+           →  Safaricom STK Push to parent's phone
+           →  POST /api/mpesa/stkpush/callback (Daraja)
+           →  Credit student wallet + Socket.IO event to browser
+```
+
+Real-time status uses **Socket.IO** (room = `CheckoutRequestID`) with HTTP polling fallback.
+
+### Backend configuration
+
+Add to `backend/.env` (see `.env.example`):
+
+```env
+MPESA_BASE_URL=https://sandbox.safaricom.co.ke
+MPESA_CONSUMER_KEY=your_consumer_key
+MPESA_CONSUMER_SECRET=your_consumer_secret
+MPESA_SHORTCODE=174379
+MPESA_PASSKEY=your_lipa_na_mpesa_passkey
+TILL_NO=174379
+MPESA_TRANSACTIONTYPE=CustomerPayBillOnline
+MPESA_CALLBACK_URL=https://your-public-host/api/mpesa/stkpush/callback
+```
+
+**Callback URL** must be publicly reachable over **HTTPS**. For local dev, use [ngrok](https://ngrok.com/):
+
+```bash
+ngrok http 5000
+# Set MPESA_CALLBACK_URL=https://xxxx.ngrok-free.app/api/mpesa/stkpush/callback
+```
+
+Optional frontend socket URL (defaults to API host without `/api`):
+
+```env
+VITE_SOCKET_URL=http://localhost:5000
+```
+
+### Database
+
+M-Pesa records are stored in PostgreSQL (`mpesa_payments` table via Prisma), replacing the previous MongoDB model. Fields include `checkoutRequestId`, receipt, amount, `studentId`, `parentId`, and `walletCredited`.
+
+### API endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/mpesa/stkpush` | Parent | Initiate STK push for a linked student |
+| `POST` | `/api/mpesa/stkpush/callback` | Public | Daraja callback (Safaricom only) |
+| `GET` | `/api/mpesa/stkpush/status/:checkoutRequestId` | Parent/Admin | Poll payment status |
+| `GET` | `/api/mpesa/transactions` | Parent/Admin/Finance | Recent M-Pesa payments |
 
 ---
 
@@ -317,7 +376,7 @@ SmartPOS/
 │   │   └── seed.ts              # Default users & menu
 │   ├── routes/                  # API route modules
 │   ├── middlewares/             # JWT auth guards
-│   ├── services/                # Prisma, audit, fingerprint helpers
+│   ├── services/                # Prisma, audit, fingerprint, mpesa, socket
 │   └── scripts/                 # DB maintenance (e.g. dedupe fingerprints)
 ├── frontend/
 │   └── src/
@@ -348,7 +407,8 @@ npm run db:studio      # Prisma Studio GUI
 ## Production notes
 
 - Set strong `JWT_SECRET` and production `DATABASE_URL` / `FRONTEND_URL` in backend `.env`.
-- M-Pesa integration is **simulated** in development; wire Safaricom Daraja for production.
+- Use production Daraja URLs and go-live credentials for M-Pesa (`MPESA_BASE_URL=https://api.safaricom.co.ke`).
+- Ensure `MPESA_CALLBACK_URL` is HTTPS and whitelisted in the Safaricom developer portal.
 - Run `FingerprintScanner` as a Windows service or startup task on each enrollment workstation.
 - Fingerprint templates are sensitive — restrict admin access and use HTTPS in production.
 

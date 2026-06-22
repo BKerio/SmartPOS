@@ -68,8 +68,8 @@ const FinanceDashboard = () => {
 
           <div className="bg-white rounded-2xl border border-gray-100 p-6">
             <h3 className="font-bold text-[#0A1F44] mb-4">Financial Overview</h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="w-full min-w-0" style={{ height: 256 }}>
+              <ResponsiveContainer width="100%" height={256} minWidth={0}>
                 <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />

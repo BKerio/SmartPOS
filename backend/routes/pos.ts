@@ -15,7 +15,7 @@ const mapSaleError = (message: string): { status: number; body: { message: strin
   if (message === 'STUDENT_NOT_FOUND') {
     return { status: 404, body: { message: 'Student not found' } };
   }
-  if (message === 'INSUFFICIENT_FUNDS') {
+  if (message === 'INSUFFICIENT_FUNDS' || message === 'INSUFFICIENT_BALANCE') {
     return { status: 402, body: { message: 'Insufficient wallet balance' } };
   }
   if (message === 'INVALID_QUANTITY') {
@@ -134,26 +134,21 @@ router.post('/sale', ensureAuthenticated, async (req: Request, res: Response): P
 });
 
 // ─── POST /api/pos/student-order ──────────────────────────────────────────────
-// Student self-checkout: wallet first, M-Pesa simulated top-up for any shortfall
+// Student self-checkout from wallet balance
 router.post('/student-order', ensureAuthenticated, async (req: Request, res: Response): Promise<void> => {
   if (req.user!.role !== 'student') {
     res.status(403).json({ message: 'Student access only' });
     return;
   }
 
-  const { items, phone } = req.body;
+  const { items } = req.body;
 
-  if (!phone || !Array.isArray(items) || items.length === 0) {
-    res.status(422).json({ message: 'M-Pesa phone number and cart items are required' });
-    return;
-  }
-  if (!/^(01|07)\d{8}$/.test(phone) && !/^254\d{9}$/.test(phone)) {
-    res.status(422).json({ message: 'Enter a valid Kenyan phone number' });
+  if (!Array.isArray(items) || items.length === 0) {
+    res.status(422).json({ message: 'Cart items are required' });
     return;
   }
 
   const studentId = req.user!.id;
-  const mpesaRef = `MPESA-${Date.now()}`;
 
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -176,22 +171,8 @@ router.post('/student-order', ensureAuthenticated, async (req: Request, res: Res
         return { menuItemId: menuItem.id, quantity, price: menuItem.price };
       });
 
-      const mpesaTopUp = Math.max(0, totalAmount - student.walletBalance);
-
-      if (mpesaTopUp > 0) {
-        await tx.student.update({
-          where: { id: studentId },
-          data: { walletBalance: { increment: mpesaTopUp } },
-        });
-        await tx.walletTransaction.create({
-          data: {
-            studentId,
-            amount: mpesaTopUp,
-            type: 'deposit',
-            reference: mpesaRef,
-            description: `M-Pesa payment from ${phone} for meal order`,
-          },
-        });
+      if (student.walletBalance < totalAmount) {
+        throw new Error('INSUFFICIENT_BALANCE');
       }
 
       const posTx = await tx.posTransaction.create({
@@ -220,7 +201,7 @@ router.post('/student-order', ensureAuthenticated, async (req: Request, res: Res
         },
       });
 
-      return { student: updatedStudent, posTx, totalAmount, mpesaTopUp, mpesaRef };
+      return { student: updatedStudent, posTx, totalAmount };
     });
 
     await logAuditEvent({
@@ -229,8 +210,8 @@ router.post('/student-order', ensureAuthenticated, async (req: Request, res: Res
       userId: req.user!.id,
       userName: req.user!.name,
       action: 'Student Meal Order',
-      description: `Ordered meals worth KES ${result.totalAmount}${result.mpesaTopUp > 0 ? ` (M-Pesa: KES ${result.mpesaTopUp})` : ''}`,
-      metadata: { receiptId: result.posTx.id, mpesaRef: result.mpesaRef, phone },
+      description: `Ordered meals worth KES ${result.totalAmount}`,
+      metadata: { receiptId: result.posTx.id },
       ipAddress: req.ip,
     });
 
@@ -238,8 +219,6 @@ router.post('/student-order', ensureAuthenticated, async (req: Request, res: Res
       message: 'Order placed successfully',
       receipt: result.posTx,
       newBalance: result.student.walletBalance,
-      mpesaCharged: result.mpesaTopUp,
-      mpesaReference: result.mpesaTopUp > 0 ? result.mpesaRef : null,
     });
   } catch (error: unknown) {
     const message = getErrorMessage(error);

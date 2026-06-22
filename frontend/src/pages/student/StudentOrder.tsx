@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ShoppingCart, Plus, Minus, Trash2, Smartphone, Wallet } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Trash2, Wallet } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import logo from "@/assets/LOGO.png";
@@ -24,7 +24,6 @@ const StudentOrder = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [balance, setBalance] = useState(0);
   const [category, setCategory] = useState("All");
-  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [menuLoading, setMenuLoading] = useState(true);
 
@@ -48,7 +47,7 @@ const StudentOrder = () => {
   const categories = ["All", ...new Set(menu.map((m) => m.category))];
   const filtered = category === "All" ? menu : menu.filter((m) => m.category === category);
   const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const mpesaDue = Math.max(0, total - balance);
+  const shortfall = Math.max(0, total - balance);
 
   const addToCart = (item: MenuItem) => {
     setCart((prev) => {
@@ -73,25 +72,22 @@ const StudentOrder = () => {
   const placeOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (cart.length === 0) return toast.warning("Your cart is empty");
-    if (!/^(01|07)\d{8}$/.test(phone)) {
-      return toast.error("Invalid phone", "Enter a valid 10-digit number (e.g. 0712345678)");
+    if (shortfall > 0) {
+      return toast.error(
+        "Insufficient balance",
+        `You need KES ${shortfall.toLocaleString()} more. Top up your wallet first.`,
+      );
     }
 
     setLoading(true);
     try {
       const { data } = await API.post("/pos/student-order", {
-        phone,
         items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
       });
 
-      const mpesaMsg =
-        data.mpesaCharged > 0
-          ? `M-Pesa KES ${data.mpesaCharged.toLocaleString()} · Ref ${data.mpesaReference}`
-          : "Paid from wallet balance";
-
       toast.success(
         "Order placed!",
-        `Receipt #${data.receipt.id.slice(-8)} · ${mpesaMsg} · Balance KES ${data.newBalance.toLocaleString()}`
+        `Receipt #${data.receipt.id.slice(-8)} · Balance KES ${data.newBalance.toLocaleString()}`,
       );
       setCart([]);
       setBalance(data.newBalance);
@@ -118,85 +114,71 @@ const StudentOrder = () => {
         </div>
         <div className="flex items-center gap-2 bg-white/10 rounded-xl px-4 py-2">
           <Wallet size={18} className="text-green-300" />
-          <div>
-            <p className="text-xs text-blue-200">Wallet Balance</p>
-            <p className="font-bold text-green-300">KES {balance.toLocaleString()}</p>
-          </div>
+          <span className="text-sm">Balance: <strong>KES {balance.toLocaleString()}</strong></span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           <div className="flex gap-2 flex-wrap">
-            {categories.map((c) => (
+            {categories.map((cat) => (
               <button
-                key={c}
-                onClick={() => setCategory(c)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                  category === c ? "bg-[#0A1F44] text-white" : "bg-white text-gray-600 border border-gray-200"
+                key={cat}
+                onClick={() => setCategory(cat)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
+                  category === cat ? "bg-[#0A1F44] text-white" : "bg-white text-gray-600 border"
                 }`}
               >
-                {c}
+                {cat}
               </button>
             ))}
           </div>
 
           {menuLoading ? (
-            <p className="text-center text-gray-500 py-12 animate-pulse">Loading menu...</p>
-          ) : filtered.length === 0 ? (
-            <div className="bg-white rounded-2xl p-8 text-center text-gray-500">
-              No menu items available yet. Restaurant staff will add meals soon.
-            </div>
+            <p className="text-center text-gray-500 animate-pulse py-12">Loading menu...</p>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {filtered.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => addToCart(item)}
-                  className="bg-white rounded-xl p-4 border border-gray-100 hover:shadow-md hover:border-[#0A1F44]/30 transition text-left group"
-                >
-                  <p className="font-semibold text-[#0A1F44] text-sm group-hover:text-[#0A1F44]">
-                    {item.name}
-                  </p>
-                  {item.description && (
-                    <p className="text-xs text-gray-400 mt-1 line-clamp-2">{item.description}</p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">{item.category}</p>
-                  <p className="text-green-600 font-bold mt-2">KES {item.price}</p>
-                </button>
+                <div key={item.id} className="bg-white rounded-xl border border-gray-100 p-4 flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-[#0A1F44]">{item.name}</h3>
+                    {item.description && <p className="text-xs text-gray-500 mt-1">{item.description}</p>}
+                    <p className="text-green-600 font-bold mt-2">KES {item.price}</p>
+                  </div>
+                  <button
+                    onClick={() => addToCart(item)}
+                    className="p-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
               ))}
             </div>
           )}
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4 h-fit lg:sticky lg:top-4 shadow-sm">
-          <h3 className="font-bold text-[#0A1F44]">Your Order</h3>
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 h-fit sticky top-4">
+          <h3 className="font-bold text-[#0A1F44] mb-4 flex items-center gap-2">
+            <ShoppingCart size={18} /> Your Order
+          </h3>
 
-          <div className="space-y-2 max-h-48 overflow-y-auto">
+          <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
             {cart.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-6">Tap menu items to add them</p>
+              <p className="text-sm text-gray-400 text-center py-6">Cart is empty</p>
             ) : (
               cart.map((item) => (
-                <div key={item.menuItemId} className="flex items-center justify-between text-sm gap-2">
-                  <span className="flex-1 truncate font-medium">{item.name}</span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => updateQty(item.menuItemId, -1)}
-                      className="p-1 hover:bg-gray-100 rounded"
-                    >
+                <div key={item.menuItemId} className="flex items-center justify-between text-sm">
+                  <span className="flex-1 truncate">{item.name}</span>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => updateQty(item.menuItemId, -1)} className="p-0.5 text-gray-400 hover:text-gray-600">
                       <Minus size={14} />
                     </button>
-                    <span className="w-6 text-center">{item.quantity}</span>
-                    <button
-                      onClick={() => updateQty(item.menuItemId, 1)}
-                      className="p-1 hover:bg-gray-100 rounded"
-                    >
+                    <span className="w-5 text-center font-medium">{item.quantity}</span>
+                    <button onClick={() => updateQty(item.menuItemId, 1)} className="p-0.5 text-gray-400 hover:text-gray-600">
                       <Plus size={14} />
                     </button>
                   </div>
-                  <span className="w-14 text-right font-semibold text-[#0A1F44]">
-                    {(item.price * item.quantity).toFixed(0)}
-                  </span>
+                  <span className="w-16 text-right font-medium">KES {(item.price * item.quantity).toFixed(0)}</span>
                   <button
                     onClick={() => updateQty(item.menuItemId, -item.quantity)}
                     className="p-1 text-red-400 hover:text-red-600"
@@ -210,48 +192,25 @@ const StudentOrder = () => {
 
           <div className="border-t pt-3 space-y-1">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Subtotal</span>
+              <span className="text-gray-500">Total</span>
               <span className="font-bold text-[#0A1F44]">KES {total.toFixed(0)}</span>
             </div>
-            {balance > 0 && total > 0 && (
-              <div className="flex justify-between text-xs text-gray-500">
-                <span>From wallet</span>
-                <span>- KES {Math.min(balance, total).toFixed(0)}</span>
-              </div>
-            )}
-            {mpesaDue > 0 && total > 0 && (
-              <div className="flex justify-between text-xs text-green-700 font-medium">
-                <span>M-Pesa due</span>
-                <span>KES {mpesaDue.toFixed(0)}</span>
-              </div>
+            {shortfall > 0 && total > 0 && (
+              <p className="text-xs text-red-600 font-medium">
+                Need KES {shortfall.toFixed(0)} more — top up your wallet to checkout
+              </p>
             )}
           </div>
 
           <form onSubmit={placeOrder} className="space-y-3 border-t pt-3">
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-1 mb-1">
-                <Smartphone size={14} /> M-Pesa Phone
-              </label>
-              <input
-                type="tel"
-                placeholder="0712345678"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                required
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:border-[#0A1F44]/40 outline-none"
-              />
-            </div>
             <button
               type="submit"
-              disabled={loading || cart.length === 0}
+              disabled={loading || cart.length === 0 || shortfall > 0}
               className="w-full py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 transition flex items-center justify-center gap-2"
             >
-              <Smartphone size={18} />
-              {loading ? "Processing..." : `Pay KES ${total.toFixed(0)} with M-Pesa`}
+              <Wallet size={18} />
+              {loading ? "Processing..." : `Pay KES ${total.toFixed(0)} from Wallet`}
             </button>
-            <p className="text-[10px] text-gray-400 text-center">
-              Wallet balance is applied first; any shortfall is charged via M-Pesa
-            </p>
           </form>
         </div>
       </div>

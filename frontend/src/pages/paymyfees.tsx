@@ -1,10 +1,9 @@
 import { useState, useEffect, FormEvent } from "react";
 import { toast } from "@/services/toast";
-import { Loader2, Smartphone } from "lucide-react";
+import { Loader2, Wallet } from "lucide-react";
 import API from "@/services/api";
 
-const PayWithMpesa = () => {
-  const [phone, setPhone] = useState("");
+const TopUpWallet = () => {
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [balance, setBalance] = useState(0);
@@ -17,16 +16,13 @@ const PayWithMpesa = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const numericAmount = Number(amount);
-    if (!/^(01|07)\d{8}$/.test(phone)) {
-      return toast.error("Invalid phone", "Enter a valid 10-digit Kenyan number (e.g. 0712345678)");
-    }
     if (isNaN(numericAmount) || numericAmount <= 0) {
       return toast.error("Invalid amount", "Enter a valid amount greater than 0");
     }
 
     setLoading(true);
     try {
-      const { data } = await API.post("/wallet/topup", { phone, amount: numericAmount });
+      const { data } = await API.post("/wallet/topup", { amount: numericAmount });
       setBalance(data.newBalance);
       toast.success(
         "Top-up successful!",
@@ -44,7 +40,7 @@ const PayWithMpesa = () => {
     <div className="min-h-screen flex items-center justify-center p-4 font-sans bg-[#E8F4FD]">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <div className="text-center mb-6">
-          <h1 className="text-xl font-bold text-[#0A1F44]">Top Up Wallet via M-Pesa</h1>
+          <h1 className="text-xl font-bold text-[#0A1F44]">Top Up Wallet</h1>
           <p className="mt-2 text-gray-500 text-sm">Add funds to your school feeding wallet</p>
           <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-xl">
             <p className="text-xs text-gray-500">Current Balance</p>
@@ -59,15 +55,6 @@ const PayWithMpesa = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">M-Pesa Phone Number</label>
-            <div className="relative">
-              <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input type="tel" placeholder="0712345678" value={phone} onChange={(e) => setPhone(e.target.value)}
-                className="w-full pl-12 pr-4 py-2.5 rounded-lg border focus:ring-2 focus:ring-green-400 outline-none" disabled={loading} required />
-            </div>
-          </div>
-
-          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Amount (KES)</label>
             <input type="number" placeholder="e.g. 500" value={amount} onChange={(e) => setAmount(e.target.value)}
               className="w-full py-2.5 px-3 rounded-lg border focus:ring-2 focus:ring-green-400 outline-none" disabled={loading} required min="1" />
@@ -79,10 +66,10 @@ const PayWithMpesa = () => {
           </button>
         </form>
 
-        <p className="text-xs text-gray-400 text-center mt-4">Simulated M-Pesa integration for demo purposes</p>
+        <p className="text-xs text-gray-400 text-center mt-4">Simulated top-up for demo purposes</p>
       </div>
     </div>
   );
 };
 
-export default PayWithMpesa;
+export default TopUpWallet;

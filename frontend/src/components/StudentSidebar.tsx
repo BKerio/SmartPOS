@@ -10,7 +10,7 @@ const StudentSidebar = () => {
   const menuItems = [
     { name: "Order Meals", icon: UtensilsCrossed, path: "/student/order" },
     { name: "My Wallet", icon: Wallet, path: "/student-fees" },
-    { name: "Top Up (M-Pesa)", icon: Smartphone, path: "/paymyfees" },
+    { name: "Top Up Wallet", icon: Smartphone, path: "/paymyfees" },
     { name: "Profile", icon: User, path: "/student-profile" },
   ];
 

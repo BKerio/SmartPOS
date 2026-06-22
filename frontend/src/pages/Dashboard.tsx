@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Users, GraduationCap, UtensilsCrossed, DollarSign } from "lucide-react";
+import { Users, GraduationCap, UtensilsCrossed, DollarSign, AlertCircle } from "lucide-react";
 import API from "@/services/api";
 import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -50,9 +50,11 @@ const Dashboard = () => {
   const [revenue, setRevenue] = useState(0);
   const [menuCount, setMenuCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchCounts = async () => {
+      setLoadError(null);
       try {
         const [studentsRes, usersRes, menuRes] = await Promise.all([
           API.get("/students"),
@@ -65,8 +67,13 @@ const Dashboard = () => {
         try {
           const finRes = await API.get("/finance/summary");
           setRevenue(finRes.data?.revenue || 0);
-        } catch { /* admin may not have finance route in some cases */ }
-      } catch (error) {
+        } catch { /* optional */ }
+      } catch (error: unknown) {
+        const msg =
+          error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ERR_NETWORK"
+            ? "Cannot reach the backend. Start it with: cd backend && npm run dev"
+            : "Failed to load dashboard data";
+        setLoadError(msg);
         console.error("Error loading dashboard data:", error);
       } finally {
         setLoading(false);
@@ -80,6 +87,8 @@ const Dashboard = () => {
     { name: "Staff Users", value: staffCount },
     { name: "Menu Items", value: menuCount },
   ];
+  const chartTotal = data.reduce((sum, item) => sum + item.value, 0);
+  const showChart = !loading && !loadError && chartTotal > 0;
 
   return (
     <div className="p-4 md:p-8 space-y-8 bg-[#E8F4FD] min-h-screen font-sans">
@@ -90,6 +99,13 @@ const Dashboard = () => {
         </div>
         <div className="mt-6 sm:mt-0 w-14 h-14 rounded-full bg-white text-[#0A1F44] flex items-center justify-center font-bold text-xl">AD</div>
       </div>
+
+      {loadError && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 text-red-800 rounded-xl px-4 py-3 text-sm">
+          <AlertCircle size={18} className="shrink-0 mt-0.5" />
+          <span>{loadError}</span>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-center text-gray-500 animate-pulse">Loading dashboard data...</p>
@@ -104,17 +120,23 @@ const Dashboard = () => {
 
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
         <h3 className="text-xl font-bold text-[#0A1F44] mb-6">Platform Statistics</h3>
-        <div className="h-[350px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
-                {data.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
-              </Pie>
-              <Tooltip />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+        {showChart ? (
+          <div className="w-full min-w-0" style={{ height: 350 }}>
+            <ResponsiveContainer width="100%" height={350} minWidth={0}>
+              <PieChart>
+                <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
+                  {data.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <p className="text-center text-gray-400 py-16 text-sm">
+            {loading ? "Loading chart…" : loadError ? "Chart unavailable while offline" : "No data to chart yet"}
+          </p>
+        )}
       </div>
 
       <p className="text-center text-xs text-gray-500">© {new Date().getFullYear()} SmartPOS School Feeding System</p>

@@ -17,11 +17,12 @@ import StudentOrder from "@/pages/student/StudentOrder";
 import AdminProfile from "@/pages/AdminProfile";
 import StudentProfile from "@/pages/StudentProfile";
 import StudentFees from "@/pages/StudentFees";
-import PayWithMpesa from "@/pages/paymyfees";
+import TopUpWallet from "@/pages/paymyfees";
 import Reports from "@/pages/Reports";
 import AuditLogs from "@/pages/AuditLogs";
 import UserProfile from "@/pages/UserProfile";
 import ParentDashboard from "@/pages/parent/ParentDashboard";
+import PayWithMpesa from "@/pages/parent/PayWithMpesa";
 import PosTerminal from "@/pages/restaurant/PosTerminal";
 import MenuManagement from "@/pages/restaurant/MenuManagement";
 import InventoryPage from "@/pages/restaurant/InventoryPage";
@@ -73,10 +74,11 @@ function AppShell() {
           <Route path="/student-dashboard" element={<ProtectedRoute><Navigate to="/student/order" replace /></ProtectedRoute>} />
           <Route path="/student-profile" element={<ProtectedRoute><StudentProfile /></ProtectedRoute>} />
           <Route path="/student-fees" element={<ProtectedRoute><StudentFees /></ProtectedRoute>} />
-          <Route path="/paymyfees" element={<ProtectedRoute><PayWithMpesa /></ProtectedRoute>} />
+          <Route path="/paymyfees" element={<ProtectedRoute><TopUpWallet /></ProtectedRoute>} />
 
           {/* Parent */}
           <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboard /></ProtectedRoute>} />
+          <Route path="/pay-mpesa" element={<ProtectedRoute><PayWithMpesa /></ProtectedRoute>} />
 
           {/* Restaurant */}
           <Route path="/pos" element={<ProtectedRoute><PosTerminal /></ProtectedRoute>} />

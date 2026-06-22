@@ -39,7 +39,7 @@ const StudentDashboard: React.FC = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <Card title="My Wallet" description="View balance and transaction history" to="/student-fees" icon={<Wallet size={24} />} />
-        <Card title="Top Up (M-Pesa)" description="Add funds to your feeding wallet" to="/paymyfees" icon={<Smartphone size={24} />} />
+        <Card title="Top Up Wallet" description="Add funds to your feeding wallet" to="/paymyfees" icon={<Smartphone size={24} />} />
         <Card title="Profile" description="View your student profile" to="/student-profile" icon={<User size={24} />} />
       </div>
 

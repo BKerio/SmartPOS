@@ -84,7 +84,7 @@ model WalletTransaction {
   student     Student  @relation(fields: [studentId], references: [id])
   amount      Float    // Positive for top-ups, Negative for purchases
   type        String   // "deposit", "purchase", "refund"
-  reference   String?  // e.g. receipt ID or M-Pesa code
+  reference   String?  // e.g. receipt ID or payment reference
   description String?
   createdAt   DateTime @default(now())
 
@@ -215,4 +215,20 @@ model AuditEvent {
   createdAt   DateTime @default(now())
 
   @@map("audit_events")
+}
+
+model MpesaPayment {
+  id                 String   @id @default(cuid())
+  merchantRequestId  String   @default("") @map("merchant_request_id")
+  checkoutRequestId  String   @unique @default("") @map("checkout_request_id")
+  resultCode         Int      @default(0) @map("result_code")
+  resultDesc         String   @default("") @map("result_desc")
+  amount             Float    @default(0)
+  mpesaReceiptNumber String   @default("") @map("mpesa_receipt_number")
+  transactionDate    DateTime @default(now()) @map("transaction_date")
+  phoneNumber        String   @default("") @map("phone_number")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("mpesa_payments")
 }

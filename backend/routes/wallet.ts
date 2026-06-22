@@ -51,6 +51,16 @@ router.post('/deposit', ensureAuthenticated, async (req: Request, res: Response)
   }
 
   try {
+    if (req.user!.role === 'parent') {
+      const linked = await prisma.student.findFirst({
+        where: { id: studentId, parentId: req.user!.id },
+        select: { id: true },
+      });
+      if (!linked) {
+        return res.status(403).json({ message: 'You can only top up wallets for your linked students' });
+      }
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const student = await tx.student.update({
         where: { id: studentId },
@@ -93,7 +103,7 @@ router.post('/deposit', ensureAuthenticated, async (req: Request, res: Response)
 });
 
 // ─── POST /api/wallet/topup ───────────────────────────────────────────────────
-// Simulated M-Pesa top-up for students (credits wallet after phone + amount validation)
+// Simulated wallet top-up for students
 router.post('/topup', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
   if (req.user!.role !== 'student') {
     return res.status(403).json({ message: 'Only students can top up their own wallet' });
@@ -101,15 +111,15 @@ router.post('/topup', ensureAuthenticated, async (req: Request, res: Response): 
 
   const { phone, amount, reference } = req.body;
   const topupAmount = Number(amount);
-  if (!phone || isNaN(topupAmount) || topupAmount <= 0) {
-    return res.status(422).json({ message: 'Valid phone and positive amount are required' });
+  if (isNaN(topupAmount) || topupAmount <= 0) {
+    return res.status(422).json({ message: 'Valid positive amount is required' });
   }
-  if (!/^(01|07)\d{8}$/.test(phone) && !/^254\d{9}$/.test(phone)) {
+  if (phone && !/^(01|07)\d{8}$/.test(phone) && !/^254\d{9}$/.test(phone)) {
     return res.status(422).json({ message: 'Enter a valid Kenyan phone number' });
   }
 
   const studentId = req.user!.id;
-  const mpesaRef = reference || `MPESA-${Date.now()}`;
+  const paymentRef = reference || `TOPUP-${Date.now()}`;
 
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -123,8 +133,8 @@ router.post('/topup', ensureAuthenticated, async (req: Request, res: Response): 
           studentId,
           amount: topupAmount,
           type: 'deposit',
-          reference: mpesaRef,
-          description: `M-Pesa top-up from ${phone}`,
+          reference: paymentRef,
+          description: phone ? `Wallet top-up from ${phone}` : 'Wallet top-up',
         },
       });
 
@@ -137,8 +147,8 @@ router.post('/topup', ensureAuthenticated, async (req: Request, res: Response): 
       userId: req.user!.id,
       userName: req.user!.name,
       action: 'Wallet Top-up',
-      description: `Student topped up KES ${topupAmount} via M-Pesa`,
-      metadata: { amount: topupAmount, reference: mpesaRef, phone },
+      description: `Student topped up KES ${topupAmount}`,
+      metadata: { amount: topupAmount, reference: paymentRef, phone },
       ipAddress: req.ip,
     });
 
