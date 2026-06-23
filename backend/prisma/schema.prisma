@@ -227,6 +227,7 @@ model MpesaPayment {
   mpesaReceiptNumber String   @default("") @map("mpesa_receipt_number")
   transactionDate    DateTime @default(now()) @map("transaction_date")
   phoneNumber        String   @default("") @map("phone_number")
+  studentId          String?  @map("student_id")
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Wallet, Smartphone, User, Receipt } from "lucide-react";
+import { Wallet, User } from "lucide-react";
 import { Link } from "react-router-dom";
 import API from "@/services/api";
 
@@ -37,9 +37,8 @@ const StudentDashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-4xl">
         <Card title="My Wallet" description="View balance and transaction history" to="/student-fees" icon={<Wallet size={24} />} />
-        <Card title="Top Up Wallet" description="Add funds to your feeding wallet" to="/paymyfees" icon={<Smartphone size={24} />} />
         <Card title="Profile" description="View your student profile" to="/student-profile" icon={<User size={24} />} />
       </div>
 

@@ -44,7 +44,7 @@ const getAccessToken = async (): Promise<string> => {
 router.post('/stkpush', async (req: Request, res: Response) => {
   console.log('--- STK Push Initiated ---');
   console.log('Sending with Callback URL:', MPESA_CALLBACK_URL);
-  const { phone, amount } = req.body as { phone: string; amount: number };
+  const { phone, amount, studentId } = req.body as { phone: string; amount: number; studentId?: string };
 
   try {
     const formattedPhone = formatPhoneNumber(phone);
@@ -83,6 +83,27 @@ router.post('/stkpush', async (req: Request, res: Response) => {
         },
       }
     );
+
+    const { CheckoutRequestID, MerchantRequestID } = stkResponse.data as {
+      CheckoutRequestID: string;
+      MerchantRequestID: string;
+    };
+
+    if (CheckoutRequestID) {
+      await prisma.mpesaPayment.create({
+        data: {
+          checkoutRequestId: CheckoutRequestID,
+          merchantRequestId: MerchantRequestID,
+          amount: amount,
+          phoneNumber: formattedPhone,
+          resultCode: 999, // 999 indicates pending/initiated
+          resultDesc: 'Initiated STK Push',
+          mpesaReceiptNumber: 'N/A',
+          studentId: studentId || null,
+        }
+      });
+      console.log(`Created pending payment for student ${studentId} with CheckoutRequestID ${CheckoutRequestID}`);
+    }
 
     res.status(200).json(stkResponse.data);
   } catch (error: any) {
@@ -168,6 +189,34 @@ router.post('/stkpush/callback', async (req: Request, res: Response) => {
     });
 
     console.log('Saved M-Pesa transaction to database:', transaction.id);
+
+    // Credit student wallet if payment is successful and studentId exists
+    if (ResultCode === 0 && transaction.studentId) {
+      const studentId = transaction.studentId;
+      try {
+        await prisma.$transaction(async (tx) => {
+          // 1. Credit wallet balance
+          await tx.student.update({
+            where: { id: studentId },
+            data: { walletBalance: { increment: amount } },
+          });
+
+          // 2. Create wallet transaction record
+          await tx.walletTransaction.create({
+            data: {
+              studentId,
+              amount: amount,
+              type: 'deposit',
+              reference: receipt,
+              description: `M-Pesa top-up from ${phone}`,
+            },
+          });
+        });
+        console.log(`Successfully credited student ${studentId} wallet with KES ${amount}`);
+      } catch (walletErr: any) {
+        console.error(`Failed to credit student ${studentId} wallet:`, walletErr.message);
+      }
+    }
 
     const io = req.app.get('io');
     if (io && CheckoutRequestID) {

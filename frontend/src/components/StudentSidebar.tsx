@@ -1,4 +1,4 @@
-import { UtensilsCrossed, ChevronLeft, ChevronRight, LogOut, User, Wallet, Smartphone } from "lucide-react";
+import { UtensilsCrossed, ChevronLeft, ChevronRight, LogOut, User, Wallet } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "@/services/toast";
@@ -10,7 +10,6 @@ const StudentSidebar = () => {
   const menuItems = [
     { name: "Order Meals", icon: UtensilsCrossed, path: "/student/order" },
     { name: "My Wallet", icon: Wallet, path: "/student-fees" },
-    { name: "Top Up Wallet", icon: Smartphone, path: "/paymyfees" },
     { name: "Profile", icon: User, path: "/student-profile" },
   ];
 

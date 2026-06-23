@@ -1,14 +1,20 @@
 import { useState, useRef, useEffect, FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
-import { Smartphone, Coins, ArrowLeft } from 'lucide-react';
-import Loader from '@/components/ui/loader';
+import { Smartphone, Coins, ArrowLeft, Info, CheckCircle2, ArrowUp, ArrowDown } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 
 const PayWithMpesa = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { studentId, studentName, regNo, currentBalance } = (location.state || {}) as {
+    studentId?: string;
+    studentName?: string;
+    regNo?: string;
+    currentBalance?: number;
+  };
   const [phone, setPhone] = useState('');
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,7 +27,6 @@ const PayWithMpesa = () => {
   const socketRef = useRef<Socket | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const hardTimeoutRef = useRef<number | null>(null);
-  const [showBubbles, setShowBubbles] = useState(false);
   const MySwal = withReactContent(Swal);
 
   const validateInputs = (): boolean => {
@@ -43,7 +48,6 @@ const PayWithMpesa = () => {
   const connectSocket = () => {
     if (socketRef.current && socketRef.current.connected) return socketRef.current;
     
-    // Derive socket URL robustly
     let derivedUrl = SOCKET_URL;
     if (!derivedUrl) {
       if (API_URL && !API_URL.startsWith('/')) {
@@ -74,7 +78,6 @@ const PayWithMpesa = () => {
   useEffect(() => {
     return () => {
       clearTimers();
-      setShowBubbles(false);
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
@@ -87,53 +90,25 @@ const PayWithMpesa = () => {
     setValidationErrors({});
     if (!validateInputs()) return;
 
-    setShowBubbles(false);
     setLoading(true);
 
     try {
       const formattedPhone = '254' + phone.slice(-9);
       const numericAmount = Number(amount);
 
-      MySwal.fire({
-        title: 'Processing Payment...',
-        text: 'Please wait while we initiate the STK push.',
-        icon: 'info',
-        allowOutsideClick: false,
-        didOpen: () => {
-          // Add bouncing bubbles to the modal
-          const modalContent = document.querySelector('.swal2-html-container');
-          if (modalContent) {
-            const bubblesContainer = document.createElement('div');
-            bubblesContainer.className = 'flex items-center justify-center mt-4';
-            bubblesContainer.innerHTML = `
-              <div class="flex items-end space-x-3">
-                <span class="w-5 h-5 rounded-full bg-green-500 animate-bounce" style="animation-delay: 0ms"></span>
-                <span class="w-5 h-5 rounded-full bg-blue-500 animate-bounce" style="animation-delay: 100ms"></span>
-                <span class="w-5 h-5 rounded-full bg-yellow-500 animate-bounce" style="animation-delay: 200ms"></span>
-                <span class="w-5 h-5 rounded-full bg-red-500 animate-bounce" style="animation-delay: 300ms"></span>
-                <span class="w-5 h-5 rounded-full bg-purple-500 animate-bounce" style="animation-delay: 400ms"></span>
-              </div>
-            `;
-            modalContent.appendChild(bubblesContainer);
-          }
-        }
-      });
-
       const response = await axios.post(`${API_URL}/stkpush`, {
         phone: formattedPhone,
-        amount: numericAmount
+        amount: numericAmount,
+        studentId: studentId || null
       });
 
       console.log('STK Push Response:', response.data);
       const { CheckoutRequestID } = response.data || {};
 
-      // Join socket room by CheckoutRequestID to receive real-time updates
       if (CheckoutRequestID) {
         const socket = connectSocket();
 
-        // Remove any prior listener to avoid duplicates
         socket.off('transaction_update');
-
         socket.emit('join_checkout', { checkoutRequestId: CheckoutRequestID });
 
         // Soft pending notice after 45s
@@ -146,9 +121,9 @@ const PayWithMpesa = () => {
           });
         }, 45000);
 
-        // Hard fallback after 3 minutes if no callback received
+        // Hard fallback after 3 minutes
         hardTimeoutRef.current = window.setTimeout(() => {
-          setShowBubbles(false);
+          setLoading(false);
           MySwal.fire({
             title: 'Payment Timeout',
             text: 'We did not receive a response in time. Please try again.',
@@ -159,12 +134,9 @@ const PayWithMpesa = () => {
 
         socket.on('transaction_update', (payload: any) => {
           clearTimers();
-          setShowBubbles(false);
+          setLoading(false);
           const status: string = payload?.status || 'failure';
           const desc: string = payload?.resultDesc || 'Payment update received.';
-
-          // Close loading if open
-          Swal.close();
 
           if (status === 'success') {
             setLastReceipt({
@@ -173,55 +145,16 @@ const PayWithMpesa = () => {
               phone: payload?.phone || phone
             });
             setPaymentStatus('success');
-            MySwal.fire({
-              title: 'Payment Successful',
-              text: `KES ${payload?.amount || numericAmount} received.`,
-              icon: 'success',
-              timer: 2000,
-              showConfirmButton: false
-            });
-          } else if (status === 'cancelled') {
-            MySwal.fire({
-              title: 'Payment Cancelled',
-              text: 'You cancelled the payment prompt.',
-              icon: 'error',
-              confirmButtonText: 'OK'
-            });
-          } else if (status === 'wrong_pin') {
-            MySwal.fire({
-              title: 'Wrong PIN',
-              text: 'The PIN entered was incorrect. Please try again.',
-              icon: 'error',
-              confirmButtonText: 'Retry'
-            });
-          } else if (status === 'insufficient_funds') {
-            MySwal.fire({
-              title: 'Insufficient Funds',
-              text: 'Your M-Pesa balance is insufficient for this transaction.',
-              icon: 'error',
-              confirmButtonText: 'OK'
-            });
-          } else if (status === 'timeout') {
-            MySwal.fire({
-              title: 'Request Timed Out',
-              text: 'The payment request timed out. Please try again.',
-              icon: 'warning',
-              confirmButtonText: 'OK'
-            });
           } else {
             MySwal.fire({
-              title: 'Payment Failed',
+              title: `Payment ${status.toUpperCase()}`,
               text: desc,
-              icon: 'error',
+              icon: status === 'cancelled' ? 'info' : 'error',
               confirmButtonText: 'OK'
             });
           }
         });
       }
-
-      setPhone('');
-      setAmount('');
-      setShowBubbles(true);
 
     } catch (err: any) {
       console.error('STK Push Error:', err);
@@ -235,149 +168,231 @@ const PayWithMpesa = () => {
 
       MySwal.fire({
         title: 'Payment Failed',
-        html: `${errorMessage}${details ? `<br/><small>${details}</small>` : ''}`,
+        html: `${errorMessage}${details ? `<br/><small className="text-xs text-red-400">${details}</small>` : ''}`,
         icon: 'error',
         confirmButtonText: 'Try Again'
       });
-      setShowBubbles(false);
-    } finally {
       setLoading(false);
     }
   };
 
+  // SUCCESS STATUS PAGE
   if (paymentStatus === 'success') {
     return (
       <div className="bg-gradient-to-br from-slate-50 to-white min-h-screen flex items-center justify-center p-6 font-sans">
-        <div className="w-full max-w-[400px] bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-slate-100 p-10 text-center success-card relative overflow-hidden">
-          {/* Decorative radial gradient */}
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-green-500 to-transparent" />
+        <div className="w-full max-w-[420px] bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-slate-100 p-8 text-center space-y-6">
           
-          <div className="mb-8">
-            <h1 className="text-5xl font-black text-green-600 mb-3">Success!</h1>
-            <div className="inline-block px-3 py-1 bg-green-100 rounded-full">
-              <p className="text-green-700 font-bold tracking-wider uppercase text-[10px]">Payment Confirmed</p>
-            </div>
-          </div>
-          
-          <div className="bg-slate-50 rounded-3xl p-8 mb-8 border border-slate-100 space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400 text-sm font-medium">Receipt</span>
-              <span className="font-bold text-slate-700 font-mono tracking-tight">{lastReceipt?.receipt}</span>
-            </div>
-            <div className="h-px bg-dashed bg-slate-200 w-full" style={{ backgroundImage: 'linear-gradient(to right, #e2e8f0 50%, transparent 50%)', backgroundSize: '8px 1px', backgroundRepeat: 'repeat-x' }} />
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400 text-sm font-medium">Amount</span>
-              <span className="text-2xl font-black text-green-600">KES {lastReceipt?.amount}</span>
-            </div>
-            <div className="flex justify-between items-center pt-2">
-              <span className="text-slate-400 text-sm font-medium">Account</span>
-              <span className="font-semibold text-slate-600">{lastReceipt?.phone}</span>
-            </div>
+          {/* Green checkmark circle */}
+          <div className="w-24 h-24 mx-auto bg-white rounded-full flex items-center justify-center border-2 border-emerald-500 shadow-[0_10px_30px_rgba(16,185,129,0.1)]">
+            <svg className="w-10 h-10 text-emerald-500 font-bold" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
           </div>
 
-          <button
-            onClick={() => setPaymentStatus('idle')}
-            className="w-full py-4 px-4 text-base font-black text-white bg-slate-900 hover:bg-black rounded-2xl transition-all duration-300 shadow-xl active:scale-[0.98]"
-          >
-            Back to Dashboard
-          </button>
+          <div className="space-y-1">
+            <h2 className="text-xl font-extrabold text-slate-800 tracking-wide uppercase">Transfer Completed</h2>
+            <p className="text-sm font-semibold text-emerald-500">Transaction ID: {lastReceipt?.receipt}</p>
+          </div>
+
+          {/* Receipt detail region card */}
+          <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-6 text-left space-y-4">
+            <div className="flex justify-between items-center text-sm font-medium">
+              <span className="text-slate-400">Receipt No</span>
+              <span className="font-extrabold text-slate-800 font-mono tracking-tight">{lastReceipt?.receipt}</span>
+            </div>
+            
+            <div className="h-px bg-slate-200/60 w-full" />
+            
+            <div className="flex justify-between items-center text-sm font-medium">
+              <span className="text-slate-400">Amount Paid</span>
+              <span className="text-xl font-extrabold text-emerald-600">KES {lastReceipt?.amount}</span>
+            </div>
+            
+            <div className="flex justify-between items-center text-sm font-medium">
+              <span className="text-slate-400">Source Phone</span>
+              <span className="font-extrabold text-slate-800">{lastReceipt?.phone}</span>
+            </div>
+            
+            {studentName && (
+              <>
+                <div className="h-px bg-slate-200/60 w-full" />
+                <div className="flex justify-between items-center text-sm font-medium">
+                  <span className="text-slate-400">Recipient Student</span>
+                  <span className="font-extrabold text-slate-800">{studentName} ({regNo})</span>
+                </div>
+                <div className="flex justify-between items-center text-sm font-medium">
+                  <span className="text-slate-400">New Wallet Balance</span>
+                  <span className="font-extrabold text-emerald-600">KES {((currentBalance || 0) + (lastReceipt?.amount || 0)).toLocaleString()}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Back button */}
+          <div className="pt-2">
+            <button
+              onClick={() => {
+                setPhone('');
+                setAmount('');
+                setPaymentStatus('idle');
+                navigate('/parent-dashboard');
+              }}
+              className="w-full py-5 px-4 text-base font-extrabold text-white bg-[#15A84F] hover:bg-[#108c40] active:scale-[0.98] rounded-[1.5rem] transition-all duration-300 shadow-lg shadow-emerald-100/50"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+
         </div>
       </div>
     );
   }
 
+  // LOADING / PROCESSING PAGE (Matches the user's mockup design)
+  if (loading) {
+    return (
+      <div className="bg-gradient-to-br from-slate-50 to-white min-h-screen flex items-center justify-center p-6 font-sans">
+        <div className="w-full max-w-[420px] bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-slate-100 p-8 text-center space-y-6">
+          
+          {/* Animated arrows circle */}
+          <div className="relative w-24 h-24 mx-auto bg-white rounded-full flex items-center justify-center border-2 border-emerald-500/10 shadow-[0_10px_35px_rgba(16,185,129,0.08)]">
+            <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-emerald-500 border-r-emerald-500 animate-spin" />
+            <svg className="w-10 h-10 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+            </svg>
+          </div>
+
+          <div className="space-y-1">
+            <h2 className="text-xl font-extrabold text-slate-800 tracking-wide uppercase">Transfer In Progress</h2>
+            <p className="text-sm font-semibold text-emerald-500 animate-pulse">Processing Transaction...</p>
+          </div>
+
+          {/* From Card */}
+          <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-4 text-left flex flex-col space-y-2">
+            <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
+              <ArrowUp className="w-3.5 h-3.5 text-slate-400" /> From
+            </span>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center font-bold text-emerald-600">
+                M
+              </div>
+              <div>
+                <p className="font-bold text-slate-700">{phone}</p>
+                <p className="text-xs text-slate-400 font-medium">Safaricom M-Pesa Account</p>
+              </div>
+            </div>
+          </div>
+
+          {/* To Card */}
+          <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-4 text-left flex flex-col space-y-2">
+            <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
+              <ArrowDown className="w-3.5 h-3.5 text-slate-400" /> To
+            </span>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center font-bold text-[#0A1F44]">
+                K
+              </div>
+              <div>
+                <p className="font-extrabold text-slate-800">KES {Number(amount).toFixed(2)}</p>
+                <p className="text-xs text-slate-400 font-medium">
+                  {studentName ? `${studentName} (${regNo})` : 'School Feeding Wallet'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Status footer info */}
+          <div className="flex items-center justify-center gap-1.5 text-xs text-slate-400 pt-2">
+            <span>Awaiting SIM prompt PIN confirmation...</span>
+            <Info className="w-4 h-4 text-slate-300" />
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  // IDLE INPUT FORM (Matches the user's mockup design)
   return (
-    <div className="bg-gradient-to-tr from-slate-50 via-white to-green-50/30 min-h-screen flex items-center justify-center p-6 font-sans">
-      <div className="w-full max-w-[400px] bg-white rounded-[2.5rem] shadow-[0_25px_60px_rgba(0,0,0,0.08)] border border-slate-100 p-10 relative overflow-hidden">
-        {/* Subtle background glow */}
-        <div className="absolute -top-24 -right-24 w-48 h-48 bg-green-400/10 blur-[80px] rounded-full" />
+    <div className="bg-gradient-to-tr from-slate-50 via-white to-green-50/10 min-h-screen flex items-center justify-center p-6 font-sans">
+      <div className="w-full max-w-[420px] bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.03)] border border-slate-100/80 p-10 relative">
         
+        {/* Back arrow */}
         <button
           onClick={() => navigate('/parent-dashboard')}
-          className="absolute top-6 left-6 text-slate-500 hover:text-slate-800 transition-colors z-10"
+          className="absolute top-8 left-8 text-slate-400 hover:text-slate-700 transition-colors z-10"
         >
-          <ArrowLeft className="w-6 h-6" />
+          <ArrowLeft className="w-6 h-6 stroke-[2]" />
         </button>
 
-        <div className="text-center mb-10 mt-4 relative">
-          <h1 className="text-4xl font-extrabold text-[#0A1F44] mb-3 hover:scale-105 transition-transform cursor-default">Pay with M-Pesa</h1>
-          <p className="text-slate-400 font-medium text-sm px-4">Fast & secure payment via STK Push</p>
+        <div className="text-center mb-6 mt-6">
+          <h1 className="text-3xl font-extrabold text-[#0D233A] tracking-tight mb-2">Pay with M-Pesa</h1>
+          <p className="text-slate-400 font-medium text-sm">Secure payment via STK Push</p>
         </div>
 
-        <form onSubmit={handleSubmit} noValidate className="space-y-8 relative">
+        {studentName && (
+          <div className="mb-6 p-4 bg-slate-50 border border-slate-100/60 rounded-2xl flex items-center justify-between text-xs">
+            <div>
+              <span className="text-slate-400 font-semibold uppercase block tracking-wider mb-0.5">Top-up Wallet For</span>
+              <span className="font-extrabold text-slate-700 text-sm">{studentName}</span>
+              <span className="text-slate-400 block mt-0.5">{regNo}</span>
+            </div>
+            <div className="text-right">
+              <span className="text-slate-400 font-semibold uppercase block tracking-wider mb-0.5">Current Balance</span>
+              <span className="font-extrabold text-emerald-600 text-sm">KES {Number(currentBalance).toLocaleString()}</span>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} noValidate className="space-y-6">
+          {/* Phone Field */}
           <div className="space-y-2">
-            <label htmlFor="phone" className="block text-xs font-bold text-slate-400 normal-case tracking-widest pl-1">
-               Enter your Phone Number
+            <label htmlFor="phone" className="block text-[10px] font-extrabold text-slate-400 tracking-wider pl-1 uppercase">
+              Phone Number
             </label>
-            <div className="relative group">
-              <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-green-500 transition-colors" />
+            <div className="relative flex items-center bg-slate-50/50 border border-slate-100 hover:border-slate-200 focus-within:border-emerald-500 focus-within:bg-white rounded-2xl transition-all duration-300 px-4 py-4 shadow-[inset_0_2px_4px_rgba(0,0,0,0.01)]">
+              <Smartphone className="w-5 h-5 text-slate-300 stroke-[1.5] mr-3" />
               <input
                 id="phone"
                 type="tel"
                 placeholder="0712345678"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className={`w-full pl-12 pr-4 py-4 rounded-2xl border bg-slate-50/50 shadow-inner transition-all duration-300 focus:bg-white focus:ring-4 ${
-                  validationErrors.phone ? 'border-red-400 focus:ring-red-100' : 'border-slate-100 focus:ring-green-100'
-                }`}
-                disabled={loading}
+                className="w-full bg-transparent border-none outline-none text-slate-700 text-lg font-medium placeholder-slate-300 p-0 focus:ring-0"
               />
             </div>
-            {validationErrors.phone && <p className="mt-2 text-[10px] font-bold text-red-500 pl-1">{validationErrors.phone}</p>}
+            {validationErrors.phone && <p className="mt-1 text-xs font-bold text-red-500 pl-1">{validationErrors.phone}</p>}
           </div>
 
+          {/* Amount Field */}
           <div className="space-y-2">
-            <label htmlFor="amount" className="block text-xs font-bold text-slate-400 normal-case tracking-widest pl-1">
+            <label htmlFor="amount" className="block text-[10px] font-extrabold text-slate-400 tracking-wider pl-1 uppercase">
               Amount (KES)
             </label>
-            <div className="relative group">
-              <Coins className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-green-500 transition-colors" />
+            <div className="relative flex items-center bg-slate-50/50 border border-slate-100 hover:border-slate-200 focus-within:border-emerald-500 focus-within:bg-white rounded-2xl transition-all duration-300 px-4 py-4 shadow-[inset_0_2px_4px_rgba(0,0,0,0.01)]">
+              <Coins className="w-5 h-5 text-slate-300 stroke-[1.5] mr-3" />
               <input
                 id="amount"
                 type="number"
                 placeholder="0.00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className={`w-full pl-12 pr-4 py-4 rounded-2xl border bg-slate-50/50 shadow-inner transition-all duration-300 focus:bg-white focus:ring-4 ${
-                  validationErrors.amount ? 'border-red-400 focus:ring-red-100' : 'border-slate-100 focus:ring-green-100'
-                }`}
-                disabled={loading}
+                className="w-full bg-transparent border-none outline-none text-slate-700 text-lg font-medium placeholder-slate-300 p-0 focus:ring-0"
               />
             </div>
-            {validationErrors.amount && <p className="mt-2 text-[10px] font-bold text-red-500 pl-1">{validationErrors.amount}</p>}
+            {validationErrors.amount && <p className="mt-1 text-xs font-bold text-red-500 pl-1">{validationErrors.amount}</p>}
           </div>
 
-          <div className="pt-4">
+          {/* Button */}
+          <div className="pt-6">
             <button
               type="submit"
-              disabled={loading}
-              className="w-full flex items-center justify-center py-5 px-4 text-base font-black text-white bg-green-600 hover:bg-green-700 rounded-[1.25rem] transition-all duration-300 shadow-xl shadow-green-100 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+              className="w-full py-5 px-4 text-base font-extrabold text-white bg-[#15A84F] hover:bg-[#108c40] active:scale-[0.98] rounded-[1.5rem] transition-all duration-300 shadow-lg shadow-emerald-100/50"
             >
-              {loading ? (
-                <>
-                  <Loader size="xs" showText={false} className="mr-3" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  Pay KES {Number(amount) || 0}
-                </>
-              )}
+              Pay KES {amount || '0'}
             </button>
           </div>
         </form>
-
-        {showBubbles && (
-          <div className="mt-8 flex items-center justify-center">
-            <div className="flex items-end space-x-3" aria-label="Payment prompt sent, awaiting your confirmation">
-              <span className="w-5 h-5 rounded-full bg-green-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-5 h-5 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '100ms' }} />
-              <span className="w-5 h-5 rounded-full bg-yellow-500 animate-bounce" style={{ animationDelay: '100ms' }} />
-              <span className="w-5 h-5 rounded-full bg-red-500 animate-bounce" style={{ animationDelay: '200ms' }} />
-              <span className="w-5 h-5 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '200ms' }} />
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

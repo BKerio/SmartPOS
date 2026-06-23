@@ -20,7 +20,6 @@ import StudentOrder from "@/pages/student/StudentOrder";
 import AdminProfile from "@/pages/AdminProfile";
 import StudentProfile from "@/pages/StudentProfile";
 import StudentFees from "@/pages/StudentFees";
-import TopUpWallet from "@/pages/paymyfees";
 import Reports from "@/pages/Reports";
 import AuditLogs from "@/pages/AuditLogs";
 import UserProfile from "@/pages/UserProfile";
@@ -80,7 +79,6 @@ function AppShell() {
           <Route path="/student-dashboard" element={<ProtectedRoute><Navigate to="/student/order" replace /></ProtectedRoute>} />
           <Route path="/student-profile" element={<ProtectedRoute><StudentProfile /></ProtectedRoute>} />
           <Route path="/student-fees" element={<ProtectedRoute><StudentFees /></ProtectedRoute>} />
-          <Route path="/paymyfees" element={<ProtectedRoute><TopUpWallet /></ProtectedRoute>} />
 
           {/* Parent */}
           <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboard /></ProtectedRoute>} />
