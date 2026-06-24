@@ -44,7 +44,7 @@ const UserNavbar = () => {
                     <div>
                         <h1 className="text-base font-bold text-gray-800 flex items-center gap-1.5">
                             {ROLE_ICONS[role] || <UserIcon size={18} />}
-                            {ROLE_LABELS[role] || role} Console
+                            {ROLE_LABELS[role] || role} Dashboard
                         </h1>
                         <p className="text-xs text-gray-500">Welcome, {userName}</p>
                     </div>
