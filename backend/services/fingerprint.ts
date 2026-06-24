@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import prisma from '@/services/prisma';
 
 const SCANNER_URL = process.env.FINGERPRINT_SCANNER_URL || 'http://127.0.0.1:17890';
-const SCANNER_TIMEOUT_MS = 15_000;
+const SCANNER_TIMEOUT_MS = 8_000;
 
 export class FingerprintDuplicateError extends Error {
   matchedStudent?: { id: string; name: string; regNo: string };
@@ -66,20 +66,42 @@ const findBiometricDuplicate = async (
   return null;
 };
 
+/** Hash + exact DB match only (fast). */
+export const checkFingerprintFast = async (
+  template: string,
+  excludeStudentId?: string,
+): Promise<{ unique: true } | { unique: false; message: string; matchedStudent?: { id: string; name: string; regNo: string } }> => {
+  try {
+    await assertFingerprintUnique(template, excludeStudentId, { biometric: false });
+    return { unique: true };
+  } catch (err) {
+    if (err instanceof FingerprintDuplicateError) {
+      return { unique: false, message: err.message, matchedStudent: err.matchedStudent };
+    }
+    throw err;
+  }
+};
+
 /** Ensures template is not already assigned to another student (exact + biometric). */
 export const assertFingerprintUnique = async (
   template: string,
   excludeStudentId?: string,
+  options?: { biometric?: boolean },
 ): Promise<void> => {
+  const runBiometric = options?.biometric !== false;
   const hash = hashFingerprintTemplate(template);
+  const exclude = excludeStudentId ? { id: { not: excludeStudentId } } : {};
 
-  const exactTemplateMatch = await prisma.student.findFirst({
-    where: {
-      fingerprintTemplate: template,
-      ...(excludeStudentId ? { id: { not: excludeStudentId } } : {}),
-    },
-    select: { id: true, name: true, regNo: true },
-  });
+  const [exactTemplateMatch, exactMatch] = await Promise.all([
+    prisma.student.findFirst({
+      where: { fingerprintTemplate: template, ...exclude },
+      select: { id: true, name: true, regNo: true },
+    }),
+    prisma.student.findFirst({
+      where: { fingerprintTemplateHash: hash, ...exclude },
+      select: { id: true, name: true, regNo: true },
+    }),
+  ]);
 
   if (exactTemplateMatch) {
     throw new FingerprintDuplicateError(
@@ -88,14 +110,6 @@ export const assertFingerprintUnique = async (
     );
   }
 
-  const exactMatch = await prisma.student.findFirst({
-    where: {
-      fingerprintTemplateHash: hash,
-      ...(excludeStudentId ? { id: { not: excludeStudentId } } : {}),
-    },
-    select: { id: true, name: true, regNo: true },
-  });
-
   if (exactMatch) {
     throw new FingerprintDuplicateError(
       `This fingerprint is already enrolled for ${exactMatch.name} (${exactMatch.regNo})`,
@@ -103,10 +117,12 @@ export const assertFingerprintUnique = async (
     );
   }
 
+  if (!runBiometric) return;
+
   const others = await prisma.student.findMany({
     where: {
       fingerprintTemplate: { not: null },
-      ...(excludeStudentId ? { id: { not: excludeStudentId } } : {}),
+      ...exclude,
     },
     select: {
       id: true,
@@ -132,9 +148,10 @@ export const assertFingerprintUnique = async (
 export const checkFingerprintUnique = async (
   template: string,
   excludeStudentId?: string,
+  options?: { biometric?: boolean },
 ): Promise<{ unique: true } | { unique: false; message: string; matchedStudent?: { id: string; name: string; regNo: string } }> => {
   try {
-    await assertFingerprintUnique(template, excludeStudentId);
+    await assertFingerprintUnique(template, excludeStudentId, options);
     return { unique: true };
   } catch (err) {
     if (err instanceof FingerprintDuplicateError) {

@@ -149,6 +149,130 @@ router.get('/students', ensureAuthenticated, async (req: Request, res: Response)
   }
 });
 
+// ─── GET /api/parents/students/:id/history ───────────────────────────────────
+router.get('/students/:id/history', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (req.user!.role !== 'parent') return res.status(403).json({ message: 'Not authorized' });
+
+  try {
+    const studentId = req.params.id as string;
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, parentId: req.user!.id },
+      select: {
+        id: true,
+        name: true,
+        regNo: true,
+        walletBalance: true,
+        transactions: { orderBy: { createdAt: 'desc' }, take: 100 },
+      },
+    });
+
+    if (!student) return res.status(404).json({ message: 'Student not found' });
+    return res.json(student);
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── GET /api/parents/students/:id/wallet-settings ────────────────────────────
+router.get('/students/:id/wallet-settings', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (req.user!.role !== 'parent') return res.status(403).json({ message: 'Not authorized' });
+
+  try {
+    const studentId = req.params.id as string;
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, parentId: req.user!.id },
+      select: {
+        id: true,
+        name: true,
+        regNo: true,
+        walletFrozen: true,
+        dailySpendLimit: true,
+        weeklySpendLimit: true,
+        walletPinSetAt: true,
+      },
+    });
+    if (!student) return res.status(404).json({ message: 'Student not found' });
+    return res.json({ ...student, pinEnabled: Boolean(student.walletPinSetAt) });
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── PUT /api/parents/students/:id/wallet-settings ────────────────────────────
+router.put('/students/:id/wallet-settings', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (req.user!.role !== 'parent') return res.status(403).json({ message: 'Not authorized' });
+
+  const { dailySpendLimit, weeklySpendLimit, walletFrozen, pin, resetPin } = req.body || {};
+
+  const parseLimit = (v: any): number | null | undefined => {
+    if (v === undefined) return undefined;
+    if (v === null || v === '' || v === 'none') return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) throw new Error('INVALID_LIMIT');
+    return n;
+  };
+
+  try {
+    const studentId = req.params.id as string;
+    const linked = await prisma.student.findFirst({
+      where: { id: studentId, parentId: req.user!.id },
+      select: { id: true, regNo: true, name: true },
+    });
+    if (!linked) return res.status(404).json({ message: 'Student not found' });
+
+    const data: any = {};
+    try {
+      const d = parseLimit(dailySpendLimit);
+      if (d !== undefined) data.dailySpendLimit = d;
+      const w = parseLimit(weeklySpendLimit);
+      if (w !== undefined) data.weeklySpendLimit = w;
+    } catch {
+      return res.status(422).json({ message: 'Invalid limit value' });
+    }
+
+    if (walletFrozen !== undefined) data.walletFrozen = Boolean(walletFrozen);
+
+    if (resetPin === true) {
+      data.walletPinHash = null;
+      data.walletPinSetAt = null;
+    } else if (typeof pin === 'string' && pin.trim()) {
+      const raw = pin.trim();
+      if (!/^\d{4}$/.test(raw)) return res.status(422).json({ message: 'PIN must be exactly 4 digits' });
+      data.walletPinHash = await bcrypt.hash(raw, 10);
+      data.walletPinSetAt = new Date();
+    }
+
+    const updated = await prisma.student.update({
+      where: { id: studentId },
+      data,
+      select: {
+        id: true,
+        name: true,
+        regNo: true,
+        walletFrozen: true,
+        dailySpendLimit: true,
+        weeklySpendLimit: true,
+        walletPinSetAt: true,
+      },
+    });
+
+    await logAuditEvent({
+      eventType: 'wallet_settings_updated',
+      userType: 'parent',
+      userId: req.user!.id,
+      userName: req.user!.name,
+      action: 'Update Wallet Settings',
+      description: `Updated wallet settings for ${updated.name} (${updated.regNo})`,
+      metadata: { studentId: updated.id },
+      ipAddress: req.ip,
+    });
+
+    return res.json({ ...updated, pinEnabled: Boolean(updated.walletPinSetAt) });
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
 // ─── GET /api/parents/:id ─────────────────────────────────────────────────────
 router.get('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
   try {

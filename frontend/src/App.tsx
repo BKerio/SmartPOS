@@ -16,7 +16,6 @@ import Register from "@/pages/Register";
 import PendingApprovals from "@/pages/PendingApprovals";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Login from "@/pages/Login";
-import StudentOrder from "@/pages/student/StudentOrder";
 import AdminProfile from "@/pages/AdminProfile";
 import StudentProfile from "@/pages/StudentProfile";
 import StudentFees from "@/pages/StudentFees";
@@ -25,8 +24,17 @@ import AuditLogs from "@/pages/AuditLogs";
 import UserProfile from "@/pages/UserProfile";
 import ParentDashboard from "@/pages/parent/ParentDashboard";
 import PayWithMpesa from "@/pages/parent/PayWithMpesa";
+import ParentTopUpWallet from "@/pages/parent/ParentTopUpWallet";
+import ParentManageWallet from "@/pages/parent/ParentManageWallet";
+import ParentWalletHistory from "@/pages/parent/ParentWalletHistory";
 import PosTerminal from "@/pages/restaurant/PosTerminal";
 import MenuManagement from "@/pages/restaurant/MenuManagement";
+import MenuListPage from "@/pages/restaurant/MenuListPage";
+import MenuAddPage from "@/pages/restaurant/MenuAddPage";
+import MenuEditPage from "@/pages/restaurant/MenuEditPage";
+import MenuUpdatePage from "@/pages/restaurant/MenuUpdatePage";
+import MenuDeletePage from "@/pages/restaurant/MenuDeletePage";
+import MenuRecipesPage from "@/pages/restaurant/MenuRecipesPage";
 import InventoryPage from "@/pages/restaurant/InventoryPage";
 import FinanceDashboard from "@/pages/finance/FinanceDashboard";
 import ExpensesPage from "@/pages/finance/ExpensesPage";
@@ -75,18 +83,26 @@ function AppShell() {
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
 
           {/* Student */}
-          <Route path="/student/order" element={<ProtectedRoute><StudentOrder /></ProtectedRoute>} />
-          <Route path="/student-dashboard" element={<ProtectedRoute><Navigate to="/student/order" replace /></ProtectedRoute>} />
+          <Route path="/student-dashboard" element={<ProtectedRoute><Navigate to="/student-fees" replace /></ProtectedRoute>} />
           <Route path="/student-profile" element={<ProtectedRoute><StudentProfile /></ProtectedRoute>} />
           <Route path="/student-fees" element={<ProtectedRoute><StudentFees /></ProtectedRoute>} />
 
           {/* Parent */}
           <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboard /></ProtectedRoute>} />
           <Route path="/pay-mpesa" element={<ProtectedRoute><PayWithMpesa /></ProtectedRoute>} />
+          <Route path="/parent/topup" element={<ProtectedRoute><ParentTopUpWallet /></ProtectedRoute>} />
+          <Route path="/parent/wallet" element={<ProtectedRoute><ParentManageWallet /></ProtectedRoute>} />
+          <Route path="/parent/history" element={<ProtectedRoute><ParentWalletHistory /></ProtectedRoute>} />
 
           {/* Restaurant */}
           <Route path="/pos" element={<ProtectedRoute><PosTerminal /></ProtectedRoute>} />
           <Route path="/menu-management" element={<ProtectedRoute><MenuManagement /></ProtectedRoute>} />
+          <Route path="/menu-management/list" element={<ProtectedRoute><MenuListPage /></ProtectedRoute>} />
+          <Route path="/menu-management/add" element={<ProtectedRoute><MenuAddPage /></ProtectedRoute>} />
+          <Route path="/menu-management/edit" element={<ProtectedRoute><MenuEditPage /></ProtectedRoute>} />
+          <Route path="/menu-management/update" element={<ProtectedRoute><MenuUpdatePage /></ProtectedRoute>} />
+          <Route path="/menu-management/delete" element={<ProtectedRoute><MenuDeletePage /></ProtectedRoute>} />
+          <Route path="/menu-management/recipes" element={<ProtectedRoute><MenuRecipesPage /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute><InventoryPage /></ProtectedRoute>} />
 
           {/* Finance */}

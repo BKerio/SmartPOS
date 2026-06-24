@@ -10,7 +10,7 @@ var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingP
 
 Console.WriteLine("SmartPOS Fingerprint Scanner Service");
 Console.WriteLine($"Listening on http://127.0.0.1:{port}");
-Console.WriteLine("Endpoints: GET /health  POST /capture  POST /check-duplicate");
+Console.WriteLine("Endpoints: GET /health  POST /prepare  POST /capture  POST /check-duplicate");
 Console.WriteLine("Press Ctrl+C to stop.\n");
 
 if (device.Initialize())
@@ -82,6 +82,18 @@ static void HandleRequest(HttpListenerContext context, FingerprintDevice device,
             return;
         }
 
+        if (request.HttpMethod == "POST" && path == "/prepare")
+        {
+            var ready = device.Prepare();
+            WriteJson(response, ready ? 200 : 503, new
+            {
+                ok = ready,
+                deviceConnected = device.IsReady,
+                message = ready ? "Scanner ready" : device.LastError,
+            }, jsonOptions);
+            return;
+        }
+
         if (request.HttpMethod == "POST" && path == "/check-duplicate")
         {
             using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
@@ -133,8 +145,13 @@ static void HandleRequest(HttpListenerContext context, FingerprintDevice device,
 
         if (request.HttpMethod == "POST" && path == "/capture")
         {
-            Console.WriteLine("Capture requested — place finger on scanner...");
-            var captured = device.Capture(TimeSpan.FromSeconds(30));
+            var timeoutSec = 15;
+            var q = request.QueryString["timeout"];
+            if (int.TryParse(q, out var parsed) && parsed >= 5 && parsed <= 60)
+                timeoutSec = parsed;
+
+            Console.WriteLine($"Capture requested (timeout {timeoutSec}s) — place finger on scanner...");
+            var captured = device.Capture(TimeSpan.FromSeconds(timeoutSec));
 
             if (captured == null)
             {

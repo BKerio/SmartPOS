@@ -40,8 +40,8 @@ router.get('/history', ensureAuthenticated, async (req: Request, res: Response):
 router.post('/deposit', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
   const { studentId, amount, reference, description } = req.body;
 
-  // Only finance, admin, or parents should be able to deposit
-  if (!['admin', 'finance', 'parent'].includes(req.user!.role)) {
+  // Only finance or admin can deposit (parents must use M-Pesa)
+  if (!['admin', 'finance'].includes(req.user!.role)) {
     return res.status(403).json({ message: 'Not authorized to perform deposits' });
   }
 
@@ -51,16 +51,6 @@ router.post('/deposit', ensureAuthenticated, async (req: Request, res: Response)
   }
 
   try {
-    if (req.user!.role === 'parent') {
-      const linked = await prisma.student.findFirst({
-        where: { id: studentId, parentId: req.user!.id },
-        select: { id: true },
-      });
-      if (!linked) {
-        return res.status(403).json({ message: 'You can only top up wallets for your linked students' });
-      }
-    }
-
     const result = await prisma.$transaction(async (tx) => {
       const student = await tx.student.update({
         where: { id: studentId },

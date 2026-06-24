@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { Wallet, User, GraduationCap, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Wallet, User, GraduationCap, RefreshCw, DollarSign, History } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
@@ -11,6 +11,7 @@ interface Student {
   regNo: string;
   walletBalance: number;
   transactions: { id: string; amount: number; type: string; description?: string; createdAt: string }[];
+  course?: string | null;
 }
 
 const ArrowRight = () => (
@@ -23,8 +24,15 @@ const ParentDashboard = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeStudentId, setActiveStudentId] = useState<string>("");
   const name = localStorage.getItem("userName") || "Parent";
   const firstName = name.split(" ")[0];
+  const navigate = useNavigate();
+
+  const active = useMemo(
+    () => students.find((s) => s.id === activeStudentId) || students[0],
+    [students, activeStudentId],
+  );
 
   const fetchStudents = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -41,6 +49,10 @@ const ParentDashboard = () => {
   };
 
   useEffect(() => { fetchStudents(); }, []);
+
+  useEffect(() => {
+    if (!activeStudentId && students.length > 0) setActiveStudentId(students[0].id);
+  }, [students, activeStudentId]);
 
   return (
     <div className="min-h-screen bg-[#efefed] font-sans">
@@ -97,7 +109,7 @@ const ParentDashboard = () => {
         .refresh-btn:hover { color: #333; border-color: #ccc; }
       `}</style>
 
-      <div className="db max-w-3xl mx-auto p-5 md:p-10 space-y-8">
+      <div className="db max-w-4xl mx-auto p-5 md:p-10 space-y-8">
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between pt-2">
@@ -120,10 +132,64 @@ const ParentDashboard = () => {
           </div>
         </div>
 
-        {/* ── Section label ── */}
-        <p className="text-[11px] font-bold text-stone-400 uppercase tracking-widest -mb-4">
-          Linked Students · {students.length}
-        </p>
+        {/* ── Active student + actions (matches screenshot buttons) ── */}
+        {!loading && students.length > 0 && active && (
+          <div className="s-card p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-stone-400 uppercase tracking-widest">Student</p>
+                <select
+                  value={activeStudentId || students[0].id}
+                  onChange={(e) => setActiveStudentId(e.target.value)}
+                  className="mt-2 w-full sm:w-[360px] px-3 py-2 rounded-xl bg-white border border-gray-200 outline-none text-sm"
+                >
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.regNo})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-right">
+                <p className="text-xs uppercase tracking-widest text-stone-400">Wallet</p>
+                <p className="text-2xl font-extrabold text-[#111]">
+                  KES {active.walletBalance.toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => navigate("/parent/topup", { state: { studentId: active.id } })}
+                className="px-4 py-2 rounded-xl bg-[#111] hover:bg-black text-white text-sm font-extrabold flex items-center gap-2"
+              >
+                <DollarSign className="w-4 h-4" /> Top Up wallet
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/parent/wallet", { state: { studentId: active.id } })}
+                className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-sm font-bold flex items-center gap-2"
+              >
+                <Wallet className="w-4 h-4 text-stone-600" /> Wallet
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/parent/history", { state: { studentId: active.id } })}
+                className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-sm font-bold flex items-center gap-2"
+              >
+                <History className="w-4 h-4 text-stone-600" /> View History
+              </button>
+              <Link
+                to="/pay-mpesa"
+                state={{ studentId: active.id, studentName: active.name, regNo: active.regNo, currentBalance: active.walletBalance }}
+                className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-sm font-bold flex items-center gap-2 text-stone-800"
+              >
+                Lipa na M-Pesa
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* ── Cards ── */}
         {loading ? (
@@ -138,67 +204,43 @@ const ParentDashboard = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {students.map((s, i) => {
-              const funded = s.walletBalance > 0;
-              return (
-                <div key={s.id} className="s-card card-in" style={{ animationDelay: `${i * 0.07}s` }}>
-
-                  {/* ── Card body ── */}
-                  <div className="p-6 space-y-5">
-
-                    {/* Title + subtitle */}
-                    <div>
-                      <h2 className="text-[17px] font-bold text-[#111] leading-tight">{s.name}</h2>
-                      <p className="text-sm text-stone-400 mt-1 font-medium leading-snug">
-                        School feeding wallet for student <span className="text-stone-500 font-semibold">{s.regNo}</span>.
-                      </p>
+            {[active || students[0]].filter(Boolean).map((s: any, i) => (
+              <div key={s.id} className="s-card card-in" style={{ animationDelay: `${i * 0.07}s` }}>
+                <div className="p-6 space-y-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h2 className="text-[18px] font-extrabold leading-tight truncate text-[#111]">{s.name}</h2>
+                      <p className="text-sm text-stone-500 mt-1 font-medium leading-snug">{s.regNo}{s.course ? ` · ${s.course}` : ""}</p>
                     </div>
-
-                    {/* Info rows with orange arrows */}
-                    <ul className="space-y-3">
-                      <li className="flex items-center gap-3">
-                        <ArrowRight />
-                        <span className="text-sm text-stone-600 font-medium">
-                          Balance&nbsp;
-                          <span className={`font-bold ${funded ? "text-[#111]" : "text-stone-400"}`}>
-                            KES {s.walletBalance.toLocaleString()}
-                          </span>
-                        </span>
-                      </li>
-                      <li className="flex items-center gap-3">
-                        <ArrowRight />
-                        <span className="text-sm text-stone-600 font-medium">School Feeding Account</span>
-                      </li>
-                      <li className="flex items-center gap-3">
-                        <ArrowRight />
-                        <span className="text-sm text-stone-600 font-medium">
-                          Status&nbsp;
-                          <span className="font-bold text-[#111]">{funded ? "Funded" : "Unfunded"}</span>
-                        </span>
-                      </li>
-                      <li className="flex items-center gap-3">
-                        <ArrowRight />
-                        <span className="text-sm text-stone-600 font-medium">Pay via M-Pesa STK Push</span>
-                      </li>
-                    </ul>
+                    <div className="text-right">
+                      <p className="text-xs uppercase tracking-widest text-stone-400">Wallet</p>
+                      <p className="text-2xl font-extrabold text-[#111]">KES {Number(s.walletBalance || 0).toLocaleString()}</p>
+                    </div>
                   </div>
 
-                  {/* Divider */}
-                  <div className="mx-6 h-px bg-stone-100" />
-
-                  {/* ── Action row ── */}
-                  <Link
-                    to="/pay-mpesa"
-                    state={{ studentId: s.id, studentName: s.name, regNo: s.regNo, currentBalance: s.walletBalance }}
-                    className="action-row"
-                  >
-                    <span className="text-[15px] font-bold text-[#111]">Lipa na M-Pesa</span>
-                    <ArrowRight />
-                  </Link>
-
+                  <div className="rounded-2xl bg-stone-50 border border-gray-200 p-4">
+                    <p className="text-sm font-extrabold text-[#111] mb-2">Recent Transactions</p>
+                    {(!s.transactions || s.transactions.length === 0) ? (
+                      <p className="text-sm text-stone-500">No transactions yet.</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {s.transactions.slice(0, 5).map((t: any) => {
+                          const positive = Number(t.amount) >= 0;
+                          return (
+                            <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
+                              <span className="truncate text-stone-700">{t.description || t.type}</span>
+                              <span className={`font-extrabold ${positive ? "text-emerald-600" : "text-rose-600"}`}>
+                                {positive ? "+" : "-"}KES {Math.abs(Number(t.amount || 0)).toLocaleString()}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
 

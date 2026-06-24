@@ -3,18 +3,51 @@ import { GraduationCap, Plus, Edit, Trash2, X, Eye, Fingerprint } from "lucide-r
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
-import { captureFingerprint, checkScannerHealth } from "@/services/fingerprintScanner";
+import { captureFingerprint, checkScannerHealth, prepareScanner, checkFingerprintDuplicate } from "@/services/fingerprintScanner";
+
+const COURSE_OPTIONS = [
+  "Diploma Water Engineering",
+  "Water Resource and Technology",
+];
+
+const RELATIONSHIP_OPTIONS = [
+  { value: "father", label: "Father" },
+  { value: "mother", label: "Mother" },
+  { value: "guardian", label: "Guardian" },
+  { value: "sibling", label: "Sibling" },
+  { value: "other", label: "Other" },
+];
 
 const emptyStudent = {
-  name: "", regNo: "", phone: "", gender: "male",
-  password: "", parentId: "", fingerprintTemplate: "", hasFingerprint: false,
+  name: "",
+  regNo: "",
+  phone: "",
+  email: "",
+  gender: "",
+  dateOfBirth: "",
+  course: "",
+  password: "",
+  parentRelationship: "father",
+  parentName: "",
+  parentPhone: "",
+  parentEmail: "",
+  parentReceiveSms: true,
+  parentReceiveEmail: true,
+  fingerprintTemplate: "",
+  hasFingerprint: false,
 };
 
 const inputCls = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#0A1F44] outline-none";
+const labelCls = "block text-xs font-medium text-gray-600 mb-1";
+const sectionCls = "text-xs font-bold text-[#0A1F44] uppercase tracking-wide";
+
+const formatDateInput = (value?: string | null) => {
+  if (!value) return "";
+  return value.slice(0, 10);
+};
 
 const ManageStudents: React.FC = () => {
   const [students, setStudents] = useState<any[]>([]);
-  const [parents, setParents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -22,13 +55,17 @@ const ManageStudents: React.FC = () => {
   const [viewItem, setViewItem] = useState<any>(null);
   const [scannerReady, setScannerReady] = useState<boolean | null>(null);
   const [capturing, setCapturing] = useState(false);
+  const [validatingFingerprint, setValidatingFingerprint] = useState(false);
+
+  const setField = <K extends keyof typeof emptyStudent>(key: K, value: (typeof emptyStudent)[K]) => {
+    setStudentForm((f) => ({ ...f, [key]: value }));
+  };
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [s, p] = await Promise.all([API.get("/students"), API.get("/parents")]);
-      setStudents(s.data);
-      setParents(p.data);
+      const { data } = await API.get("/students");
+      setStudents(data);
     } catch (e: any) {
       toast.error("Failed to load students", e.response?.data?.message);
     } finally {
@@ -41,7 +78,10 @@ const ManageStudents: React.FC = () => {
   useEffect(() => {
     if (!showForm) return;
     checkScannerHealth()
-      .then((h) => setScannerReady(h.deviceConnected))
+      .then((h) => {
+        setScannerReady(h.deviceConnected);
+        if (h.deviceConnected) return prepareScanner();
+      })
       .catch(() => setScannerReady(false));
   }, [showForm]);
 
@@ -53,17 +93,44 @@ const ManageStudents: React.FC = () => {
 
   const saveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!studentForm.gender) {
+      toast.error("Validation", "Please select a gender");
+      return;
+    }
+    if (!studentForm.parentName.trim() || !studentForm.parentPhone.trim()) {
+      toast.error("Validation", "Primary parent name and phone are required");
+      return;
+    }
+
     try {
-      const payload: any = { ...studentForm, parentId: studentForm.parentId || null };
-      if (!payload.fingerprintTemplate) delete payload.fingerprintTemplate;
-      delete payload.hasFingerprint;
+      const payload: any = {
+        name: studentForm.name.trim(),
+        regNo: studentForm.regNo.trim() || undefined,
+        phone: studentForm.phone.trim() || null,
+        email: studentForm.email.trim() || null,
+        gender: studentForm.gender,
+        dateOfBirth: studentForm.dateOfBirth || null,
+        course: studentForm.course || null,
+        parentRelationship: studentForm.parentRelationship || null,
+        parent: {
+          name: studentForm.parentName.trim(),
+          phone: studentForm.parentPhone.trim(),
+          email: studentForm.parentEmail.trim() || undefined,
+          receiveSms: studentForm.parentReceiveSms,
+          receiveEmail: studentForm.parentReceiveEmail,
+        },
+      };
+
+      if (studentForm.fingerprintTemplate) {
+        payload.fingerprintTemplate = studentForm.fingerprintTemplate;
+      }
 
       if (editId) {
-        const { password, regNo, ...rest } = payload;
-        const body: any = { ...rest };
-        if (password) body.password = password;
+        const body: any = { ...payload };
+        if (studentForm.password) body.password = studentForm.password;
         await API.put(`/students/${editId}`, body);
       } else {
+        if (studentForm.password) payload.password = studentForm.password;
         await API.post("/students", payload);
       }
       toast.success(editId ? "Updated" : "Added");
@@ -77,23 +144,39 @@ const ManageStudents: React.FC = () => {
   const handleCaptureFingerprint = async () => {
     setCapturing(true);
     try {
+      await prepareScanner();
       const template = await captureFingerprint();
-      const { data } = await API.post("/students/check-fingerprint", {
-        fingerprintTemplate: template,
-        excludeStudentId: editId || undefined,
+
+      setStudentForm((f) => ({ ...f, fingerprintTemplate: template, hasFingerprint: true }));
+      toast.success("Fingerprint captured", "Checking for duplicates…");
+
+      setValidatingFingerprint(true);
+      const fast = await checkFingerprintDuplicate(template, editId || undefined, {
+        biometric: false,
       });
-      if (data.unique === false) {
-        toast.error("Fingerprint already enrolled", data.message);
+      if (fast.unique === false) {
+        setStudentForm((f) => ({ ...f, fingerprintTemplate: "", hasFingerprint: false }));
+        toast.error("Fingerprint already enrolled", fast.message);
         return;
       }
-      setStudentForm((f) => ({ ...f, fingerprintTemplate: template, hasFingerprint: true }));
-      toast.success("Fingerprint captured", "Save the student to store the template");
+
+      toast.success("Fingerprint ready", "Save the student to store the template");
+
+      checkFingerprintDuplicate(template, editId || undefined, { biometric: true })
+        .then((full) => {
+          if (full.unique === false) {
+            setStudentForm((f) => ({ ...f, fingerprintTemplate: "", hasFingerprint: false }));
+            toast.error("Fingerprint already enrolled", full.message);
+          }
+        })
+        .catch(() => {});
     } catch (e: any) {
       const msg = e.response?.data?.message || e.message;
       toast.error("Capture failed", msg);
       setScannerReady(false);
     } finally {
       setCapturing(false);
+      setValidatingFingerprint(false);
     }
   };
 
@@ -116,9 +199,22 @@ const ManageStudents: React.FC = () => {
   const editStudent = (s: any) => {
     setEditId(s._id || s.id);
     setStudentForm({
-      name: s.name, regNo: s.regNo, phone: s.phone,
-      gender: s.gender, password: "", parentId: s.parentId || "",
-      fingerprintTemplate: "", hasFingerprint: Boolean(s.hasFingerprint),
+      name: s.name,
+      regNo: s.regNo,
+      phone: s.phone || "",
+      email: s.email || "",
+      gender: s.gender || "",
+      dateOfBirth: formatDateInput(s.dateOfBirth),
+      course: s.course || "",
+      password: "",
+      parentRelationship: s.parentRelationship || "father",
+      parentName: s.parent?.name || "",
+      parentPhone: s.parent?.phone || "",
+      parentEmail: s.parent?.email?.endsWith("@school.local") ? "" : (s.parent?.email || ""),
+      parentReceiveSms: s.parent?.receiveSms !== false,
+      parentReceiveEmail: s.parent?.receiveEmail !== false,
+      fingerprintTemplate: "",
+      hasFingerprint: Boolean(s.hasFingerprint),
     });
     setShowForm(true);
   };
@@ -156,7 +252,7 @@ const ManageStudents: React.FC = () => {
                 <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
                   <tr>
                     <th className="px-4 py-3 text-left">Student</th>
-                    <th className="px-4 py-3 text-left">Reg No / Phone</th>
+                    <th className="px-4 py-3 text-left">Admission / Course</th>
                     <th className="px-4 py-3 text-center">Fingerprint</th>
                     <th className="px-4 py-3 text-left">Parent</th>
                     <th className="px-4 py-3 text-right">Wallet</th>
@@ -174,7 +270,7 @@ const ManageStudents: React.FC = () => {
                       </td>
                       <td className="px-4 py-3">
                         <p className="font-medium">{s.regNo}</p>
-                        <p className="text-gray-500">{s.phone}</p>
+                        <p className="text-gray-500">{s.course || "—"}</p>
                       </td>
                       <td className="px-4 py-3 text-center">
                         {s.hasFingerprint ? (
@@ -205,25 +301,103 @@ const ManageStudents: React.FC = () => {
 
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-[#0A1F44]">{editId ? "Edit" : "Add"} Student</h3>
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="font-bold text-[#0A1F44] text-lg">{editId ? "Edit Student" : "Add Student"}</h3>
               <button onClick={closeForm} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
-            <form onSubmit={saveStudent} className="space-y-3">
-              <input className={inputCls} placeholder="Full name" value={studentForm.name} onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })} required />
-              <input className={inputCls} placeholder="Registration / Admission No" value={studentForm.regNo} onChange={(e) => setStudentForm({ ...studentForm, regNo: e.target.value })} required disabled={!!editId} />
-              <input className={inputCls} placeholder="Phone" value={studentForm.phone} onChange={(e) => setStudentForm({ ...studentForm, phone: e.target.value })} required />
-              <select className={inputCls} value={studentForm.gender} onChange={(e) => setStudentForm({ ...studentForm, gender: e.target.value })}>
-                <option value="male">Male</option><option value="female">Female</option>
-              </select>
-              <select className={inputCls} value={studentForm.parentId} onChange={(e) => setStudentForm({ ...studentForm, parentId: e.target.value })}>
-                <option value="">No parent linked</option>
-                {parents.map((p) => <option key={p.id || p._id} value={p.id || p._id}>{p.name} ({p.email})</option>)}
-              </select>
-              <input type="password" className={inputCls} placeholder={editId ? "New password (leave blank to keep)" : "Password"} value={studentForm.password} onChange={(e) => setStudentForm({ ...studentForm, password: e.target.value })} required={!editId} minLength={7} />
 
-              <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
+            <form onSubmit={saveStudent} className="space-y-6">
+              <section className="space-y-3">
+                <p className={sectionCls}>Student Information</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className={labelCls}>Full Name <span className="text-red-500">*</span></label>
+                    <input className={inputCls} placeholder="Student full name" value={studentForm.name} onChange={(e) => setField("name", e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Admission No</label>
+                    <input className={inputCls} placeholder="Auto-generated if empty" value={studentForm.regNo} onChange={(e) => setField("regNo", e.target.value)} disabled={!!editId} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Date of Birth</label>
+                    <input type="date" className={inputCls} value={studentForm.dateOfBirth} onChange={(e) => setField("dateOfBirth", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Gender <span className="text-red-500">*</span></label>
+                    <select className={inputCls} value={studentForm.gender} onChange={(e) => setField("gender", e.target.value)} required>
+                      <option value="">Select…</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Course</label>
+                    <select className={inputCls} value={studentForm.course} onChange={(e) => setField("course", e.target.value)}>
+                      <option value="">Select…</option>
+                      {COURSE_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Student Phone <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input className={inputCls} placeholder="e.g. 0712345678" value={studentForm.phone} onChange={(e) => setField("phone", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Student Email</label>
+                    <input type="email" className={inputCls} placeholder="e.g. student@email.com" value={studentForm.email} onChange={(e) => setField("email", e.target.value)} />
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <p className={sectionCls}>Parents / Guardians</p>
+                <p className="text-sm font-semibold text-gray-700">Primary Parent/Guardian</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className={labelCls}>Name <span className="text-red-500">*</span></label>
+                    <input className={inputCls} placeholder="Parent/Guardian name" value={studentForm.parentName} onChange={(e) => setField("parentName", e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Phone <span className="text-red-500">*</span></label>
+                    <input className={inputCls} placeholder="0712345678" value={studentForm.parentPhone} onChange={(e) => setField("parentPhone", e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Email</label>
+                    <input type="email" className={inputCls} placeholder="parent@email.com" value={studentForm.parentEmail} onChange={(e) => setField("parentEmail", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Relationship</label>
+                    <select className={inputCls} value={studentForm.parentRelationship} onChange={(e) => setField("parentRelationship", e.target.value)}>
+                      {RELATIONSHIP_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <p className={labelCls}>Communication Preferences</p>
+                    <div className="flex flex-wrap gap-4 mt-1">
+                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input type="checkbox" checked={studentForm.parentReceiveSms} onChange={(e) => setField("parentReceiveSms", e.target.checked)} className="rounded border-gray-300" />
+                        Receive SMS
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input type="checkbox" checked={studentForm.parentReceiveEmail} onChange={(e) => setField("parentReceiveEmail", e.target.checked)} className="rounded border-gray-300" />
+                        Receive Email
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <p className={sectionCls}>Account Access</p>
+                <div>
+                  <label className={labelCls}>
+                    {editId ? "New password (leave blank to keep)" : "Password (optional — defaults to last 6 digits of admission no)"}
+                  </label>
+                  <input type="password" className={inputCls} value={studentForm.password} onChange={(e) => setField("password", e.target.value)} minLength={7} />
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-[#0A1F44] flex items-center gap-2">
                     <Fingerprint size={16} /> Fingerprint Enrollment
@@ -252,14 +426,22 @@ const ManageStudents: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleCaptureFingerprint}
-                  disabled={capturing || scannerReady === false}
+                  disabled={capturing || validatingFingerprint || scannerReady === false}
                   className="w-full py-2.5 border-2 border-dashed border-[#0A1F44]/30 text-[#0A1F44] rounded-xl text-sm font-semibold hover:bg-white disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {capturing ? <><Loader size="xs" showText={false} className="mr-2" /> Place finger on scanner...</> : <><Fingerprint size={16} /> Capture Fingerprint</>}
+                  {capturing ? (
+                    <><Loader size="xs" showText={false} className="mr-2" /> Place finger on scanner...</>
+                  ) : validatingFingerprint ? (
+                    <><Loader size="xs" showText={false} className="mr-2" /> Checking...</>
+                  ) : (
+                    <><Fingerprint size={16} /> Capture Fingerprint</>
+                  )}
                 </button>
-              </div>
+              </section>
 
-              <button type="submit" className="w-full py-2.5 bg-[#0A1F44] text-white rounded-xl font-semibold">{editId ? "Save Changes" : "Add Student"}</button>
+              <button type="submit" className="w-full py-3 bg-[#0A1F44] text-white rounded-xl font-semibold text-sm">
+                {editId ? "Save Changes" : "Save Student"}
+              </button>
             </form>
           </div>
         </div>
@@ -267,15 +449,21 @@ const ManageStudents: React.FC = () => {
 
       {viewItem && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setViewItem(null)}>
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-lg text-[#0A1F44] mb-4">{viewItem.name}</h3>
             <div className="space-y-2 text-sm">
-              <p><span className="text-gray-500">Reg No:</span> {viewItem.regNo}</p>
-              <p><span className="text-gray-500">Phone:</span> {viewItem.phone}</p>
+              <p><span className="text-gray-500">Admission No:</span> {viewItem.regNo}</p>
+              <p><span className="text-gray-500">Course:</span> {viewItem.course || "—"}</p>
+              <p><span className="text-gray-500">Phone:</span> {viewItem.phone || "—"}</p>
+              <p><span className="text-gray-500">Email:</span> {viewItem.email || "—"}</p>
               <p><span className="text-gray-500">Gender:</span> {viewItem.gender}</p>
+              <p><span className="text-gray-500">Date of Birth:</span> {viewItem.dateOfBirth ? formatDateInput(viewItem.dateOfBirth) : "—"}</p>
               <p><span className="text-gray-500">Wallet:</span> KES {(viewItem.walletBalance || 0).toLocaleString()}</p>
               <p><span className="text-gray-500">Fingerprint:</span> {viewItem.hasFingerprint ? "Enrolled" : "Not enrolled"}</p>
               <p><span className="text-gray-500">Parent:</span> {viewItem.parent?.name || "None"}</p>
+              {viewItem.parentRelationship && (
+                <p><span className="text-gray-500">Relationship:</span> <span className="capitalize">{viewItem.parentRelationship}</span></p>
+              )}
             </div>
             <button onClick={() => setViewItem(null)} className="w-full mt-4 py-2 bg-gray-100 rounded-xl text-sm font-medium">Close</button>
           </div>

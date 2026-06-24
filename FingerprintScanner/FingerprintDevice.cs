@@ -45,6 +45,9 @@ sealed class FingerprintDevice : IDisposable
                 return false;
             }
 
+            // Warm matcher now so first duplicate check is not delayed
+            _ = GetDbHandle();
+
             LastError = null;
             return true;
         }
@@ -63,6 +66,23 @@ sealed class FingerprintDevice : IDisposable
         }
 
         return _dbHandle;
+    }
+
+    /// <summary>Wakes the device so the next capture starts faster.</summary>
+    public bool Prepare()
+    {
+        lock (_lock)
+        {
+            if (!IsReady && !Initialize())
+                return false;
+
+            byte[] fpImage = new byte[1024 * 1024];
+            byte[] fpTemplate = new byte[2048];
+            int size = 2048;
+            zkfp2.AcquireFingerprint(_device, fpImage, fpTemplate, ref size);
+            LastError = null;
+            return true;
+        }
     }
 
     public (byte[] template, int size)? Capture(TimeSpan timeout)
@@ -89,7 +109,7 @@ sealed class FingerprintDevice : IDisposable
                     return (template, size);
                 }
 
-                Thread.Sleep(100);
+                Thread.Sleep(20);
             }
 
             LastError = "Timed out waiting for fingerprint";

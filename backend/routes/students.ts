@@ -23,15 +23,74 @@ const fmt = (s: any) => {
 };
 
 const studentListSelect = {
-  id: true, name: true, regNo: true, phone: true,
-  gender: true, walletBalance: true, parentId: true, createdAt: true,
+  id: true, name: true, regNo: true, phone: true, email: true,
+  gender: true, dateOfBirth: true, course: true, parentRelationship: true,
+  walletBalance: true, parentId: true, createdAt: true,
   fingerprintTemplate: true, fingerprintEnrolledAt: true,
-  parent: { select: { id: true, name: true, email: true } },
+  parent: { select: { id: true, name: true, email: true, phone: true, receiveSms: true, receiveEmail: true } },
 } as const;
 
 const studentDetailSelect = {
   ...studentListSelect,
 } as const;
+
+const generateRegNo = async (): Promise<string> => {
+  const year = new Date().getFullYear();
+  for (let i = 0; i < 10; i++) {
+    const suffix = Math.floor(1000 + Math.random() * 9000);
+    const regNo = `ADM-${year}-${suffix}`;
+    const exists = await prisma.student.findUnique({ where: { regNo } });
+    if (!exists) return regNo;
+  }
+  return `ADM-${year}-${Date.now()}`;
+};
+
+type ParentEnrollmentInput = {
+  name?: string;
+  phone?: string;
+  email?: string;
+  receiveSms?: boolean;
+  receiveEmail?: boolean;
+};
+
+const resolveParentId = async (
+  parentId: string | null | undefined,
+  parentInfo: ParentEnrollmentInput | undefined,
+  existingParentId?: string | null,
+): Promise<string | null> => {
+  if (parentId) return parentId;
+  if (!parentInfo?.name?.trim() || !parentInfo?.phone?.trim()) {
+    return existingParentId ?? null;
+  }
+
+  const phone = parentInfo.phone.trim();
+  const email = parentInfo.email?.trim() || `parent-${phone.replace(/\D/g, '')}@school.local`;
+  const parentData = {
+    name: parentInfo.name.trim(),
+    phone,
+    email,
+    receiveSms: parentInfo.receiveSms !== false,
+    receiveEmail: parentInfo.receiveEmail !== false,
+  };
+
+  const existing = await prisma.parent.findUnique({ where: { email } });
+  if (existing) {
+    await prisma.parent.update({ where: { id: existing.id }, data: parentData });
+    return existing.id;
+  }
+
+  const hashed = await bcrypt.hash(phone.slice(-6).padStart(6, '0') || 'parent1', 10);
+  const created = await prisma.parent.create({ data: { ...parentData, password: hashed } });
+  return created.id;
+};
+
+const parseDateOfBirth = (value: unknown): Date | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const date = new Date(value as string);
+  if (Number.isNaN(date.getTime())) throw new Error('INVALID_DOB');
+  return date;
+};
 
 const parseFingerprintTemplate = (value: unknown): string | null | undefined => {
   if (value === undefined) return undefined;
@@ -46,13 +105,15 @@ const parseFingerprintTemplate = (value: unknown): string | null | undefined => 
 
 // ─── POST /api/students/check-fingerprint ─────────────────────────────────────
 router.post('/check-fingerprint', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
-  const { fingerprintTemplate, excludeStudentId } = req.body;
+  const { fingerprintTemplate, excludeStudentId, biometric } = req.body;
   try {
     const template = parseFingerprintTemplate(fingerprintTemplate);
     if (!template) {
       return res.status(422).json({ message: 'fingerprintTemplate is required' });
     }
-    const result = await checkFingerprintUnique(template, excludeStudentId || undefined);
+    const result = await checkFingerprintUnique(template, excludeStudentId || undefined, {
+      biometric: biometric !== false,
+    });
     if (!result.unique) {
       return res.status(409).json({
         unique: false,
@@ -118,14 +179,27 @@ router.get('/', ensureAdmin, async (_req: Request, res: Response): Promise<any> 
 
 // ─── POST /api/students ───────────────────────────────────────────────────────
 router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
-  const { name, regNo, phone, gender, password, parentId, fingerprintTemplate } = req.body;
-  if (!name || !regNo || !phone || !gender || !password) {
-    return res.status(422).json({ message: 'Name, registration number, phone, gender, and password are required' });
+  const {
+    name, regNo, phone, email, gender, dateOfBirth, course, password,
+    parentId, parentRelationship, parent: parentInfo, fingerprintTemplate,
+  } = req.body;
+  if (!name || !gender) {
+    return res.status(422).json({ message: 'Name and gender are required' });
   }
   try {
-    const existing = await prisma.student.findUnique({ where: { regNo } });
+    const finalRegNo = (regNo?.trim() || await generateRegNo());
+
+    const existing = await prisma.student.findUnique({ where: { regNo: finalRegNo } });
     if (existing) {
-      return res.status(409).json({ message: 'A student with this registration number already exists' });
+      return res.status(409).json({ message: 'A student with this admission number already exists' });
+    }
+
+    let parsedDob: Date | null = null;
+    try {
+      const parsed = parseDateOfBirth(dateOfBirth);
+      if (parsed) parsedDob = parsed;
+    } catch {
+      return res.status(422).json({ message: 'Invalid date of birth' });
     }
 
     let parsedFingerprint: string | null = null;
@@ -147,11 +221,21 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       }
     }
 
-    const hashed = await bcrypt.hash(password, 10);
+    const finalParentId = await resolveParentId(parentId, parentInfo);
+    const plainPassword = password || finalRegNo.slice(-6);
+    const hashed = await bcrypt.hash(plainPassword, 10);
     const student = await prisma.student.create({
       data: {
-        name, regNo, phone, gender, password: hashed,
-        parentId: parentId || null,
+        name,
+        regNo: finalRegNo,
+        phone: phone?.trim() || null,
+        email: email?.trim() || null,
+        gender,
+        dateOfBirth: parsedDob,
+        course: course?.trim() || null,
+        parentRelationship: parentRelationship?.trim() || null,
+        password: hashed,
+        parentId: finalParentId,
         ...fingerprintEnrollmentData(parsedFingerprint),
       },
       select: studentDetailSelect,
@@ -163,8 +247,8 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       userId: req.user?.id,
       userName: req.user?.name || 'Admin',
       action: 'Create Student',
-      description: `Created student ${name} (${regNo})${parsedFingerprint ? ' with fingerprint' : ''}`,
-      metadata: { regNo, hasFingerprint: Boolean(parsedFingerprint) },
+      description: `Created student ${name} (${finalRegNo})${parsedFingerprint ? ' with fingerprint' : ''}`,
+      metadata: { regNo: finalRegNo, hasFingerprint: Boolean(parsedFingerprint) },
       ipAddress: req.ip,
     });
 
@@ -203,10 +287,15 @@ router.get('/lookup/:regNo', ensureAuthenticated, async (req: Request, res: Resp
   try {
     const student = await prisma.student.findUnique({
       where: { regNo: req.params.regNo as string },
-      select: { id: true, name: true, regNo: true, walletBalance: true },
+      select: { id: true, name: true, regNo: true, walletBalance: true, walletFrozen: true, walletPinSetAt: true, fingerprintTemplate: true },
     });
     if (!student) return res.status(404).json({ message: 'Student not found' });
-    return res.json(fmt(student));
+    return res.json({
+      ...fmt(student),
+      walletFrozen: Boolean((student as any).walletFrozen),
+      pinEnabled: Boolean((student as any).walletPinSetAt),
+      hasFingerprint: Boolean((student as any).fingerprintTemplate),
+    });
   } catch {
     return res.status(500).json({ message: 'Something went wrong' });
   }
@@ -300,11 +389,37 @@ router.get('/:id', ensureAuthenticated, async (req: Request, res: Response): Pro
 
 // ─── PUT /api/students/:id ────────────────────────────────────────────────────
 router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
-  const { name, phone, gender, password, parentId, fingerprintTemplate } = req.body;
+  const {
+    name, phone, email, gender, dateOfBirth, course, password,
+    parentId, parentRelationship, parent: parentInfo, fingerprintTemplate,
+  } = req.body;
   try {
-    const data: any = { name, phone, gender };
+    const current = await prisma.student.findUnique({
+      where: { id: req.params.id as string },
+      select: { parentId: true },
+    });
+    if (!current) return res.status(404).json({ message: 'Student not found' });
+
+    const data: any = {};
+    if (name !== undefined) data.name = name;
+    if (phone !== undefined) data.phone = phone?.trim() || null;
+    if (email !== undefined) data.email = email?.trim() || null;
+    if (gender !== undefined) data.gender = gender;
+    if (course !== undefined) data.course = course?.trim() || null;
+    if (parentRelationship !== undefined) data.parentRelationship = parentRelationship?.trim() || null;
     if (password) data.password = await bcrypt.hash(password, 10);
-    if (parentId !== undefined) data.parentId = parentId || null;
+
+    if (dateOfBirth !== undefined) {
+      try {
+        data.dateOfBirth = parseDateOfBirth(dateOfBirth);
+      } catch {
+        return res.status(422).json({ message: 'Invalid date of birth' });
+      }
+    }
+
+    if (parentId !== undefined || parentInfo) {
+      data.parentId = await resolveParentId(parentId, parentInfo, current.parentId);
+    }
 
     if (fingerprintTemplate !== undefined) {
       try {
@@ -354,7 +469,24 @@ router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
 // ─── DELETE /api/students/:id ─────────────────────────────────────────────────
 router.delete('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
   try {
-    const student = await prisma.student.delete({ where: { id: (req.params.id as string) } });
+    const id = req.params.id as string;
+
+    const student = await prisma.$transaction(async (tx) => {
+      await tx.walletTransaction.deleteMany({ where: { studentId: id } });
+
+      const posTransactions = await tx.posTransaction.findMany({
+        where: { studentId: id },
+        select: { id: true },
+      });
+      if (posTransactions.length > 0) {
+        await tx.posTransactionItem.deleteMany({
+          where: { transactionId: { in: posTransactions.map((t) => t.id) } },
+        });
+        await tx.posTransaction.deleteMany({ where: { studentId: id } });
+      }
+
+      return tx.student.delete({ where: { id } });
+    });
 
     await logAuditEvent({
       eventType: 'student_deleted',
@@ -369,6 +501,9 @@ router.delete('/:id', ensureAdmin, async (req: Request, res: Response): Promise<
     return res.json({ message: 'Student deleted successfully' });
   } catch (error: any) {
     if (error.code === 'P2025') return res.status(404).json({ message: 'Student not found' });
+    if (error.code === 'P2003') {
+      return res.status(409).json({ message: 'Cannot delete student: related records still exist' });
+    }
     return res.status(500).json({ message: 'Something went wrong' });
   }
 });
