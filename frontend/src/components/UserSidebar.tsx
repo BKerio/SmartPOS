@@ -7,6 +7,7 @@ import {
     Receipt, Scale
 } from "lucide-react";
 import { toast } from "@/services/toast";
+import LogoImg from "@/assets/LOGO.png";
 
 const ROLE_CONFIG: Record<string, {
     label: string;
@@ -76,18 +77,52 @@ const UserSidebar: React.FC = () => {
 
     return (
         <div className={`h-screen bg-[#0A1F44] text-gray-100 flex flex-col transition-all duration-300 ${collapsed ? "w-20" : "w-64"} border-r border-white/5`}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
-                <span className={`text-base font-extrabold text-white tracking-wider truncate uppercase ${collapsed && "hidden"}`}>
-                    {config.label} Console
-                </span>
+            {/* Super Creative Header with Logo & Accent Badge */}
+            <div className="flex flex-col items-center justify-center pt-5 pb-4 px-4 border-b border-white/5 relative group/header select-none">
+                {/* Sleek Collapse Trigger */}
                 <button 
                     onClick={() => setCollapsed(!collapsed)} 
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition duration-200"
+                    className="absolute top-2.5 right-2.5 p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition duration-200 z-10"
                     title={collapsed ? "Expand" : "Collapse"}
                 >
-                    {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+                    {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
                 </button>
+
+                <div className="flex flex-col items-center gap-2.5">
+                    {/* Logo Container with Subtle Floating Outline Card (Rounded) */}
+                    <div className={`relative transition-all duration-300 p-1.5 rounded-full border bg-white ${
+                        collapsed ? "border-white/5 shadow-sm scale-95" : "border-white/10 shadow-md scale-100 hover:border-indigo-500/30"
+                    }`}>
+                        <img 
+                            src={LogoImg} 
+                            alt="Better Forks Logo" 
+                            draggable="false"
+                            className={`transition-all duration-300 object-cover rounded-full select-none ${
+                                collapsed ? "h-8 w-8" : "h-14 w-14"
+                            }`}
+                        />
+                        
+                    </div>
+
+                    {!collapsed && (
+                        <div className="text-center mt-1 animate-in fade-in slide-in-from-top-1 duration-300 flex flex-col items-center gap-1.5">
+                            {/* Brand Name with Creative Letter Spacing & Contrast Weights */}
+                            <h2 className="text-xs tracking-[0.2em] text-white font-extrabold uppercase flex flex-col items-center leading-tight">
+                                <span className="flex gap-1">
+                                    <span>Better</span>
+                                    <span>Forks</span>
+                                </span>
+                                <span className="text-[8px] text-white tracking-[0.12em] font-bold uppercase mt-1">
+                                    Restaurant Limited
+                                </span>
+                            </h2>
+                            {/* Premium Status/Console Pill */}
+                            <span className="text-[8px] text-white tracking-[0.12em] font-bold uppercase mt-1">
+                                {config.label}
+                            </span>
+                        </div>
+                    )}
+                </div>
             </div>
             
             {/* Menu Items */}

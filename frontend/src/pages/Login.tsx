@@ -19,7 +19,7 @@ const BRAND = "#0A1F44";
 
 const roleOptions: RoleOption[] = [
   { value: "admin", label: "Administrator", description: "System management & oversight" },
-  { value: "student", label: "Student", description: "Order meals & manage wallet" },
+  { value: "student", label: "Student", description: "View wallet balance & history" },
   { value: "parent", label: "Parent", description: "Monitor balances & top up wallets" },
   { value: "finance", label: "Finance Officer", description: "Revenue, expenses & reports" },
   { value: "restaurant", label: "Restaurant Staff", description: "POS terminal & menu management" },
@@ -27,7 +27,7 @@ const roleOptions: RoleOption[] = [
 
 const DASHBOARD_PATHS: Record<Role, string> = {
   admin: "/",
-  student: "/student/order",
+  student: "/student-fees",
   parent: "/parent-dashboard",
   finance: "/finance",
   restaurant: "/pos",

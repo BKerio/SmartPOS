@@ -54,9 +54,12 @@ const PosTerminal = () => {
   }, [student]);
 
   const lookupStudent = async () => {
-    if (!regNo.trim()) return;
+    const query = regNo.trim();
+    if (!query || query.length < 3) {
+      return toast.warning("Enter reg no", "Type at least 3 characters, then press Enter or Search");
+    }
     try {
-      const { data } = await API.get(`/students/lookup/${regNo.trim()}`);
+      const { data } = await API.get(`/students/lookup/${encodeURIComponent(query)}`);
       setStudent(data);
       setPin("");
       setShowAuth(false);

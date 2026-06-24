@@ -112,11 +112,24 @@ model MenuItem {
   isAvailable Boolean  @default(true)
   
   receiptItems PosTransactionItem[]
+  ingredients  MenuItemIngredient[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@map("menu_items")
+}
+
+model MenuItemIngredient {
+  id              String        @id @default(cuid())
+  menuItemId      String
+  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantity        Float
+
+  @@unique([menuItemId, inventoryItemId])
+  @@map("menu_item_ingredients")
 }
 
 model PosTransaction {
@@ -172,7 +185,8 @@ model InventoryItem {
   reorderLevel Float           @default(0)
   unitCost     Float           @default(0)
   
-  movements    StockMovement[]
+  movements       StockMovement[]
+  menuIngredients MenuItemIngredient[]
 
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt

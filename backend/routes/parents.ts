@@ -125,6 +125,114 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
   }
 });
 
+// ─── GET /api/parents/profile ─────────────────────────────────────────────────
+router.get('/profile', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (req.user!.role !== 'parent') return res.status(403).json({ message: 'Not authorized' });
+
+  try {
+    const parent = await prisma.parent.findUnique({
+      where: { id: req.user!.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        receiveSms: true,
+        receiveEmail: true,
+        createdAt: true,
+        students: {
+          select: {
+            id: true,
+            name: true,
+            regNo: true,
+            course: true,
+            gender: true,
+            walletBalance: true,
+            parentRelationship: true,
+          },
+          orderBy: { name: 'asc' },
+        },
+      },
+    });
+    if (!parent) return res.status(404).json({ message: 'Parent not found' });
+    return res.json({ ...fmt(parent), role: 'parent' });
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── PUT /api/parents/profile ─────────────────────────────────────────────────
+router.put('/profile', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (req.user!.role !== 'parent') return res.status(403).json({ message: 'Not authorized' });
+
+  const { name, phone, receiveSms, receiveEmail, currentPassword, newPassword } = req.body;
+
+  try {
+    const parent = await prisma.parent.findUnique({ where: { id: req.user!.id } });
+    if (!parent) return res.status(404).json({ message: 'Parent not found' });
+
+    const data: any = {};
+    if (name !== undefined) data.name = String(name).trim();
+    if (phone !== undefined) data.phone = phone?.trim() || null;
+    if (receiveSms !== undefined) data.receiveSms = Boolean(receiveSms);
+    if (receiveEmail !== undefined) data.receiveEmail = Boolean(receiveEmail);
+
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(422).json({ message: 'Current password is required to set a new password' });
+      }
+      const isMatch = await bcrypt.compare(currentPassword, parent.password);
+      if (!isMatch) {
+        return res.status(422).json({ message: 'Current password is incorrect' });
+      }
+      if (String(newPassword).length < 7) {
+        return res.status(422).json({ message: 'New password must be at least 7 characters' });
+      }
+      data.password = await bcrypt.hash(String(newPassword), 10);
+    }
+
+    const updated = await prisma.parent.update({
+      where: { id: parent.id },
+      data,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        receiveSms: true,
+        receiveEmail: true,
+        createdAt: true,
+        students: {
+          select: {
+            id: true,
+            name: true,
+            regNo: true,
+            course: true,
+            gender: true,
+            walletBalance: true,
+            parentRelationship: true,
+          },
+          orderBy: { name: 'asc' },
+        },
+      },
+    });
+
+    await logAuditEvent({
+      eventType: 'parent_profile_updated',
+      userType: 'parent',
+      userId: parent.id,
+      userName: updated.name,
+      userEmail: updated.email,
+      action: 'Update Profile',
+      ipAddress: req.ip,
+    });
+
+    return res.json({ ...fmt(updated), role: 'parent' });
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
 // ─── GET /api/parents/students ────────────────────────────────────────────────
 // Get students linked to this parent
 router.get('/students', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {

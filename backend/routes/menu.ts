@@ -25,7 +25,16 @@ router.get('/all', ensureAuthenticated, async (req: Request, res: Response): Pro
     return res.status(403).json({ message: 'Not authorized' });
   }
   try {
-    const items = await prisma.menuItem.findMany({ orderBy: { createdAt: 'desc' } });
+    const items = await prisma.menuItem.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        ingredients: {
+          include: {
+            inventoryItem: { select: { id: true, name: true, unit: true, stockLevel: true } },
+          },
+        },
+      },
+    });
     return res.json(items);
   } catch (error) {
     return res.status(500).json({ message: 'Something went wrong' });
@@ -67,6 +76,76 @@ router.post('/', ensureAuthenticated, async (req: Request, res: Response): Promi
 
     return res.status(201).json(item);
   } catch (error) {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── GET /api/menu/:id/ingredients ────────────────────────────────────────────
+router.get('/:id/ingredients', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (!['admin', 'restaurant'].includes(req.user!.role)) {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
+  try {
+    const rows = await prisma.menuItemIngredient.findMany({
+      where: { menuItemId: req.params.id as string },
+      include: {
+        inventoryItem: { select: { id: true, name: true, unit: true, stockLevel: true } },
+      },
+      orderBy: { inventoryItem: { name: 'asc' } },
+    });
+    return res.json(rows);
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── PUT /api/menu/:id/ingredients ────────────────────────────────────────────
+router.put('/:id/ingredients', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (!['admin', 'restaurant'].includes(req.user!.role)) {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
+
+  const menuItemId = req.params.id as string;
+  const { ingredients } = req.body;
+  if (!Array.isArray(ingredients)) {
+    return res.status(422).json({ message: 'ingredients array is required' });
+  }
+
+  try {
+    const menuItem = await prisma.menuItem.findUnique({ where: { id: menuItemId } });
+    if (!menuItem) return res.status(404).json({ message: 'Menu item not found' });
+
+    const parsed = ingredients
+      .map((row: any) => ({
+        inventoryItemId: String(row.inventoryItemId || ''),
+        quantity: Number(row.quantity),
+      }))
+      .filter((row) => row.inventoryItemId && row.quantity > 0);
+
+    await prisma.$transaction([
+      prisma.menuItemIngredient.deleteMany({ where: { menuItemId } }),
+      ...(parsed.length > 0
+        ? [
+            prisma.menuItemIngredient.createMany({
+              data: parsed.map((row) => ({
+                menuItemId,
+                inventoryItemId: row.inventoryItemId,
+                quantity: row.quantity,
+              })),
+            }),
+          ]
+        : []),
+    ]);
+
+    const rows = await prisma.menuItemIngredient.findMany({
+      where: { menuItemId },
+      include: {
+        inventoryItem: { select: { id: true, name: true, unit: true, stockLevel: true } },
+      },
+      orderBy: { inventoryItem: { name: 'asc' } },
+    });
+    return res.json(rows);
+  } catch {
     return res.status(500).json({ message: 'Something went wrong' });
   }
 });

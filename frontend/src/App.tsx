@@ -22,6 +22,7 @@ import StudentFees from "@/pages/StudentFees";
 import Reports from "@/pages/Reports";
 import AuditLogs from "@/pages/AuditLogs";
 import UserProfile from "@/pages/UserProfile";
+import ParentProfile from "@/pages/parent/ParentProfile";
 import ParentDashboard from "@/pages/parent/ParentDashboard";
 import PayWithMpesa from "@/pages/parent/PayWithMpesa";
 import ParentTopUpWallet from "@/pages/parent/ParentTopUpWallet";
@@ -83,6 +84,7 @@ function AppShell() {
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
 
           {/* Student */}
+          <Route path="/student/order" element={<Navigate to="/student-fees" replace />} />
           <Route path="/student-dashboard" element={<ProtectedRoute><Navigate to="/student-fees" replace /></ProtectedRoute>} />
           <Route path="/student-profile" element={<ProtectedRoute><StudentProfile /></ProtectedRoute>} />
           <Route path="/student-fees" element={<ProtectedRoute><StudentFees /></ProtectedRoute>} />
@@ -111,7 +113,14 @@ function AppShell() {
           <Route path="/receipts" element={<ProtectedRoute><ReceiptsPage /></ProtectedRoute>} />
 
           {/* Shared */}
-          <Route path="/user-profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+          <Route
+            path="/user-profile"
+            element={
+              <ProtectedRoute>
+                {role === "parent" ? <ParentProfile /> : <UserProfile />}
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </div>
     </div>
