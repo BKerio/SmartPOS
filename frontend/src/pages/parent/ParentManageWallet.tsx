@@ -209,7 +209,7 @@ const ParentManageWallet = () => {
                     onClick={openSettings}
                     className="rounded-xl bg-stone-100 hover:bg-stone-200 font-bold text-sm py-3 flex items-center justify-center gap-2 text-stone-800"
                   >
-                    <Settings className="w-4 h-4" /> Wallet Settings
+                    <Settings className="w-4 h-4" /> Wallet Settings..
                   </button>
                 </div>
               </div>
