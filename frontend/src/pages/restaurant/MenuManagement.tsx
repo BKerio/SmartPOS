@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
   AlertTriangle,
@@ -10,6 +10,9 @@ import {
   XCircle,
   List,
   Link2,
+  ImagePlus,
+  X,
+  Loader2,
 } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
@@ -41,14 +44,12 @@ interface MenuItem {
   price: number;
   category: string;
   isAvailable: boolean;
+  imageUrl?: string;
   ingredients?: MenuIngredient[];
 }
 
 const CATEGORIES = ["Breakfast", "Lunch", "Snack", "Drink"];
-const EMPTY_FORM = { name: "", description: "", price: "", category: "Lunch" };
-
-const inputClass = "w-full px-3 py-2 border rounded-lg text-sm";
-const selectClass = "w-full px-3 py-2 border rounded-lg text-sm";
+const EMPTY_FORM = { name: "", description: "", price: "", category: "Lunch", imageUrl: "" };
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ size?: number }> }[] = [
   { id: "list", label: "All Items", icon: List },
@@ -64,6 +65,136 @@ type Props = {
   showTabs?: boolean;
 };
 
+// ─── ImageUploader ──────────────────────────────────────────────────────────
+interface ImageUploaderProps {
+  value: string;
+  onChange: (url: string) => void;
+  disabled?: boolean;
+}
+
+const ImageUploader = ({ value, onChange, disabled }: ImageUploaderProps) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
+
+  const uploadFile = useCallback(
+    async (file: File) => {
+      if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+        return toast.error("Invalid file", "Only jpg, png, and webp images are allowed");
+      }
+      if (file.size > 3 * 1024 * 1024) {
+        return toast.error("File too large", "Maximum image size is 3 MB");
+      }
+      setUploading(true);
+      try {
+        const fd = new FormData();
+        fd.append("image", file);
+        const { data } = await API.post<{ url: string }>("/menu/upload-image", fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        onChange(data.url);
+        toast.success("Image uploaded");
+      } catch (e: any) {
+        toast.error("Upload failed", e.response?.data?.message ?? e.message);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [onChange],
+  );
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) uploadFile(file);
+    e.target.value = "";
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) uploadFile(file);
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+        Food Image (optional)
+      </label>
+
+      {value ? (
+        <div className="relative w-full h-44 rounded-2xl overflow-hidden border border-slate-200 group">
+          <img
+            src={value}
+            alt="Menu item"
+            className="w-full h-full object-cover"
+          />
+          {/* overlay controls */}
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+            <button
+              type="button"
+              disabled={disabled || uploading}
+              onClick={() => !disabled && inputRef.current?.click()}
+              className="px-3 py-1.5 bg-white/90 text-gray-800 rounded-lg text-xs font-bold hover:bg-white transition flex items-center gap-1.5"
+            >
+              <ImagePlus size={13} /> Change
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange("")}
+              className="px-3 py-1.5 bg-red-600/90 text-white rounded-lg text-xs font-bold hover:bg-red-600 transition flex items-center gap-1.5"
+            >
+              <X size={13} /> Remove
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          onClick={() => !disabled && !uploading && inputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          className={`w-full h-36 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-2 transition-all duration-200 cursor-pointer ${
+            disabled
+              ? "border-gray-100 bg-gray-50 cursor-not-allowed"
+              : dragging
+              ? "border-indigo-400 bg-indigo-50"
+              : "border-slate-200 bg-gray-50/50 hover:border-indigo-300 hover:bg-indigo-50/30"
+          }`}
+        >
+          {uploading ? (
+            <>
+              <Loader2 size={24} className="text-indigo-500 animate-spin" />
+              <span className="text-xs text-indigo-600 font-semibold">Uploading...</span>
+            </>
+          ) : (
+            <>
+              <ImagePlus size={24} className={dragging ? "text-indigo-500" : "text-gray-300"} />
+              <div className="text-center">
+                <p className="text-xs font-bold text-gray-500">
+                  {dragging ? "Drop to upload" : "Click or drag image here"}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">JPG, PNG, WEBP - max 3 MB</p>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={handleFileChange}
+        disabled={disabled || uploading}
+      />
+    </div>
+  );
+};
+
+// ─── MenuManagement ──────────────────────────────────────────────────────────
 const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -117,6 +248,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
       description: item.description || "",
       price: String(item.price),
       category: item.category,
+      imageUrl: item.imageUrl || "",
     });
   };
 
@@ -146,7 +278,11 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
     if (!addForm.name || !addForm.price) return;
     setSubmitting(true);
     try {
-      await API.post("/menu", { ...addForm, price: Number(addForm.price) });
+      await API.post("/menu", {
+        ...addForm,
+        price: Number(addForm.price),
+        imageUrl: addForm.imageUrl || undefined,
+      });
       setAddForm(EMPTY_FORM);
       await fetchItems();
       toast.success("Menu item added");
@@ -170,6 +306,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
         description: draft.description,
         price: Number(draft.price),
         category: draft.category,
+        imageUrl: draft.imageUrl || null,
       });
       await fetchItems();
       toast.success("Menu item updated");
@@ -329,10 +466,28 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
                     className={`hover:bg-slate-50/40 transition duration-150 ${!item.isAvailable ? "bg-amber-50/20" : ""}`}
                   >
                     <td className="px-5 py-4">
-                      <p className="font-extrabold text-[#0A1F44]">{item.name}</p>
-                      {item.description && (
-                        <p className="text-xs text-gray-400 mt-0.5">{item.description}</p>
-                      )}
+                      <div className="flex items-center gap-3">
+                        {/* Thumbnail */}
+                        {item.imageUrl ? (
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-100"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-100">
+                            <span className="text-slate-400 text-xs font-black">
+                              {item.name.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-extrabold text-[#0A1F44]">{item.name}</p>
+                          {item.description && (
+                            <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{item.description}</p>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-5 py-4">
                       <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold uppercase tracking-wider">{item.category}</span>
@@ -409,7 +564,12 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
           className="bg-white rounded-2xl p-6 border border-slate-100 space-y-4 max-w-lg shadow-sm"
         >
           <h3 className="font-extrabold text-[#0A1F44] text-lg">Add new menu item</h3>
-          
+
+          <ImageUploader
+            value={addForm.imageUrl}
+            onChange={(url) => setAddForm({ ...addForm, imageUrl: url })}
+          />
+
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Item Name</label>
             <input
@@ -476,7 +636,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
           <p className="text-xs text-gray-400 leading-normal">
             Choose an item to load its details. You can make and save adjustments in the <strong>Update</strong> tab.
           </p>
-          
+
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Select Menu Item</label>
             <select
@@ -502,18 +662,25 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
 
           {selectedItem && (
             <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-5 space-y-3.5 text-xs text-slate-700 animate-in fade-in slide-in-from-top-1 duration-200">
+              {selectedItem.imageUrl && (
+                <img
+                  src={selectedItem.imageUrl}
+                  alt={selectedItem.name}
+                  className="w-full h-36 object-cover rounded-xl border border-indigo-100"
+                />
+              )}
               <div className="flex justify-between items-start border-b border-indigo-100/40 pb-2">
                 <span className="font-bold text-indigo-900 text-sm">{selectedItem.name}</span>
                 <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-md font-bold uppercase tracking-wider text-[9px]">{selectedItem.category}</span>
               </div>
               <div className="space-y-2">
                 <p className="flex justify-between">
-                  <span className="text-slate-400">Current Price:</span> 
+                  <span className="text-slate-400">Current Price:</span>
                   <span className="font-bold text-[#0A1F44]">KES {selectedItem.price.toLocaleString()}</span>
                 </p>
                 {selectedItem.description && (
                   <p className="flex flex-col gap-1">
-                    <span className="text-slate-400">Description:</span> 
+                    <span className="text-slate-400">Description:</span>
                     <span className="font-semibold text-slate-650 bg-white rounded-lg p-2 border border-slate-100 leading-normal">{selectedItem.description}</span>
                   </p>
                 )}
@@ -536,7 +703,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
           className="bg-white rounded-2xl p-6 border border-slate-100 space-y-4 max-w-lg shadow-sm"
         >
           <h3 className="font-extrabold text-[#0A1F44] text-lg">Update Menu Item</h3>
-          
+
           {!selectedId && (
             <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200/50 rounded-xl p-3 leading-normal font-semibold">
               ⚠️ No item selected. Please choose a menu item from the list below to begin editing.
@@ -565,6 +732,12 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
               ))}
             </select>
           </div>
+
+          <ImageUploader
+            value={draft.imageUrl}
+            onChange={(url) => setDraft({ ...draft, imageUrl: url })}
+            disabled={!selectedId}
+          />
 
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">New Item Name</label>
@@ -636,7 +809,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
           <p className="text-xs text-gray-400 leading-normal">
             Select a dish to remove from the system. Linked recipes will also be cleaned up.
           </p>
-          
+
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Select Item to Remove</label>
             <select
@@ -655,6 +828,13 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
 
           {deleteTarget && (
             <div className="rounded-2xl border border-rose-100 bg-rose-50/50 p-5 space-y-4 text-xs animate-in fade-in slide-in-from-top-1 duration-200">
+              {deleteTarget.imageUrl && (
+                <img
+                  src={deleteTarget.imageUrl}
+                  alt={deleteTarget.name}
+                  className="w-full h-32 object-cover rounded-xl border border-rose-100 opacity-80"
+                />
+              )}
               <div className="flex justify-between items-start border-b border-rose-100 pb-2">
                 <span className="font-bold text-rose-900 text-sm">{deleteTarget.name}</span>
                 <span className="px-2 py-0.5 bg-rose-100 text-rose-700 rounded-md font-bold uppercase tracking-wider text-[9px]">{deleteTarget.category}</span>
@@ -688,7 +868,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
               Map inventory items to a menu dish. SmartPOS automatically subtracts ingredients from inventory on POS checkouts.
             </p>
           </div>
-          
+
           <div className="space-y-1 max-w-md">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Select Dish</label>
             <select
@@ -762,7 +942,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
                   </div>
                 ))}
               </div>
-              
+
               <div className="flex flex-wrap gap-3 pt-3">
                 <button
                   type="button"

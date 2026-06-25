@@ -17,6 +17,7 @@ import inventoryRoutes  from '@/routes/inventory';
 import financeRoutes    from '@/routes/finance';
 import parentRoutes     from '@/routes/parents';
 import mpesaRoutes      from '@/routes/mpesa';
+import { getSupabaseConfigError, isSupabaseConfigured } from '@/services/supabase';
 
 const app = express();
 const PORT         = process.env.PORT         || 5000;
@@ -97,4 +98,8 @@ app.use((_req: Request, res: Response) => {
 server.listen(PORT, () => {
   console.log(`\nSmartPOS backend running on http://localhost:${PORT}`);
   console.log(`Allowed origins: ${ALLOWED_ORIGINS.join(', ')}\n`);
+  if (!isSupabaseConfigured()) {
+    console.warn('⚠ Supabase storage:', getSupabaseConfigError());
+    console.warn('  Menu image uploads will fail until SUPABASE_SERVICE_ROLE_KEY is set correctly.\n');
+  }
 });

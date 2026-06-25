@@ -1,9 +1,108 @@
 import { Router, Request, Response } from 'express';
+import multer from 'multer';
+import { v4 as uuidv4 } from 'uuid';
 import prisma from '@/services/prisma';
+import supabase, { getSupabaseConfigError, isSupabaseConfigured } from '@/services/supabase';
 import { ensureAuthenticated } from '@/middlewares/auth';
 import { logAuditEvent } from '@/services/audit';
 
+function devErrorDetail(error: unknown): string | undefined {
+  if (process.env.NODE_ENV === 'production') return undefined;
+  return error instanceof Error ? error.message : String(error);
+}
+
 const router = Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 3 * 1024 * 1024 }, // 3 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Only jpg, png, and webp images are allowed'));
+  },
+});
+
+// ─── POST /api/menu/upload-image ──────────────────────────────────────────────
+router.post(
+  '/upload-image',
+  ensureAuthenticated,
+  (req: Request, res: Response, next) => {
+    upload.single('image')(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ message: err.message });
+      }
+      next();
+    });
+  },
+  async (req: Request, res: Response): Promise<any> => {
+    try {
+      if (!['admin', 'restaurant'].includes(req.user!.role)) {
+        return res.status(403).json({ message: 'Not authorized' });
+      }
+      if (!req.file) {
+        return res.status(422).json({ message: 'No image file provided' });
+      }
+
+      const configError = getSupabaseConfigError();
+      if (!isSupabaseConfigured()) {
+        console.error('Supabase storage not configured:', configError);
+        return res.status(503).json({
+          message: 'Image upload is not configured on the server',
+          detail: configError,
+        });
+      }
+
+      const ext = req.file.mimetype.split('/')[1].replace('jpeg', 'jpg');
+      const filename = `${uuidv4()}.${ext}`;
+
+      let uploadResult = await supabase.storage
+        .from('menu-images')
+        .upload(filename, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false,
+        });
+
+      if (uploadResult.error && uploadResult.error.message === 'Bucket not found') {
+        console.log('Supabase bucket "menu-images" not found. Attempting to create it...');
+        const { error: createError } = await supabase.storage.createBucket('menu-images', {
+          public: true,
+        });
+        if (createError) {
+          console.error('Failed to create Supabase bucket:', createError);
+          return res.status(500).json({
+            message: 'Image upload failed: bucket not found and could not be created',
+            detail: createError.message,
+          });
+        }
+        console.log('Successfully created public Supabase bucket "menu-images". Retrying upload...');
+        uploadResult = await supabase.storage
+          .from('menu-images')
+          .upload(filename, req.file.buffer, {
+            contentType: req.file.mimetype,
+            upsert: false,
+          });
+      }
+
+      if (uploadResult.error) {
+        console.error('Supabase upload error:', uploadResult.error);
+        return res.status(500).json({ message: 'Image upload failed', detail: uploadResult.error.message });
+      }
+
+      const { data: publicData } = supabase.storage
+        .from('menu-images')
+        .getPublicUrl(filename);
+
+      return res.json({ url: publicData.publicUrl });
+    } catch (err: any) {
+      console.error('Upload image handler error:', err);
+      return res.status(500).json({
+        message: 'Something went wrong during image upload',
+        detail: devErrorDetail(err),
+      });
+    }
+  },
+);
 
 // ─── GET /api/menu ────────────────────────────────────────────────────────────
 router.get('/', ensureAuthenticated, async (_req: Request, res: Response): Promise<any> => {
@@ -37,7 +136,11 @@ router.get('/all', ensureAuthenticated, async (req: Request, res: Response): Pro
     });
     return res.json(items);
   } catch (error) {
-    return res.status(500).json({ message: 'Something went wrong' });
+    console.error('GET /menu/all error:', error);
+    return res.status(500).json({
+      message: 'Something went wrong',
+      detail: devErrorDetail(error),
+    });
   }
 });
 

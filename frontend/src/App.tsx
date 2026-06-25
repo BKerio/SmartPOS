@@ -124,6 +124,8 @@ function AppShell() {
               </ProtectedRoute>
             }
           />
+          {/* Catch-all: redirect unknown paths to root */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </div>

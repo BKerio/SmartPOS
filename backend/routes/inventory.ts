@@ -5,6 +5,11 @@ import { logAuditEvent } from '@/services/audit';
 
 const router = Router();
 
+function devErrorDetail(error: unknown): string | undefined {
+  if (process.env.NODE_ENV === 'production') return undefined;
+  return error instanceof Error ? error.message : String(error);
+}
+
 // ─── GET /api/inventory/items ─────────────────────────────────────────────────
 router.get('/items', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
   if (!['admin', 'restaurant', 'finance'].includes(req.user!.role)) {
@@ -17,7 +22,11 @@ router.get('/items', ensureAuthenticated, async (req: Request, res: Response): P
     });
     return res.json(items);
   } catch (error) {
-    return res.status(500).json({ message: 'Something went wrong' });
+    console.error('GET /inventory/items error:', error);
+    return res.status(500).json({
+      message: 'Something went wrong',
+      detail: devErrorDetail(error),
+    });
   }
 });
 

@@ -5,7 +5,7 @@ import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
 import { captureFingerprint, checkScannerHealth, prepareScanner } from "@/services/fingerprintScanner";
 
-interface MenuItem { id: string; name: string; price: number; category: string; isAvailable: boolean; }
+interface MenuItem { id: string; name: string; price: number; category: string; isAvailable: boolean; imageUrl?: string; }
 interface CartItem { menuItemId: string; name: string; price: number; quantity: number; }
 interface StudentInfo {
   name: string;
@@ -215,22 +215,39 @@ const PosTerminal = () => {
                     key={item.id}
                     onClick={() => available && addToCart(item)}
                     disabled={!available}
-                    className={`bg-white rounded-2xl p-4 border transition-all duration-200 text-left relative flex flex-col justify-between h-36 select-none ${
+                    className={`bg-white rounded-2xl border transition-all duration-200 text-left relative flex flex-col overflow-hidden select-none ${
                       available 
                         ? "border-slate-100 hover:shadow-md hover:border-indigo-200 active:scale-[0.98]" 
                         : "opacity-60 cursor-not-allowed border-gray-200 bg-gray-50/50"
                     }`}
                   >
-                    <div>
-                      <div className="flex justify-between items-start gap-1">
-                        <p className="font-extrabold text-[#0A1F44] text-xs leading-tight line-clamp-2">{item.name}</p>
-                        {!available && (
-                          <span className="px-1.5 py-0.5 text-[8px] font-black uppercase bg-red-100 text-red-600 rounded shrink-0">Out</span>
-                        )}
+                    {/* Food image / placeholder */}
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        draggable={false}
+                        className="w-full h-24 object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-24 bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
+                        <span className="text-3xl font-black text-slate-300 select-none">
+                          {item.name.charAt(0).toUpperCase()}
+                        </span>
                       </div>
-                      <p className="text-[9px] text-gray-400 uppercase tracking-wider font-bold mt-1.5">{item.category}</p>
+                    )}
+                    {/* Out of stock badge */}
+                    {!available && (
+                      <span className="absolute top-2 right-2 px-1.5 py-0.5 text-[8px] font-black uppercase bg-red-600 text-white rounded shadow-sm">
+                        Out
+                      </span>
+                    )}
+                    {/* Card body */}
+                    <div className="p-3 flex flex-col gap-1">
+                      <p className="font-extrabold text-[#0A1F44] text-xs leading-tight line-clamp-2">{item.name}</p>
+                      <p className="text-[9px] text-gray-400 uppercase tracking-wider font-bold">{item.category}</p>
+                      <p className="text-emerald-600 font-black text-sm mt-1">KES {item.price.toLocaleString()}</p>
                     </div>
-                    <p className="text-emerald-600 font-black text-sm mt-3">KES {item.price.toLocaleString()}</p>
                   </button>
                 );
               })}
