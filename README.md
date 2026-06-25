@@ -280,7 +280,7 @@ If capture fails after driver install, copy the matching `libzkfp.dll` and `libz
 ### Step 3 - Install .NET 8 SDK
 
 ```bash
-dotnet --version   # should be 8.x
+dotnet --version   # should be 8.x.x
 ```
 
 Download: https://dotnet.microsoft.com/download/dotnet/8.0
