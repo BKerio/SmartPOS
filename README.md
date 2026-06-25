@@ -51,7 +51,7 @@ Course, year, and email are **not** used for students.
 
 ---
 
-## Installations
+## Installation
 
 ### 1. Clone the repository
 
