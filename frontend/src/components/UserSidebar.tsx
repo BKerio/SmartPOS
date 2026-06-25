@@ -20,8 +20,7 @@ const ROLE_CONFIG: Record<string, {
             { name: "Top Up Wallet", icon: CreditCard, path: "/parent/topup" },
             { name: "Manage Wallet", icon: Coins, path: "/parent/wallet" },
             { name: "View History", icon: Clock, path: "/parent/history" },
-            { name: "Profile", icon: User, path: "/user-profile" },
-            { name: "Settings", icon: Sliders, path: "/settings" },
+            { name: "My Profile", icon: User, path: "/user-profile" },
         ]
     },
     restaurant: {
