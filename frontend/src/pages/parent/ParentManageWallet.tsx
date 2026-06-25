@@ -197,7 +197,13 @@ const ParentManageWallet = () => {
                   >
                     <History className="w-4 h-4" /> View History
                   </Link>
-                  
+                  <Link
+                    to="/pay-mpesa"
+                    state={{ studentId: selected.id, studentName: selected.name, regNo: selected.regNo, currentBalance: selected.walletBalance }}
+                    className="rounded-xl bg-stone-100 hover:bg-stone-200 font-bold text-sm py-3 flex items-center justify-center gap-2 text-stone-800"
+                  >
+                    Pay via M-Pesa
+                  </Link>
                   <button
                     type="button"
                     onClick={openSettings}
