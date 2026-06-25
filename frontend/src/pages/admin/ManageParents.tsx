@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { Users, Plus, Edit, Trash2, X } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
@@ -119,10 +119,10 @@ const ManageParents: React.FC = () => {
                       <td className="px-4 py-3 font-semibold">{p.name}</td>
                       <td className="px-4 py-3">
                         <p>{p.email}</p>
-                        <p className="text-gray-400">{p.phone || "—"}</p>
+                        <p className="text-gray-400">{p.phone || "-"}</p>
                       </td>
                       <td className="px-4 py-3">
-                        {(p.students || []).length === 0 ? "—" : (
+                        {(p.students || []).length === 0 ? "-" : (
                           <div className="flex flex-wrap gap-1">
                             {p.students.map((s: any) => (
                               <span key={s.id} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs">{s.regNo}</span>

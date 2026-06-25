@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backfill fingerprintTemplateHash and remove duplicate enrollments.
  * Run: npx ts-node -r tsconfig-paths/register scripts/dedupe-fingerprints.ts
  */
@@ -37,7 +37,7 @@ async function main() {
       const ownerId = hashOwner || templateOwner!;
       const owner = students.find((s) => s.id === ownerId);
       console.log(
-        `Removing duplicate fingerprint from ${student.name} (${student.regNo}) — already enrolled for ${owner?.name} (${owner?.regNo})`,
+        `Removing duplicate fingerprint from ${student.name} (${student.regNo}) - already enrolled for ${owner?.name} (${owner?.regNo})`,
       );
       await prisma.student.update({
         where: { id: student.id },

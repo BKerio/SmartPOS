@@ -1,4 +1,4 @@
-import axios from "axios";
+﻿import axios from "axios";
 
 const defaultBaseUrl = import.meta.env.PROD
   ? "https://smartpos.onrender.com/api"
@@ -17,7 +17,7 @@ API.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 globally — clear token and redirect to login
+// Handle 401 globally - clear token and redirect to login
 API.interceptors.response.use(
   (response) => response,
   (error) => {

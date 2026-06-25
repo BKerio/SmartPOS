@@ -1,4 +1,4 @@
-# SmartPOS — School Feeding & Cafeteria Platform
+﻿# SmartPOS - School Feeding & Cafeteria Platform
 
 SmartPOS is a web-based platform for managing school feeding programs: student wallets, cafeteria POS, inventory, finances, parent engagement, and biometric fingerprint enrollment.
 
@@ -103,7 +103,7 @@ See [ZK9500 scanner setup](#zk9500-fingerprint-scanner-setup) below.
 
 Use **three terminals** when enrolling fingerprints (scanner service only needed on the admin/enrollment machine).
 
-**Terminal 1 — Backend**
+**Terminal 1 - Backend**
 
 ```bash
 cd backend
@@ -112,7 +112,7 @@ npm run dev
 
 Runs at `http://localhost:5000`.
 
-**Terminal 2 — Frontend**
+**Terminal 2 - Frontend**
 
 ```bash
 cd frontend
@@ -121,7 +121,7 @@ npm run dev
 
 Opens at `http://localhost:5173`.
 
-**Terminal 3 — Fingerprint scanner (Windows, USB scanner attached)**
+**Terminal 3 - Fingerprint scanner (Windows, USB scanner attached)**
 
 ```bash
 cd FingerprintScanner
@@ -257,7 +257,7 @@ The browser cannot access USB fingerprint hardware directly. SmartPOS uses a **l
   [PostgreSQL]  students.fingerprintTemplate
 ```
 
-### Step 1 — Install hardware drivers
+### Step 1 - Install hardware drivers
 
 1. Connect the **ZK9500** via USB to the enrollment PC (Windows).
 2. Get the driver from **Setup**
@@ -265,7 +265,7 @@ The browser cannot access USB fingerprint hardware directly. SmartPOS uses a **l
 4. Open **Device Manager** → confirm the device appears under **Biometric devices** or **USB devices** without a warning icon.
 5. If Windows installs a generic driver, replace it with ZKTeco’s **ZKFinger** / **ZK9500** driver when prompted.
 
-### Step 2 — Verify SDK libraries
+### Step 2 - Verify SDK libraries
 
 The project includes the ZKFinger C# wrapper in:
 
@@ -277,7 +277,7 @@ FingerprintScanner/libs/
 
 If capture fails after driver install, copy the matching `libzkfp.dll` and `libzkfpcsharp.dll` from your ZKTeco **ZKFinger SDK** package (must match scanner firmware / SDK version).
 
-### Step 3 — Install .NET 8 SDK
+### Step 3 - Install .NET 8 SDK
 
 ```bash
 dotnet --version   # should be 8.x
@@ -285,7 +285,7 @@ dotnet --version   # should be 8.x
 
 Download: https://dotnet.microsoft.com/download/dotnet/8.0
 
-### Step 4 — Build and run the scanner service
+### Step 4 - Build and run the scanner service
 
 ```bash
 cd FingerprintScanner
@@ -308,7 +308,7 @@ Scanner ready (1 device(s) detected)
 curl http://127.0.0.1:17890/health
 ```
 
-### Step 5 — Configure backend & frontend
+### Step 5 - Configure backend & frontend
 
 In `backend/.env`:
 
@@ -324,13 +324,13 @@ VITE_FINGERPRINT_SCANNER_URL=http://127.0.0.1:17890
 
 Restart the backend after changing env vars.
 
-### Step 6 — Enroll a student fingerprint
+### Step 6 - Enroll a student fingerprint
 
 1. Start **backend**, **frontend**, and **FingerprintScanner** (`dotnet run`).
 2. Log in as **admin** → **Manage Users** → **Students** → **Add Student** (or edit).
 3. In **Fingerprint Enrollment**, confirm **Scanner connected**.
 4. Click **Capture Fingerprint** and place the finger on the ZK9500.
-5. Save the student — the template is stored in the database.
+5. Save the student - the template is stored in the database.
 
 Duplicate fingers are rejected:
 
@@ -411,7 +411,7 @@ npm run db:studio      # Prisma Studio GUI
 - Use production Daraja URLs and go-live credentials for M-Pesa (`MPESA_BASE_URL=https://api.safaricom.co.ke`).
 - Ensure `MPESA_CALLBACK_URL` is HTTPS and whitelisted in the Safaricom developer portal.
 - Run `FingerprintScanner` as a Windows service or startup task on each enrollment workstation.
-- Fingerprint templates are sensitive — restrict admin access and use HTTPS in production.
+- Fingerprint templates are sensitive - restrict admin access and use HTTPS in production.
 
 ---
 

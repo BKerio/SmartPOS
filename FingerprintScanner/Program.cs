@@ -19,7 +19,7 @@ if (device.Initialize())
 }
 else
 {
-    Console.WriteLine($"Warning: {device.LastError ?? "Scanner not ready"} — service will retry on capture\n");
+    Console.WriteLine($"Warning: {device.LastError ?? "Scanner not ready"} - service will retry on capture\n");
 }
 
 using var listener = new HttpListener();
@@ -150,7 +150,7 @@ static void HandleRequest(HttpListenerContext context, FingerprintDevice device,
             if (int.TryParse(q, out var parsed) && parsed >= 5 && parsed <= 60)
                 timeoutSec = parsed;
 
-            Console.WriteLine($"Capture requested (timeout {timeoutSec}s) — place finger on scanner...");
+            Console.WriteLine($"Capture requested (timeout {timeoutSec}s) - place finger on scanner...");
             var captured = device.Capture(TimeSpan.FromSeconds(timeoutSec));
 
             if (captured == null)

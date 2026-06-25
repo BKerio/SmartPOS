@@ -27,7 +27,7 @@ const roleOptions: RoleOption[] = [
 
 const DASHBOARD_PATHS: Record<Role, string> = {
   admin: "/",
-  student: "/student-fees",
+  student: "/student/wallet",
   parent: "/parent-dashboard",
   finance: "/finance",
   restaurant: "/pos",

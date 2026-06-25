@@ -1,4 +1,4 @@
-import Swal from "sweetalert2";
+﻿import Swal from "sweetalert2";
 
 const fire = (
   icon: "success" | "error" | "warning" | "info",
@@ -36,7 +36,7 @@ export const toast = {
   info: (message: string, description?: string) =>
     fire("info", message, description),
 
-  /** Dialog with confirm / cancel — resolves true when confirmed */
+  /** Dialog with confirm / cancel - resolves true when confirmed */
   confirm: (
     message: string,
     options?: { description?: string; confirmLabel?: string; cancelLabel?: string }

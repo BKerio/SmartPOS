@@ -11,13 +11,14 @@ const StudentSidebar = () => {
   const studentName = localStorage.getItem("userName") || "Student";
 
   const menuItems = [
-    { name: "My Wallet", icon: PiggyBank, path: "/student-fees" },
-    { name: "History", icon: Clock, path: "/student-fees" },
+    { name: "My Wallet", icon: PiggyBank, path: "/student/wallet" },
+    { name: "History", icon: Clock, path: "/student/history" },
     { name: "Profile", icon: UserCheck, path: "/student-profile" },
   ];
 
   const isActive = (path: string) =>
-    location.pathname === path || (path === "/student-fees" && location.pathname === "/student-dashboard");
+    location.pathname === path ||
+    (path === "/student/wallet" && ["/student-fees", "/student-dashboard", "/student/order"].includes(location.pathname));
 
   const handleLogout = async () => {
     const confirmed = await toast.confirm("Logout?", {

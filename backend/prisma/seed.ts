@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+﻿import dotenv from 'dotenv';
 dotenv.config();
 
 import bcrypt from 'bcrypt';
@@ -16,7 +16,7 @@ async function seed() {
   if (!existing) {
     const hashed = await bcrypt.hash(adminPassword, 10);
     await prisma.admin.create({ data: { name: adminName, email: adminEmail, password: hashed } });
-    console.log(`✅  Admin created — email: ${adminEmail}  password: ${adminPassword}`);
+    console.log(`✅  Admin created - email: ${adminEmail}  password: ${adminPassword}`);
   } else {
     console.log(`ℹ️   Admin already exists: ${adminEmail}`);
   }
@@ -47,7 +47,7 @@ async function seed() {
       await prisma.user.create({
         data: { name: acct.name, email: acct.email, password: hashed, role: acct.role, status: 'approved' },
       });
-      console.log(`✅  ${acct.role} user created — email: ${acct.email}  password: ${acct.password}`);
+      console.log(`✅  ${acct.role} user created - email: ${acct.email}  password: ${acct.password}`);
     }
   }
 
@@ -59,7 +59,7 @@ async function seed() {
     parent = await prisma.parent.create({
       data: { name: 'Jane Parent', email: parentEmail, phone: '0712345678', password: hashed },
     });
-    console.log('✅  Parent created — email: parent@smartpos.com  password: Parent@12345');
+    console.log('✅  Parent created - email: parent@smartpos.com  password: Parent@12345');
   }
 
   const studentRegNo = 'STU001';
@@ -77,7 +77,7 @@ async function seed() {
         parentId: parent.id,
       },
     });
-    console.log('✅  Student created — regNo: STU001  password: Student@12345  wallet: KES 500');
+    console.log('✅  Student created - regNo: STU001  password: Student@12345  wallet: KES 500');
   }
 
   console.log('\n🎉  Seed complete!\n');

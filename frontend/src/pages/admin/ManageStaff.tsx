@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { Plus, Edit, Trash2, X } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
@@ -114,7 +114,7 @@ const ManageStaff: React.FC<Props> = ({ role, title, subtitle, icon, addLabel })
                     <tr key={u._id || u.id} className="border-t border-gray-50 hover:bg-gray-50/50">
                       <td className="px-4 py-3 font-semibold">{u.name}</td>
                       <td className="px-4 py-3">{u.email}</td>
-                      <td className="px-4 py-3 text-gray-500">{u.phone || "—"}</td>
+                      <td className="px-4 py-3 text-gray-500">{u.phone || "-"}</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${u.status === "approved" ? "bg-green-100 text-green-700" : u.status === "pending" ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"}`}>
                           {u.status}

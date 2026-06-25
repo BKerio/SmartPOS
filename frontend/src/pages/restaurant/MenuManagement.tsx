@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import {
   ClipboardList,
   AlertTriangle,
@@ -494,7 +494,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
               <option value="">Select menu item</option>
               {items.map((i) => (
                 <option key={i.id} value={i.id}>
-                  {i.name} ({i.category}) — KES {i.price}
+                  {i.name} ({i.category}) - KES {i.price}
                 </option>
               ))}
             </select>
@@ -647,7 +647,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
               <option value="">Select menu item</option>
               {items.map((i) => (
                 <option key={i.id} value={i.id}>
-                  {i.name} ({i.category}) — KES {i.price}
+                  {i.name} ({i.category}) - KES {i.price}
                 </option>
               ))}
             </select>
@@ -699,7 +699,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
               <option value="">Select menu item</option>
               {items.map((i) => (
                 <option key={i.id} value={i.id}>
-                  {i.name} — {i.ingredients?.length ?? 0} ingredient(s) linked
+                  {i.name} - {i.ingredients?.length ?? 0} ingredient(s) linked
                 </option>
               ))}
             </select>

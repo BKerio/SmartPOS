@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { ShoppingCart, Plus, Minus, Trash2, Wallet } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
@@ -198,7 +198,7 @@ const StudentOrder = () => {
             </div>
             {shortfall > 0 && total > 0 && (
               <p className="text-xs text-red-600 font-medium">
-                Need KES {shortfall.toFixed(0)} more — top up your wallet to checkout
+                Need KES {shortfall.toFixed(0)} more - top up your wallet to checkout
               </p>
             )}
           </div>

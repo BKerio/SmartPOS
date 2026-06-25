@@ -18,7 +18,8 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import Login from "@/pages/Login";
 import AdminProfile from "@/pages/AdminProfile";
 import StudentProfile from "@/pages/StudentProfile";
-import StudentFees from "@/pages/StudentFees";
+import StudentWallet from "@/pages/student/StudentWallet";
+import StudentHistory from "@/pages/student/StudentHistory";
 import Reports from "@/pages/Reports";
 import AuditLogs from "@/pages/AuditLogs";
 import UserProfile from "@/pages/UserProfile";
@@ -84,10 +85,12 @@ function AppShell() {
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
 
           {/* Student */}
-          <Route path="/student/order" element={<Navigate to="/student-fees" replace />} />
-          <Route path="/student-dashboard" element={<ProtectedRoute><Navigate to="/student-fees" replace /></ProtectedRoute>} />
+          <Route path="/student/order" element={<Navigate to="/student/wallet" replace />} />
+          <Route path="/student-fees" element={<Navigate to="/student/wallet" replace />} />
+          <Route path="/student-dashboard" element={<ProtectedRoute><Navigate to="/student/wallet" replace /></ProtectedRoute>} />
+          <Route path="/student/wallet" element={<ProtectedRoute><StudentWallet /></ProtectedRoute>} />
+          <Route path="/student/history" element={<ProtectedRoute><StudentHistory /></ProtectedRoute>} />
           <Route path="/student-profile" element={<ProtectedRoute><StudentProfile /></ProtectedRoute>} />
-          <Route path="/student-fees" element={<ProtectedRoute><StudentFees /></ProtectedRoute>} />
 
           {/* Parent */}
           <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboard /></ProtectedRoute>} />

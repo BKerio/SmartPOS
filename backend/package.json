@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "smartpos-backend",
   "version": "2.0.0",
   "main": "index.ts",
@@ -13,7 +13,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "SmartPOS backend — Supabase + Prisma",
+  "description": "SmartPOS backend - Supabase + Prisma",
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "@supabase/supabase-js": "^2.108.2",

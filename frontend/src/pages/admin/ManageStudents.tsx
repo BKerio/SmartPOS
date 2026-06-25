@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { GraduationCap, Plus, Edit, Trash2, X, Eye, Fingerprint } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
@@ -270,7 +270,7 @@ const ManageStudents: React.FC = () => {
                       </td>
                       <td className="px-4 py-3">
                         <p className="font-medium">{s.regNo}</p>
-                        <p className="text-gray-500">{s.course || "—"}</p>
+                        <p className="text-gray-500">{s.course || "-"}</p>
                       </td>
                       <td className="px-4 py-3 text-center">
                         {s.hasFingerprint ? (
@@ -278,10 +278,10 @@ const ManageStudents: React.FC = () => {
                             <Fingerprint size={12} /> Enrolled
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-400">—</span>
+                          <span className="text-xs text-gray-400">-</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{s.parent?.name || "—"}</td>
+                      <td className="px-4 py-3 text-gray-600">{s.parent?.name || "-"}</td>
                       <td className="px-4 py-3 text-right font-semibold text-green-600">KES {(s.walletBalance || 0).toLocaleString()}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-center gap-1">
@@ -391,7 +391,7 @@ const ManageStudents: React.FC = () => {
                 <p className={sectionCls}>Account Access</p>
                 <div>
                   <label className={labelCls}>
-                    {editId ? "New password (leave blank to keep)" : "Password (optional — defaults to last 6 digits of admission no)"}
+                    {editId ? "New password (leave blank to keep)" : "Password (optional - defaults to last 6 digits of admission no)"}
                   </label>
                   <input type="password" className={inputCls} value={studentForm.password} onChange={(e) => setField("password", e.target.value)} minLength={7} />
                 </div>
@@ -453,11 +453,11 @@ const ManageStudents: React.FC = () => {
             <h3 className="font-bold text-lg text-[#0A1F44] mb-4">{viewItem.name}</h3>
             <div className="space-y-2 text-sm">
               <p><span className="text-gray-500">Admission No:</span> {viewItem.regNo}</p>
-              <p><span className="text-gray-500">Course:</span> {viewItem.course || "—"}</p>
-              <p><span className="text-gray-500">Phone:</span> {viewItem.phone || "—"}</p>
-              <p><span className="text-gray-500">Email:</span> {viewItem.email || "—"}</p>
+              <p><span className="text-gray-500">Course:</span> {viewItem.course || "-"}</p>
+              <p><span className="text-gray-500">Phone:</span> {viewItem.phone || "-"}</p>
+              <p><span className="text-gray-500">Email:</span> {viewItem.email || "-"}</p>
               <p><span className="text-gray-500">Gender:</span> {viewItem.gender}</p>
-              <p><span className="text-gray-500">Date of Birth:</span> {viewItem.dateOfBirth ? formatDateInput(viewItem.dateOfBirth) : "—"}</p>
+              <p><span className="text-gray-500">Date of Birth:</span> {viewItem.dateOfBirth ? formatDateInput(viewItem.dateOfBirth) : "-"}</p>
               <p><span className="text-gray-500">Wallet:</span> KES {(viewItem.walletBalance || 0).toLocaleString()}</p>
               <p><span className="text-gray-500">Fingerprint:</span> {viewItem.hasFingerprint ? "Enrolled" : "Not enrolled"}</p>
               <p><span className="text-gray-500">Parent:</span> {viewItem.parent?.name || "None"}</p>

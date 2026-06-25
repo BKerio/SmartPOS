@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+﻿import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import prisma from '@/services/prisma';
 import { signToken, ensureAdmin, ensureAuthenticated } from '@/middlewares/auth';
@@ -84,7 +84,7 @@ router.post('/register', async (req: Request, res: Response): Promise<any> => {
       userName: user.name,
       userEmail: user.email,
       action: 'User Registration',
-      description: `New ${role} account registered — pending admin approval`,
+      description: `New ${role} account registered - pending admin approval`,
       metadata: { role },
       ipAddress: req.ip,
     });
