@@ -12,7 +12,7 @@ Built with React, Express, Prisma, and PostgreSQL (Supabase). A local **Fingerpr
 |------|----------------|
 | **Admin** | Dashboard, user management (students, parents, staff), reports, audit logs, pending approvals |
 | **Students** | Cafeteria ordering, wallet balance, M-Pesa top-up, purchase history |
-| **Parents** | Linked students, **M-Pesa STK Push** wallet top-ups (select student + pay) |
+| **Parents** | Linked students, **M-Pesa STK Push** wallet top-ups (Safaricom Daraja) |
 | **Restaurant** | POS terminal, menu management, inventory |
 | **Finance** | Revenue summary, expenses, receipt records |
 | **Biometrics** | Fingerprint capture during student enrollment; duplicate detection (exact + SDK match) |
@@ -186,11 +186,14 @@ Sample student wallet: **KES 500**. Sample menu items are seeded (Ugali Beef, Ch
 
 ---
 
-## M-Pesa wallet top-ups (Daraja STK Push)
+## M-Pesa wallet top-ups (Safaricom Daraja)
 
-Parents can load a linked student's wallet from **Parent Dashboard → Top Up via M-Pesa**: select the child, enter M-Pesa phone + amount, approve the STK prompt on the phone. On success the wallet is credited automatically and a `WalletTransaction` is recorded.
+> **Active integration:** SmartPOS uses **Safaricom Daraja STK Push** only. Parent top-ups go through `/api/mpesa/*`.  
+> Prefer **KopoKopo (K2 Connect)** instead? See [KopoKopo alternative](#kopokopo-alternative-k2-connect) — same wallet flow, different API provider.
 
-### Flow
+Parents can load a linked student's wallet from **Parent Dashboard → Top Up**: select the child, enter M-Pesa phone + amount, approve the STK prompt on the phone. On success the wallet is credited automatically and a `WalletTransaction` is recorded.
+
+### Daraja flow
 
 ```
 Parent UI  →  POST /api/mpesa/stkpush { studentId, phone, amount }
@@ -201,7 +204,7 @@ Parent UI  →  POST /api/mpesa/stkpush { studentId, phone, amount }
 
 Real-time status uses **Socket.IO** (room = `CheckoutRequestID`) with HTTP polling fallback.
 
-### Backend configuration
+### Daraja backend configuration
 
 Add to `backend/.env` (see `.env.example`):
 
@@ -231,9 +234,9 @@ VITE_SOCKET_URL=http://localhost:5000
 
 ### Database
 
-M-Pesa records are stored in PostgreSQL (`mpesa_payments` table via Prisma), replacing the previous MongoDB model. Fields include `checkoutRequestId`, receipt, amount, `studentId`, `parentId`, and `walletCredited`.
+M-Pesa records are stored in PostgreSQL (`mpesa_payments` table via Prisma). Fields include `checkoutRequestId`, receipt, amount, `studentId`, `parentId`, and `walletCredited`.
 
-### API endpoints
+### Daraja API endpoints
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -241,6 +244,108 @@ M-Pesa records are stored in PostgreSQL (`mpesa_payments` table via Prisma), rep
 | `POST` | `/api/mpesa/stkpush/callback` | Public | Daraja callback (Safaricom only) |
 | `GET` | `/api/mpesa/stkpush/status/:checkoutRequestId` | Parent/Admin | Poll payment status |
 | `GET` | `/api/mpesa/transactions` | Parent/Admin/Finance | Recent M-Pesa payments |
+
+---
+
+## KopoKopo alternative (K2 Connect)
+
+[KopoKopo](https://kopokopo.com/) (K2 Connect) is an M-Pesa payments aggregator. It can replace direct Daraja for STK Push if you want KopoKopo to manage till numbers, webhooks, and settlement — **this repo does not ship a KopoKopo backend route**; the notes below are for teams swapping Daraja for K2 Connect while keeping the same parent top-up UX.
+
+### When to use KopoKopo vs Daraja
+
+| | **Daraja (current)** | **KopoKopo (alternative)** |
+|--|----------------------|----------------------------|
+| Setup | Safaricom Developer Portal credentials | [KopoKopo sandbox](https://sandbox.kopokopo.com/applications) app key + secret |
+| STK endpoint | `POST .../mpesa/stkpush/v1/processrequest` | `POST .../api/v2/incoming_payments` |
+| Auth | Consumer key/secret → OAuth token | Client ID/secret → OAuth token ([client credentials](https://developers.kopokopo.com/guides/auth/client-credentials-flow.html)) |
+| Callback | Daraja `stkCallback` JSON | K2 [incoming payment result](https://developers.kopokopo.com/guides/receive-money/mpesa-stk.html) webhook |
+| SDK | Custom axios calls in `backend/routes/mpesa.ts` | Official [`k2-connect-node`](https://github.com/kopokopo/k2-connect-node) (optional) |
+
+### KopoKopo STK flow (equivalent to Daraja)
+
+```
+Parent UI  →  POST /api/v2/incoming_payments  (your backend proxy)
+           →  KopoKopo triggers M-PESA STK Push
+           →  POST your HTTPS callback_url (payment result)
+           →  Credit student wallet + notify browser (Socket.IO / poll)
+```
+
+### KopoKopo environment variables (if you implement K2)
+
+```env
+KOPOKOPO_BASE_URL=https://sandbox.kopokopo.com
+KOPOKOPO_CLIENT_ID=your_client_id
+KOPOKOPO_CLIENT_SECRET=your_client_secret
+KOPOKOPO_TILL_NUMBER=K000000
+KOPOKOPO_CALLBACK_URL=https://your-public-host/api/kopokopo/callback
+```
+
+Production base URL: `https://api.kopokopo.com`.
+
+### Sample incoming payment request
+
+```http
+POST https://sandbox.kopokopo.com/api/v2/incoming_payments
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "payment_channel": "M-PESA STK Push",
+  "till_number": "K000000",
+  "subscriber": {
+    "first_name": "Jane",
+    "last_name": "Parent",
+    "phone_number": "+254712345678",
+    "email": "parent@example.com"
+  },
+  "amount": { "currency": "KES", "value": 500 },
+  "metadata": {
+    "student_id": "<studentId>",
+    "parent_id": "<parentId>"
+  },
+  "_links": {
+    "callback_url": "https://your-public-host/api/kopokopo/callback"
+  }
+}
+```
+
+On success, KopoKopo returns **HTTP 201** with a `Location` header pointing to the payment resource. Parse the callback payload, verify the payment succeeded, then credit the student wallet the same way `backend/routes/mpesa.ts` does after Daraja's `ResultCode === 0`.
+
+### KopoKopo webhooks (optional)
+
+Register webhooks in the KopoKopo dashboard or via `POST /webhook-subscriptions` for events such as `buygoods_transaction_received`. See [KopoKopo webhooks guide](https://developers.kopokopo.com/guides/webhooks).
+
+### Local testing
+
+Use [ngrok](https://ngrok.com/) (or similar) so `KOPOKOPO_CALLBACK_URL` is HTTPS and reachable from KopoKopo's servers — same requirement as Daraja.
+
+### Node SDK (optional)
+
+```bash
+cd backend
+npm install k2-connect-node
+```
+
+```javascript
+const K2 = require('k2-connect-node');
+K2.init(process.env.KOPOKOPO_CLIENT_ID, process.env.KOPOKOPO_CLIENT_SECRET, process.env.KOPOKOPO_BASE_URL);
+
+const token = await K2.TokenService.getToken();
+await K2.StkService.initiateIncomingPayment({
+  tillNumber: process.env.KOPOKOPO_TILL_NUMBER,
+  firstName: 'Jane',
+  lastName: 'Parent',
+  phoneNumber: '+254712345678',
+  currency: 'KES',
+  amount: 500,
+  callbackUrl: process.env.KOPOKOPO_CALLBACK_URL,
+  paymentChannel: 'M-PESA STK Push',
+  accessToken: token.access_token,
+  metadata: { student_id: studentId, parent_id: parentId },
+});
+```
+
+**Docs:** [developers.kopokopo.com](https://developers.kopokopo.com/) · [M-PESA STK guide](https://developers.kopokopo.com/guides/receive-money/mpesa-stk.html)
 
 ---
 
@@ -410,6 +515,7 @@ npm run db:studio      # Prisma Studio GUI
 - Set strong `JWT_SECRET` and production `DATABASE_URL` / `FRONTEND_URL` in backend `.env`.
 - Use production Daraja URLs and go-live credentials for M-Pesa (`MPESA_BASE_URL=https://api.safaricom.co.ke`).
 - Ensure `MPESA_CALLBACK_URL` is HTTPS and whitelisted in the Safaricom developer portal.
+- If you migrate to KopoKopo instead of Daraja, use `KOPOKOPO_BASE_URL=https://api.kopokopo.com` and register production webhook URLs in the KopoKopo dashboard.
 - Run `FingerprintScanner` as a Windows service or startup task on each enrollment workstation.
 - Fingerprint templates are sensitive - restrict admin access and use HTTPS in production.
 
