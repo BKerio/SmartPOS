@@ -189,7 +189,7 @@ Sample student wallet: **KES 500**. Sample menu items are seeded (Ugali Beef, Ch
 ## M-Pesa wallet top-ups (Safaricom Daraja)
 
 > **Active integration:** SmartPOS uses **Safaricom Daraja STK Push** only. Parent top-ups go through `/api/mpesa/*`.  
-> Prefer **KopoKopo (K2 Connect)** instead? See [KopoKopo alternative](#kopokopo-alternative-k2-connect) — same wallet flow, different API provider.
+> Prefer **KopoKopo (K2 Connect)** instead? See [KopoKopo alternative](#kopokopo-alternative-k2-connect) - same wallet flow, different API provider.
 
 Parents can load a linked student's wallet from **Parent Dashboard → Top Up**: select the child, enter M-Pesa phone + amount, approve the STK prompt on the phone. On success the wallet is credited automatically and a `WalletTransaction` is recorded.
 
@@ -249,7 +249,7 @@ M-Pesa records are stored in PostgreSQL (`mpesa_payments` table via Prisma). Fie
 
 ## KopoKopo alternative (K2 Connect)
 
-[KopoKopo](https://kopokopo.com/) (K2 Connect) is an M-Pesa payments aggregator. It can replace direct Daraja for STK Push if you want KopoKopo to manage till numbers, webhooks, and settlement — **this repo does not ship a KopoKopo backend route**; the notes below are for teams swapping Daraja for K2 Connect while keeping the same parent top-up UX.
+[KopoKopo](https://kopokopo.com/) (K2 Connect) is an M-Pesa payments aggregator. It can replace direct Daraja for STK Push if you want KopoKopo to manage till numbers, webhooks, and settlement - **this repo does not ship a KopoKopo backend route**; the notes below are for teams swapping Daraja for K2 Connect while keeping the same parent top-up UX.
 
 ### When to use KopoKopo vs Daraja
 
@@ -317,7 +317,7 @@ Register webhooks in the KopoKopo dashboard or via `POST /webhook-subscriptions`
 
 ### Local testing
 
-Use [ngrok](https://ngrok.com/) (or similar) so `KOPOKOPO_CALLBACK_URL` is HTTPS and reachable from KopoKopo's servers — same requirement as Daraja.
+Use [ngrok](https://ngrok.com/) (or similar) so `KOPOKOPO_CALLBACK_URL` is HTTPS and reachable from KopoKopo's servers - same requirement as Daraja.
 
 ### Node SDK (optional)
 
