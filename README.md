@@ -224,6 +224,7 @@ MPESA_CALLBACK_URL=https://your-public-host/api/mpesa/stkpush/callback
 ```bash
 ngrok http 5000
 # Set MPESA_CALLBACK_URL=https://xxxx.ngrok-free.app/api/mpesa/stkpush/callback
+# MPESA_CALLBACK_URL=https://api.betterfork.com/api/mpesa/stkpush/callback
 ```
 
 Optional frontend socket URL (defaults to API host without `/api`):
