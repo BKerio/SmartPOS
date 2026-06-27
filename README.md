@@ -139,7 +139,7 @@ Seeded by `npm run db:seed` (change via `SEED_*` in `backend/.env`).
 | Role | Login | Password | Lands on |
 |------|--------|----------|----------|
 | **Admin** | `admin@smartpos.com` | `Admin@12345` | `/` (dashboard) |
-| **Student** | `STU001` (reg no) | `Student@12345` | `/student/order` |
+| **Student** | `STU001` (reg/adm no) | `Student@12345` | `/student/order` |
 | **Parent** | `parent@smartpos.com` | `Parent@12345` | `/parent-dashboard` |
 | **Finance** | `finance@smartpos.com` | `Finance@12345` | `/finance` |
 | **Restaurant** | `restaurant@smartpos.com` | `Restaurant@12345` | `/pos` |
