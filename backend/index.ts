@@ -99,7 +99,7 @@ server.listen(PORT, () => {
   console.log(`\nSmartPOS backend running on http://localhost:${PORT}`);
   console.log(`Allowed origins: ${ALLOWED_ORIGINS.join(', ')}\n`);
   if (!isSupabaseConfigured()) {
-    console.warn('⚠ Supabase storage:', getSupabaseConfigError());
-    console.warn('  Menu image uploads will fail until SUPABASE_SERVICE_ROLE_KEY is set correctly.\n');
+    console.warn('Supabase storage:', getSupabaseConfigError());
+    console.warn('Menu image uploads will fail until SUPABASE_SERVICE_ROLE_KEY is set correctly.\n');
   }
 });
