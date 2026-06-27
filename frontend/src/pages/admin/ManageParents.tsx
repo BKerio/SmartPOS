@@ -94,7 +94,7 @@ const ManageParents: React.FC = () => {
           <div className="flex items-center justify-between p-5 border-b border-gray-100">
             <h2 className="font-bold text-[#0A1F44]">All Parents</h2>
             <button onClick={() => { closeForm(); setShowForm(true); }} className="flex items-center gap-2 bg-[#0A1F44] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#0A1F44]/90">
-              <Plus size={16} /> Add Parent
+              <Plus size={16} /> Add a Parent
             </button>
           </div>
 
