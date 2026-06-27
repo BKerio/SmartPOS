@@ -209,7 +209,7 @@ Real-time status uses **Socket.IO** (room = `CheckoutRequestID`) with HTTP polli
 Add to `backend/.env` (see `.env.example`):
 
 ```env
-MPESA_BASE_URL=https://sandbox.safaricom.co.ke
+MPESA_BASE_URL=https://sandbox.safaricom.co.ke or https://api.safaricom.co.ke
 MPESA_CONSUMER_KEY=your_consumer_key
 MPESA_CONSUMER_SECRET=your_consumer_secret
 MPESA_SHORTCODE=174379
