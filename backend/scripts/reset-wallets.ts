@@ -5,7 +5,7 @@ dotenv.config();
 const prisma = new PrismaClient();
 
 async function resetWallets() {
-  console.log('🔄 Clearing simulated wallet data...\n');
+  console.log('Clearing simulated wallet data...\n');
 
   // 1. Delete all M-Pesa payment records
   const mpesaDeleted = await prisma.mpesaPayment.deleteMany({});
