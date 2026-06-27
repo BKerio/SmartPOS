@@ -1,4 +1,4 @@
-﻿# SmartPOS - School Feeding & Cafeteria Platform
+﻿# Better Fork(POS) - School Feeding & Cafeteria Platform
 
 SmartPOS is a web-based platform for managing school feeding programs: student wallets, cafeteria POS, inventory, finances, parent engagement, and biometric fingerprint enrollment.
 
