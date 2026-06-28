@@ -301,7 +301,7 @@ const PosTerminal = () => {
                 </div>
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
                   {student.walletFrozen ? (
-                    <span className="px-2 py-0.5 text-[8px] font-black uppercase bg-red-100 text-red-700 rounded">Frozen</span>
+                    <span className="px-2 py-0.5 text-[8px] font-black normal bg-red-100 text-red-700 rounded">Your Wallet is Frozen</span>
                   ) : (
                     <>
                       {student.pinEnabled && (
