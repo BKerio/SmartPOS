@@ -19,6 +19,35 @@ function generateCode(): string {
   return String(crypto.randomInt(100000, 1000000));
 }
 
+async function validateResetCode(email: string, role: ResetRole, code: string) {
+  const normalized = normalizeEmail(email);
+  const account = await findAccount(normalized, role);
+  if (!account) {
+    return { ok: false as const, message: 'Invalid or expired reset code' };
+  }
+
+  const reset = await prisma.passwordReset.findFirst({
+    where: {
+      email: normalized,
+      role,
+      usedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!reset) {
+    return { ok: false as const, message: 'Invalid or expired reset code' };
+  }
+
+  const codeOk = await bcrypt.compare(String(code).trim(), reset.codeHash);
+  if (!codeOk) {
+    return { ok: false as const, message: 'Invalid or expired reset code' };
+  }
+
+  return { ok: true as const, resetId: reset.id, accountId: account.id };
+}
+
 async function findAccount(email: string, role: ResetRole) {
   if (role === 'parent') {
     return prisma.parent.findUnique({ where: { email } });
@@ -140,6 +169,32 @@ router.post('/forgot-password/request', async (req: Request, res: Response): Pro
   }
 });
 
+// ─── POST /api/auth/forgot-password/verify ────────────────────────────────────
+router.post('/forgot-password/verify', async (req: Request, res: Response): Promise<any> => {
+  const { email, role, code } = req.body as { email?: string; role?: string; code?: string };
+
+  if (!email?.trim() || !role || !code) {
+    return res.status(422).json({ message: 'Email, account type, and code are required' });
+  }
+  if (!RESET_ROLES.includes(role as ResetRole)) {
+    return res.status(422).json({ message: 'Invalid account type' });
+  }
+  if (!/^\d{6}$/.test(String(code).trim())) {
+    return res.status(422).json({ message: 'Enter the 6-digit code from your email' });
+  }
+
+  try {
+    const result = await validateResetCode(normalizeEmail(email), role as ResetRole, code);
+    if (!result.ok) {
+      return res.status(422).json({ message: result.message });
+    }
+    return res.json({ message: 'Code verified' });
+  } catch (err: any) {
+    console.error('Forgot password verify error:', err?.message || err);
+    return res.status(500).json({ message: 'Could not verify code. Please try again.' });
+  }
+});
+
 // ─── POST /api/auth/forgot-password/reset ─────────────────────────────────────
 router.post('/forgot-password/reset', async (req: Request, res: Response): Promise<any> => {
   const { email, role, code, newPassword, confirmPassword } = req.body as {
@@ -170,46 +225,27 @@ router.post('/forgot-password/reset', async (req: Request, res: Response): Promi
   const resetRole = role as ResetRole;
 
   try {
-    const account = await findAccount(normalized, resetRole);
-    if (!account) {
-      return res.status(422).json({ message: 'Invalid or expired reset code' });
-    }
-
-    const reset = await prisma.passwordReset.findFirst({
-      where: {
-        email: normalized,
-        role: resetRole,
-        usedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (!reset) {
-      return res.status(422).json({ message: 'Invalid or expired reset code' });
-    }
-
-    const codeOk = await bcrypt.compare(String(code).trim(), reset.codeHash);
-    if (!codeOk) {
-      return res.status(422).json({ message: 'Invalid or expired reset code' });
+    const result = await validateResetCode(normalized, resetRole, code);
+    if (!result.ok) {
+      return res.status(422).json({ message: result.message });
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
     if (resetRole === 'parent') {
       await prisma.parent.update({
-        where: { id: account.id },
+        where: { id: result.accountId },
         data: { password: passwordHash },
       });
     } else {
       await prisma.student.update({
-        where: { id: account.id },
+        where: { id: result.accountId },
         data: { password: passwordHash },
       });
     }
 
     await prisma.passwordReset.update({
-      where: { id: reset.id },
+      where: { id: result.resetId },
       data: { usedAt: new Date() },
     });
 

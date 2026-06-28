@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, KeyRound, Mail, ShieldCheck } from "lucide-react";
 import API from "@/services/api";
@@ -13,6 +13,17 @@ const BRAND = "#0A1F44";
 const inputCls =
   "w-full px-3 py-3 bg-gray-100 border-2 border-transparent focus:border-[#0A1F44]/30 focus:bg-white rounded-xl outline-none text-sm transition";
 
+function maskEmail(email: string): string {
+  const [local, domain] = email.trim().split("@");
+  if (!local || !domain) return email;
+  if (local.length <= 4) {
+    const stars = "*".repeat(Math.max(local.length - 1, 1));
+    return `${local[0] ?? ""}${stars}@${domain}`;
+  }
+  const hidden = "*".repeat(local.length - 4);
+  return `${local.slice(0, 2)}${hidden}${local.slice(-2)}@${domain}`;
+}
+
 const ForgotPassword = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -25,9 +36,11 @@ const ForgotPassword = () => {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const verifyingRef = useRef(false);
 
-  const requestCode = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const requestCode = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setLoading(true);
     try {
       await API.post("/auth/forgot-password/request", { email: email.trim(), role });
@@ -40,12 +53,34 @@ const ForgotPassword = () => {
     }
   };
 
-  const verifyAndContinue = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!/^\d{6}$/.test(code.trim())) {
-      return toast.error("Invalid code", "Enter the 6-digit code from your email");
+  const verifyCode = async (digits: string) => {
+    if (verifyingRef.current || digits.length !== 6) return;
+
+    verifyingRef.current = true;
+    setVerifying(true);
+    try {
+      await API.post("/auth/forgot-password/verify", {
+        email: email.trim(),
+        role,
+        code: digits,
+      });
+      toast.success("Code verified", "Choose your new password");
+      setStep("password");
+    } catch (err: any) {
+      toast.error("Invalid code", err.response?.data?.message);
+      setCode("");
+    } finally {
+      verifyingRef.current = false;
+      setVerifying(false);
     }
-    setStep("password");
+  };
+
+  const handleCodeChange = (raw: string) => {
+    const digits = raw.replace(/\D/g, "").slice(0, 6);
+    setCode(digits);
+    if (digits.length === 6) {
+      void verifyCode(digits);
+    }
   };
 
   const resetPassword = async (e: React.FormEvent) => {
@@ -143,34 +178,43 @@ const ForgotPassword = () => {
         )}
 
         {step === "code" && (
-          <form onSubmit={verifyAndContinue} className="space-y-4">
-            <p className="text-xs text-gray-500 text-center">Code sent to <strong>{email}</strong></p>
+          <div className="space-y-4">
+            <p className="text-xs text-gray-500 text-center">
+              Code sent to <strong>{maskEmail(email)}</strong>
+            </p>
             <input
               type="text"
               inputMode="numeric"
               pattern="\d{6}"
               maxLength={6}
               required
+              autoFocus
+              disabled={verifying}
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onChange={(e) => handleCodeChange(e.target.value)}
               placeholder="6-digit code"
-              className={`${inputCls} text-center text-2xl tracking-[0.4em] font-bold`}
+              className={`${inputCls} text-center text-2xl tracking-[0.4em] font-bold disabled:opacity-60`}
             />
-            <button
-              type="submit"
-              style={{ backgroundColor: BRAND }}
-              className="w-full py-3 text-sm font-bold rounded-xl text-white hover:opacity-90"
-            >
-              Continue
-            </button>
+            {verifying && (
+              <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
+                <Loader size="xs" showText={false} />
+                Verifying code...
+              </div>
+            )}
             <button
               type="button"
-              onClick={() => setStep("email")}
-              className="w-full text-xs text-gray-500 hover:text-[#0A1F44]"
+              disabled={loading || verifying}
+              onClick={() => {
+                verifyingRef.current = false;
+                setVerifying(false);
+                setCode("");
+                void requestCode();
+              }}
+              className="w-full text-xs text-gray-500 hover:text-[#0A1F44] disabled:opacity-50"
             >
-              Resend code
+              {loading ? "Sending..." : "Resend code"}
             </button>
-          </form>
+          </div>
         )}
 
         {step === "password" && (

@@ -39,7 +39,7 @@ export async function sendPasswordResetCode(email: string, code: string, role: '
   await transport.sendMail({
     from: `"${fromName}" <${fromAddress}>`,
     to: email,
-    subject: `${fromName} — Password reset code`,
+    subject: `${fromName} - Password reset code`,
     text: [
       `Your ${roleLabel} portal password reset code is: ${code}`,
       '',
