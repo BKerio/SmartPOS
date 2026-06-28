@@ -456,7 +456,7 @@ const PosTerminal = () => {
                   </button>
                 </div>
                 {!authOptions.pin && (
-                  <p className="text-[10px] text-amber-600 font-medium">⚠️ PIN authentication is not set up on this wallet.</p>
+                  <p className="text-[10px] text-amber-600 font-medium">PIN authentication is not set up on this wallet.</p>
                 )}
               </div>
 
@@ -472,7 +472,7 @@ const PosTerminal = () => {
                   <span>{authLoading ? "Capturing Fingerprint..." : "Authorize with Biometrics"}</span>
                 </button>
                 {!authOptions.fingerprint && (
-                  <p className="text-[10px] text-amber-600 font-medium">⚠️ Student has not enrolled a fingerprint template.</p>
+                  <p className="text-[10px] text-amber-600 font-medium">Student has not enrolled a fingerprint template.</p>
                 )}
                 {scannerReady === false && (
                   <p className="text-[10px] text-amber-600 font-medium">⚠️ Fingerprint scanner hardware is currently offline.</p>
