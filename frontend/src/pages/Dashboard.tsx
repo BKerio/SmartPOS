@@ -113,9 +113,9 @@ const Dashboard = () => {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <DashboardCard title="Students" value={studentCount} icon={<GraduationCap size={24} />} color="#0A1F44" />
-          <DashboardCard title="Staff Users" value={staffCount} icon={<Users size={24} />} color="#1E3A8A" />
-          <DashboardCard title="Menu Items" value={menuCount} icon={<UtensilsCrossed size={24} />} color="#3B82F6" />
-          <DashboardCard title="Cafeteria Revenue" value={revenue} icon={<DollarSign size={24} />} color="#10B981" prefix="KES " />
+          <DashboardCard title="Staff Users" value={staffCount} icon={<Users size={24} />} color="#0A1F44" />
+          <DashboardCard title="Menu Items" value={menuCount} icon={<UtensilsCrossed size={24} />} color="#0A1F44" />
+          <DashboardCard title="Cafeteria Revenue" value={revenue} icon={<DollarSign size={24} />} color="#0A1F44" prefix="KES " />
         </div>
       )}
 
