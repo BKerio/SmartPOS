@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
-import { Smartphone, Coins, ArrowLeft, Info, CheckCircle2, ArrowUp, ArrowDown } from 'lucide-react';
+import { Smartphone, Coins, ArrowLeft, Info, ArrowUp, ArrowDown } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 
 const PayWithMpesa = () => {
