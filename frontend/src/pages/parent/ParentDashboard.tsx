@@ -148,7 +148,7 @@ const ParentDashboard = () => {
               <div className="text-right">
                 <p className="text-xs uppercase tracking-widest text-stone-400">Wallet</p>
                 <p className="text-2xl font-extrabold text-[#111]">
-                  KES {active.walletBalance.toLocaleString()}
+                  Ksh {active.walletBalance.toLocaleString()}
                 </p>
               </div>
             </div>
