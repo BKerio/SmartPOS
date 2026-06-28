@@ -14,11 +14,6 @@ interface Student {
   course?: string | null;
 }
 
-const ArrowRight = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <path d="M3 8h10M9 4l4 4-4 4" stroke="#f97316" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
 
 const ParentDashboard = () => {
   const [students, setStudents] = useState<Student[]>([]);
