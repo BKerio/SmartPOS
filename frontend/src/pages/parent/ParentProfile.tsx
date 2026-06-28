@@ -125,7 +125,7 @@ const ParentProfile = () => {
           <h1 className="text-2xl font-bold flex items-center justify-center gap-2">
             <User size={22} /> My Profile
           </h1>
-          <p className="text-blue-200 text-sm mt-1">Manage your biodata and account security</p>
+          <p className="text-blue-200 text-sm mt-1">Manage your profile data and account security</p>
         </div>
 
         {loading ? (
