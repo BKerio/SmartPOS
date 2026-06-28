@@ -16,6 +16,7 @@ import {
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "@/services/toast";
+import { useAuth } from "@/context/AuthContext";
 
 type MenuItem = {
   name: string;
@@ -54,6 +55,7 @@ const menuSections: { title?: string; items: MenuItem[] }[] = [
 const AdminSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem("admin_sidebar_collapsed") === "true";
@@ -66,7 +68,7 @@ const AdminSidebar = () => {
   }, [collapsed]);
 
   const isExpanded = !collapsed || hovered;
-  const adminName = localStorage.getItem("adminName") || "Admin";
+  const adminName = user?.name || localStorage.getItem("adminName") || "Admin";
 
   const isActive = (path: string) =>
     path === "/"
@@ -79,7 +81,7 @@ const AdminSidebar = () => {
       confirmLabel: "Logout",
     });
     if (confirmed) {
-      localStorage.clear();
+      logout();
       toast.success("Logged out successfully");
       navigate("/login");
     }

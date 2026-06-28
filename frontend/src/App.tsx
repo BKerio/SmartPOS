@@ -1,5 +1,10 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
+import { AuthProvider, getDashboardPath, useAuth } from "@/context/AuthContext";
+import type { UserRole } from "@/services/authStorage";
+import Loader from "@/components/ui/loader";
+import RoleProtectedRoute from "@/components/RoleProtectedRoute";
+import GuestRoute from "@/components/GuestRoute";
 import AdminSidebar from "@/components/AdminSidebar";
 import StudentSidebar from "@/components/StudentSidebar";
 import AdminNavbar from "@/components/AdminNavbar";
@@ -14,7 +19,6 @@ import ManageFinanceOfficers from "@/pages/admin/ManageFinanceOfficers";
 import Settings from "@/pages/settings";
 import Register from "@/pages/Register";
 import PendingApprovals from "@/pages/PendingApprovals";
-import ProtectedRoute from "@/components/ProtectedRoute";
 import Login from "@/pages/Login";
 import AdminProfile from "@/pages/AdminProfile";
 import StudentProfile from "@/pages/StudentProfile";
@@ -42,13 +46,19 @@ import FinanceDashboard from "@/pages/finance/FinanceDashboard";
 import ExpensesPage from "@/pages/finance/ExpensesPage";
 import ReceiptsPage from "@/pages/finance/ReceiptsPage";
 
-const USER_ROLES = ["parent", "finance", "restaurant"];
+const USER_ROLES: UserRole[] = ["parent", "finance", "restaurant"];
+
+const R = (roles: UserRole[], element: JSX.Element) => (
+  <RoleProtectedRoute roles={roles}>{element}</RoleProtectedRoute>
+);
 
 function AppShell() {
   const location = useLocation();
+  const { status, user } = useAuth();
   const authPages = ["/login", "/register"];
   const isAuthPage = authPages.includes(location.pathname);
-  const role = (localStorage.getItem("role") || "admin").toLowerCase();
+  const showShell = status === "authenticated" && !!user && !isAuthPage;
+  const role = user?.role;
 
   let SidebarComponent: React.FC = AdminSidebar;
   let NavbarComponent: React.FC = AdminNavbar;
@@ -56,76 +66,97 @@ function AppShell() {
   if (role === "student") {
     SidebarComponent = StudentSidebar;
     NavbarComponent = StudentNavbar;
-  } else if (USER_ROLES.includes(role)) {
+  } else if (role && USER_ROLES.includes(role)) {
     SidebarComponent = UserSidebar;
     NavbarComponent = UserNavbar;
   }
 
+  if (status === "loading" && !isAuthPage) {
+    return (
+      <Loader
+        size="sm"
+        title="Loading SmartPOS..."
+        subtitle="Verifying your session"
+        className="min-h-screen py-24"
+      />
+    );
+  }
+
+  if (status === "unauthenticated" && !isAuthPage) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
   return (
     <div className="flex">
-      {!isAuthPage && <SidebarComponent />}
+      {showShell && <SidebarComponent />}
       <div className="flex-1 flex flex-col h-screen overflow-y-auto">
-        {!isAuthPage && <NavbarComponent />}
+        {showShell && <NavbarComponent />}
         <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+          <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
+          <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
 
           {/* Admin */}
-          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/students" element={<ProtectedRoute><ManageStudents /></ProtectedRoute>} />
-          <Route path="/parents" element={<ProtectedRoute><ManageParents /></ProtectedRoute>} />
-          <Route path="/restaurant-staff" element={<ProtectedRoute><ManageRestaurantStaff /></ProtectedRoute>} />
-          <Route path="/finance-officers" element={<ProtectedRoute><ManageFinanceOfficers /></ProtectedRoute>} />
-          <Route path="/manage-users" element={<Navigate to="/students" replace />} />
-          <Route path="/add-student" element={<Navigate to="/students" replace />} />
-          <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-          <Route path="/audit-logs" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
-          <Route path="/pending-approvals" element={<ProtectedRoute><PendingApprovals /></ProtectedRoute>} />
-          <Route path="/admin-profile" element={<ProtectedRoute><AdminProfile /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+          <Route path="/" element={R(["admin"], <Dashboard />)} />
+          <Route path="/students" element={R(["admin"], <ManageStudents />)} />
+          <Route path="/parents" element={R(["admin"], <ManageParents />)} />
+          <Route path="/restaurant-staff" element={R(["admin"], <ManageRestaurantStaff />)} />
+          <Route path="/finance-officers" element={R(["admin"], <ManageFinanceOfficers />)} />
+          <Route path="/manage-users" element={R(["admin"], <Navigate to="/students" replace />)} />
+          <Route path="/add-student" element={R(["admin"], <Navigate to="/students" replace />)} />
+          <Route path="/reports" element={R(["admin"], <Reports />)} />
+          <Route path="/audit-logs" element={R(["admin"], <AuditLogs />)} />
+          <Route path="/pending-approvals" element={R(["admin"], <PendingApprovals />)} />
+          <Route path="/admin-profile" element={R(["admin"], <AdminProfile />)} />
+          <Route path="/settings" element={R(["admin", "parent", "finance", "restaurant"], <Settings />)} />
 
           {/* Student */}
           <Route path="/student/order" element={<Navigate to="/student/wallet" replace />} />
           <Route path="/student-fees" element={<Navigate to="/student/wallet" replace />} />
-          <Route path="/student-dashboard" element={<ProtectedRoute><Navigate to="/student/wallet" replace /></ProtectedRoute>} />
-          <Route path="/student/wallet" element={<ProtectedRoute><StudentWallet /></ProtectedRoute>} />
-          <Route path="/student/history" element={<ProtectedRoute><StudentHistory /></ProtectedRoute>} />
-          <Route path="/student-profile" element={<ProtectedRoute><StudentProfile /></ProtectedRoute>} />
+          <Route path="/student-dashboard" element={R(["student"], <Navigate to="/student/wallet" replace />)} />
+          <Route path="/student/wallet" element={R(["student"], <StudentWallet />)} />
+          <Route path="/student/history" element={R(["student"], <StudentHistory />)} />
+          <Route path="/student-profile" element={R(["student"], <StudentProfile />)} />
 
           {/* Parent */}
-          <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboard /></ProtectedRoute>} />
-          <Route path="/pay-mpesa" element={<ProtectedRoute><PayWithMpesa /></ProtectedRoute>} />
-          <Route path="/parent/topup" element={<ProtectedRoute><ParentTopUpWallet /></ProtectedRoute>} />
-          <Route path="/parent/wallet" element={<ProtectedRoute><ParentManageWallet /></ProtectedRoute>} />
-          <Route path="/parent/history" element={<ProtectedRoute><ParentWalletHistory /></ProtectedRoute>} />
+          <Route path="/parent-dashboard" element={R(["parent"], <ParentDashboard />)} />
+          <Route path="/pay-mpesa" element={R(["parent"], <PayWithMpesa />)} />
+          <Route path="/parent/topup" element={R(["parent"], <ParentTopUpWallet />)} />
+          <Route path="/parent/wallet" element={R(["parent"], <ParentManageWallet />)} />
+          <Route path="/parent/history" element={R(["parent"], <ParentWalletHistory />)} />
 
           {/* Restaurant */}
-          <Route path="/pos" element={<ProtectedRoute><PosTerminal /></ProtectedRoute>} />
-          <Route path="/menu-management" element={<ProtectedRoute><MenuManagement /></ProtectedRoute>} />
-          <Route path="/menu-management/list" element={<ProtectedRoute><MenuListPage /></ProtectedRoute>} />
-          <Route path="/menu-management/add" element={<ProtectedRoute><MenuAddPage /></ProtectedRoute>} />
-          <Route path="/menu-management/edit" element={<ProtectedRoute><MenuEditPage /></ProtectedRoute>} />
-          <Route path="/menu-management/update" element={<ProtectedRoute><MenuUpdatePage /></ProtectedRoute>} />
-          <Route path="/menu-management/delete" element={<ProtectedRoute><MenuDeletePage /></ProtectedRoute>} />
-          <Route path="/menu-management/recipes" element={<ProtectedRoute><MenuRecipesPage /></ProtectedRoute>} />
-          <Route path="/inventory" element={<ProtectedRoute><InventoryPage /></ProtectedRoute>} />
+          <Route path="/pos" element={R(["restaurant"], <PosTerminal />)} />
+          <Route path="/menu-management" element={R(["restaurant"], <MenuManagement />)} />
+          <Route path="/menu-management/list" element={R(["restaurant"], <MenuListPage />)} />
+          <Route path="/menu-management/add" element={R(["restaurant"], <MenuAddPage />)} />
+          <Route path="/menu-management/edit" element={R(["restaurant"], <MenuEditPage />)} />
+          <Route path="/menu-management/update" element={R(["restaurant"], <MenuUpdatePage />)} />
+          <Route path="/menu-management/delete" element={R(["restaurant"], <MenuDeletePage />)} />
+          <Route path="/menu-management/recipes" element={R(["restaurant"], <MenuRecipesPage />)} />
+          <Route path="/inventory" element={R(["restaurant", "finance"], <InventoryPage />)} />
 
           {/* Finance */}
-          <Route path="/finance" element={<ProtectedRoute><FinanceDashboard /></ProtectedRoute>} />
-          <Route path="/expenses" element={<ProtectedRoute><ExpensesPage /></ProtectedRoute>} />
-          <Route path="/receipts" element={<ProtectedRoute><ReceiptsPage /></ProtectedRoute>} />
+          <Route path="/finance" element={R(["finance"], <FinanceDashboard />)} />
+          <Route path="/expenses" element={R(["finance"], <ExpensesPage />)} />
+          <Route path="/receipts" element={R(["finance"], <ReceiptsPage />)} />
 
-          {/* Shared */}
+          {/* Shared profile */}
           <Route
             path="/user-profile"
+            element={R(
+              ["admin", "student", "parent", "finance", "restaurant"],
+              user?.role === "parent" ? <ParentProfile /> : <UserProfile />,
+            )}
+          />
+
+          <Route
+            path="*"
             element={
-              <ProtectedRoute>
-                {role === "parent" ? <ParentProfile /> : <UserProfile />}
-              </ProtectedRoute>
+              status === "authenticated" && user
+                ? <Navigate to={getDashboardPath(user.role)} replace />
+                : <Navigate to="/login" replace />
             }
           />
-          {/* Catch-all: redirect unknown paths to root */}
-          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </div>
@@ -135,7 +166,9 @@ function AppShell() {
 function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <AppShell />
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
     </BrowserRouter>
   );
 }

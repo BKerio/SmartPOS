@@ -1,6 +1,7 @@
 import { LogOut, User as UserIcon, Users, PieChart, UtensilsCrossed } from "lucide-react";
 import { toast } from "@/services/toast";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import { motion } from "framer-motion";
 import React from "react";
 
@@ -18,8 +19,11 @@ const ROLE_LABELS: Record<string, string> = {
 
 const UserNavbar = () => {
     const navigate = useNavigate();
-    const userName = localStorage.getItem("userName") || "User";
-    const role = (localStorage.getItem("role") || "parent").toLowerCase();
+    const { user, logout } = useAuth();
+    const userName = user?.name || "User";
+    const role = user?.role;
+
+    if (!role) return null;
 
     const handleLogout = async () => {
         const confirmed = await toast.confirm("Logout?", {
@@ -27,7 +31,7 @@ const UserNavbar = () => {
             confirmLabel: "Logout",
         });
         if (confirmed) {
-            localStorage.clear();
+            logout();
             toast.success("Logged out");
             navigate("/login");
         }

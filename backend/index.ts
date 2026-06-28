@@ -6,6 +6,7 @@ import cors from 'cors';
 import http from 'http';
 import { Server } from 'socket.io';
 
+import authRoutes      from '@/routes/auth';
 import adminRoutes      from '@/routes/admin';
 import studentRoutes    from '@/routes/students';
 import userRoutes       from '@/routes/users';
@@ -79,6 +80,7 @@ app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+app.use('/api/auth',        authRoutes);
 app.use('/api/admin',       adminRoutes);
 app.use('/api/students',    studentRoutes);
 app.use('/api/users',       userRoutes);

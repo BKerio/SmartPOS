@@ -7,6 +7,7 @@ import {
     Receipt, Scale
 } from "lucide-react";
 import { toast } from "@/services/toast";
+import { useAuth } from "@/context/AuthContext";
 import LogoImg from "@/assets/LOGO.png";
 
 const ROLE_CONFIG: Record<string, {
@@ -55,9 +56,12 @@ const UserSidebar: React.FC = () => {
     const [collapsed, setCollapsed] = useState(false);
     const location = useLocation();
     const navigate = useNavigate();
+    const { user, logout } = useAuth();
     
-    const role = (localStorage.getItem("role") || "parent").toLowerCase();
-    const userName = localStorage.getItem("userName") || "User";
+    const role = user?.role;
+    const userName = user?.name || "User";
+
+    if (!role) return null;
 
     const config = ROLE_CONFIG[role] || ROLE_CONFIG.parent;
     const menuItems = config.menuItems;
@@ -68,7 +72,7 @@ const UserSidebar: React.FC = () => {
             confirmLabel: "Logout",
         });
         if (confirmed) {
-            localStorage.clear();
+            logout();
             toast.success("Logged out");
             navigate("/login");
         }

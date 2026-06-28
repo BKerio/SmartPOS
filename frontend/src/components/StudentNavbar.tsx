@@ -1,10 +1,12 @@
 import { LogOut } from "lucide-react";
 import { toast } from "@/services/toast";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import { motion } from "framer-motion";
 
 const StudentNavbar = () => {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const handleLogout = async () => {
     const confirmed = await toast.confirm("Logout from student portal?", {
@@ -12,13 +14,13 @@ const StudentNavbar = () => {
       confirmLabel: "Logout",
     });
     if (confirmed) {
-      localStorage.clear();
+      logout();
       toast.success("Logged out");
       navigate("/login");
     }
   };
 
-  const name = localStorage.getItem("studentName") || "Student";
+  const name = user?.name || localStorage.getItem("studentName") || "Student";
 
   return (
     <motion.nav

@@ -2,13 +2,15 @@ import { ChevronLeft, ChevronRight, LogOut, UserCheck, PiggyBank, Clock } from "
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "@/services/toast";
+import { useAuth } from "@/context/AuthContext";
 
 const StudentSidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   
-  const studentName = localStorage.getItem("userName") || "Student";
+  const studentName = user?.name || localStorage.getItem("studentName") || "Student";
 
   const menuItems = [
     { name: "My Wallet", icon: PiggyBank, path: "/student/wallet" },
@@ -26,7 +28,7 @@ const StudentSidebar = () => {
       confirmLabel: "Logout",
     });
     if (confirmed) {
-      localStorage.clear();
+      logout();
       toast.success("Logged out");
       navigate("/login");
     }

@@ -1,4 +1,11 @@
 ﻿import axios from "axios";
+import { clearAuthSession } from "@/services/authStorage";
+
+declare module "axios" {
+  export interface AxiosRequestConfig {
+    skipAuthRedirect?: boolean;
+  }
+}
 
 const defaultBaseUrl = import.meta.env.PROD
   ? "https://api.smartpos.com/api"
@@ -8,7 +15,6 @@ const API = axios.create({
   baseURL: import.meta.env.VITE_API_URL || defaultBaseUrl,
 });
 
-// Attach JWT token from localStorage to every request
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
@@ -17,19 +23,17 @@ API.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 globally - clear token and redirect to login
 API.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("role");
-      if (window.location.pathname !== "/login") {
+    if (error.response?.status === 401 && !error.config?.skipAuthRedirect) {
+      clearAuthSession();
+      if (window.location.pathname !== "/login" && window.location.pathname !== "/register") {
         window.location.href = "/login";
       }
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export default API;

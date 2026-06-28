@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, ChevronDown, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -6,11 +6,12 @@ import { toast } from "@/services/toast";
 import API from "@/services/api";
 import Loader from "@/components/ui/loader";
 import logo from "@/assets/LOGO.png";
-
-type Role = "admin" | "student" | "parent" | "finance" | "restaurant";
+import { getDashboardPath, useAuth } from "@/context/AuthContext";
+import type { AuthUser, UserRole } from "@/services/authStorage";
+import { persistAuthSession } from "@/services/authStorage";
 
 interface RoleOption {
-  value: Role;
+  value: UserRole;
   label: string;
   description: string;
 }
@@ -25,16 +26,9 @@ const roleOptions: RoleOption[] = [
   { value: "restaurant", label: "Restaurant Staff", description: "POS terminal & menu management" },
 ];
 
-const DASHBOARD_PATHS: Record<Role, string> = {
-  admin: "/",
-  student: "/student/wallet",
-  parent: "/parent-dashboard",
-  finance: "/finance",
-  restaurant: "/pos",
-};
-
 const Login: React.FC = () => {
-  const [role, setRole] = useState<Role>("admin");
+  const { status, user, refreshSession } = useAuth();
+  const [role, setRole] = useState<UserRole>("admin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [regNo, setRegNo] = useState("");
@@ -43,7 +37,28 @@ const Login: React.FC = () => {
   const [showRoleSelector, setShowRoleSelector] = useState(false);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    if (status === "authenticated" && user) {
+      navigate(getDashboardPath(user.role), { replace: true });
+    }
+  }, [status, user, navigate]);
+
+  if (status === "loading") {
+    return (
+      <Loader size="sm" title="Loading..." subtitle="Checking your session" className="min-h-screen py-24" />
+    );
+  }
+
   const currentRole = roleOptions.find((r) => r.value === role) || roleOptions[0];
+
+  const toAuthUser = (data: any, loginRole: UserRole): AuthUser => ({
+    id: data.id || data._id,
+    name: data.name,
+    role: loginRole,
+    email: data.email,
+    regNo: data.regNo,
+    walletBalance: data.walletBalance,
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,27 +68,26 @@ const Login: React.FC = () => {
       if (role === "admin") {
         const res = await API.post("/admin/login", { email, password });
         data = res.data;
-        localStorage.setItem("role", "admin");
       } else if (role === "student") {
         const res = await API.post("/students/login", { regNo, password });
         data = res.data;
-        localStorage.setItem("role", "student");
-        localStorage.setItem("studentName", data.name || "");
-        localStorage.setItem("regNo", data.regNo || regNo);
       } else if (role === "parent") {
         const res = await API.post("/parents/login", { email, password });
         data = res.data;
-        localStorage.setItem("role", "parent");
-        localStorage.setItem("userName", data.name || "");
       } else {
         const res = await API.post("/users/login", { email, password, role });
         data = res.data;
-        localStorage.setItem("role", role);
-        localStorage.setItem("userName", data.name || "");
       }
-      localStorage.setItem("token", data.token);
+
+      const authUser = toAuthUser(data, (data.role || role) as UserRole);
+      persistAuthSession(authUser, data.token);
+      const verified = await refreshSession();
+      if (!verified) {
+        toast.error("Login failed", "Could not verify your session with the server");
+        return;
+      }
       toast.success(`Welcome, ${data.name || currentRole.label}!`);
-      navigate(DASHBOARD_PATHS[role]);
+      navigate(getDashboardPath(authUser.role));
     } catch (error: any) {
       toast.error("Login failed", error.response?.data?.message);
     } finally {

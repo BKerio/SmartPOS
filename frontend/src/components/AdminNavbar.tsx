@@ -1,11 +1,13 @@
 import { LogOut, Shield } from "lucide-react";
 import { toast } from "@/services/toast";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import { motion } from "framer-motion";
 
 const AdminNavbar = () => {
   const navigate = useNavigate();
-  const adminName = localStorage.getItem("adminName") || "Admin";
+  const { user, logout } = useAuth();
+  const adminName = user?.name || localStorage.getItem("adminName") || "Admin";
 
   const handleLogout = async () => {
     const confirmed = await toast.confirm("Logout from Admin Dashboard?", {
@@ -13,7 +15,7 @@ const AdminNavbar = () => {
       confirmLabel: "Logout",
     });
     if (confirmed) {
-      localStorage.clear();
+      logout();
       toast.success("Logged out successfully");
       navigate("/login");
     }
