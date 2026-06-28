@@ -19,6 +19,7 @@ import financeRoutes    from '@/routes/finance';
 import parentRoutes     from '@/routes/parents';
 import mpesaRoutes      from '@/routes/mpesa';
 import { getSupabaseConfigError, isSupabaseConfigured } from '@/services/supabase';
+import { checkDatabase, connectDatabase } from '@/services/prisma';
 
 const app = express();
 const PORT         = process.env.PORT         || 5000;
@@ -76,8 +77,13 @@ app.use('/api', (_req, res, next) => {
   next();
 });
 
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (_req: Request, res: Response) => {
+  const dbOk = await checkDatabase();
+  res.status(dbOk ? 200 : 503).json({
+    status: dbOk ? 'ok' : 'degraded',
+    database: dbOk ? 'connected' : 'unreachable',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use('/api/auth',        authRoutes);
@@ -97,9 +103,16 @@ app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`\nSmartPOS backend running on http://localhost:${PORT}`);
   console.log(`Allowed origins: ${ALLOWED_ORIGINS.join(', ')}\n`);
+  try {
+    await connectDatabase();
+    console.log('Database connected');
+  } catch (err: any) {
+    console.error('Database connection failed on startup:', err?.message || err);
+    console.error('Check Supabase is not paused and DATABASE_URL in backend/.env is correct.\n');
+  }
   if (!isSupabaseConfigured()) {
     console.warn('Supabase storage:', getSupabaseConfigError());
     console.warn('Menu image uploads will fail until SUPABASE_SERVICE_ROLE_KEY is set correctly.\n');

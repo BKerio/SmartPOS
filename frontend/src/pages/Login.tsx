@@ -19,7 +19,7 @@ interface RoleOption {
 const BRAND = "#0A1F44";
 
 const roleOptions: RoleOption[] = [
-  { value: "admin", label: "Administrator", description: "System management & oversight" },
+  { value: "admin", label: "System Admin", description: "System management & oversight" },
   { value: "student", label: "Student", description: "View wallet balance & history" },
   { value: "parent", label: "Parent", description: "Monitor balances & top up wallets" },
   { value: "finance", label: "Finance Officer", description: "Revenue, expenses & reports" },
@@ -226,18 +226,12 @@ const Login: React.FC = () => {
                     <Loader size="xs" showText={false} />
                     Authenticating...
                   </>
-                ) : `Login to ${currentRole.label}`}
+                ) : `Login as ${currentRole.label}`}
               </button>
             </form>
 
             <div className="mt-6 pt-4 border-t border-gray-100 text-center">
               <p className="text-[10px] text-gray-400">© {new Date().getFullYear()} SmartPOS · Feeding Minds, Nourishing Futures</p>
-              <p className="text-xs text-gray-600 mt-1">
-                Not registered?{" "}
-                <a href="/register" className="text-[#0A1F44] font-semibold hover:underline">
-                  Create an account
-                </a>
-              </p>
             </div>
           </div>
 
