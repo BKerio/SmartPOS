@@ -308,7 +308,7 @@ const PosTerminal = () => {
                         <span className="px-2 py-0.5 text-[8px] font-black uppercase bg-indigo-100 text-indigo-700 rounded">PIN Active</span>
                       )}
                       {student.hasFingerprint && (
-                        <span className="px-2 py-0.5 text-[8px] font-black uppercase bg-teal-100 text-teal-700 rounded">Fingerprint</span>
+                        <span className="px-2 py-0.5 text-[8px] font-black uppercase bg-teal-100 text-teal-700 rounded">Use Fingerprint</span>
                       )}
                     </>
                   )}
