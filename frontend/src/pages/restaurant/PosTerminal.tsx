@@ -475,7 +475,7 @@ const PosTerminal = () => {
                   <p className="text-[10px] text-amber-600 font-medium">Student has not enrolled a fingerprint template.</p>
                 )}
                 {scannerReady === false && (
-                  <p className="text-[10px] text-amber-600 font-medium">⚠️ Fingerprint scanner hardware is currently offline.</p>
+                  <p className="text-[10px] text-amber-600 font-medium">Fingerprint scanner hardware is currently offline.</p>
                 )}
               </div>
             </div>
