@@ -11,10 +11,6 @@ import {
   CreditCard,
   BookOpen,
   FileText,
-  Calendar,
-  AlertCircle,
-  CheckCircle,
-  XCircle,
   Clock,
   RefreshCw,
 } from "lucide-react";
@@ -160,21 +156,21 @@ const AuditLogs: React.FC = () => {
       {/* Statistics Cards */}
       {data?.stats && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+          <div className="bg-blue-50 p-4 rounded-lg border border-black/10">
             <p className="text-sm text-gray-600 mb-1">Total Events</p>
-            <p className="text-2xl font-bold text-blue-700">{data.stats.total.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-black">{data.stats.total.toLocaleString()}</p>
           </div>
-          <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+          <div className="bg-blue-50 p-4 rounded-lg border border-black/10">
             <p className="text-sm text-gray-600 mb-1">Today's Events</p>
-            <p className="text-2xl font-bold text-green-700">{data.stats.today}</p>
+            <p className="text-2xl font-bold text-black">{data.stats.today}</p>
           </div>
-          <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+          <div className="bg-blue-50 p-4 rounded-lg border border-black/10">
             <p className="text-sm text-gray-600 mb-1">Recent Logins (24h)</p>
-            <p className="text-2xl font-bold text-purple-700">{data.stats.recentLogins}</p>
+            <p className="text-2xl font-bold text-black">{data.stats.recentLogins}</p>
           </div>
-          <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
+          <div className="bg-blue-50 p-4 rounded-lg border border-black/10">
             <p className="text-sm text-gray-600 mb-1">Current Page</p>
-            <p className="text-2xl font-bold text-indigo-700">
+            <p className="text-2xl font-bold text-black">
               {data.pagination.page} / {data.pagination.pages}
             </p>
           </div>

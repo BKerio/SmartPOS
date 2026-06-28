@@ -85,7 +85,7 @@ router.put('/profile', ensureAdmin, async (req: Request, res: Response): Promise
       }
       const isMatch = await bcrypt.compare(currentPassword, admin.password);
       if (!isMatch) {
-        return res.status(401).json({ message: 'Current password is incorrect' });
+        return res.status(422).json({ message: 'Current password is incorrect' });
       }
       passwordHash = await bcrypt.hash(newPassword, 10);
     }
