@@ -129,7 +129,7 @@ const ForgotPassword = () => {
         {step === "email" && (
           <form onSubmit={requestCode} className="space-y-4">
             <div>
-              <label className="text-xs font-bold text-[#0A1F44] ml-1 mb-1 block">Account type</label>
+              <label className="text-xs font-bold text-[#0A1F44] ml-1 mb-1 block">Choose account type</label>
               <div className="grid grid-cols-2 gap-2">
                 {(["parent", "student"] as ResetRole[]).map((r) => (
                   <button
