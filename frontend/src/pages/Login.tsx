@@ -152,7 +152,7 @@ const Login: React.FC = () => {
                   >
                     <input
                       type="text"
-                      placeholder="Admission Number"
+                      placeholder="Enter your admission number"
                       value={regNo}
                       onChange={(e) => setRegNo(e.target.value)}
                       required
@@ -161,7 +161,7 @@ const Login: React.FC = () => {
                     <div className="relative">
                       <input
                         type={showPassword ? "text" : "password"}
-                        placeholder="Password"
+                        placeholder="Enter your password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
@@ -187,7 +187,7 @@ const Login: React.FC = () => {
                   >
                     <input
                       type="email"
-                      placeholder="Email Address"
+                      placeholder="Enter your Email Address"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
@@ -196,7 +196,7 @@ const Login: React.FC = () => {
                     <div className="relative">
                       <input
                         type={showPassword ? "text" : "password"}
-                        placeholder="Password"
+                        placeholder="Enter your password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
