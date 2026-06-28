@@ -20,6 +20,7 @@ import Settings from "@/pages/settings";
 import Register from "@/pages/Register";
 import PendingApprovals from "@/pages/PendingApprovals";
 import Login from "@/pages/Login";
+import ForgotPassword from "@/pages/ForgotPassword";
 import AdminProfile from "@/pages/AdminProfile";
 import StudentProfile from "@/pages/StudentProfile";
 import StudentWallet from "@/pages/student/StudentWallet";
@@ -55,7 +56,7 @@ const R = (roles: UserRole[], element: JSX.Element) => (
 function AppShell() {
   const location = useLocation();
   const { status, user } = useAuth();
-  const authPages = ["/login", "/register"];
+  const authPages = ["/login", "/register", "/forgot-password"];
   const isAuthPage = authPages.includes(location.pathname);
   const showShell = status === "authenticated" && !!user && !isAuthPage;
   const role = user?.role;
@@ -94,6 +95,7 @@ function AppShell() {
         <Routes>
           <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
           <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
+          <Route path="/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
 
           {/* Admin */}
           <Route path="/" element={R(["admin"], <Dashboard />)} />

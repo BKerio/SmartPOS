@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, ChevronDown, CheckCircle2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { toast } from "@/services/toast";
 import API from "@/services/api";
 import Loader from "@/components/ui/loader";
@@ -36,6 +36,14 @@ const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showRoleSelector, setShowRoleSelector] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const qRole = searchParams.get("role");
+    if (qRole === "student" || qRole === "parent") {
+      setRole(qRole);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (status === "authenticated" && user) {
@@ -228,6 +236,17 @@ const Login: React.FC = () => {
                   </>
                 ) : `Login as ${currentRole.label}`}
               </button>
+
+              {(role === "student" || role === "parent") && (
+                <p className="text-center">
+                  <Link
+                    to={`/forgot-password?role=${role}`}
+                    className="text-xs font-semibold text-[#0A1F44] hover:underline"
+                  >
+                    Forgot password?
+                  </Link>
+                </p>
+              )}
             </form>
 
             <div className="mt-6 pt-4 border-t border-gray-100 text-center">

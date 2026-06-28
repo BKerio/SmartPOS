@@ -258,3 +258,16 @@ model MpesaPayment {
 
   @@map("mpesa_payments")
 }
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  email     String
+  role      String    // student | parent
+  codeHash  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email, role])
+  @@map("password_resets")
+}
