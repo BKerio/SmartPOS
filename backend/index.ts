@@ -30,7 +30,7 @@ const server = http.createServer(app);
 const ALLOWED_ORIGINS = [
   FRONTEND_URL,
   'http://localhost:5173',
-  'http://192.168.100.91:5173',k
+  'http://192.168.100.91:5173',
   'http://127.0.0.1:5173',
 ].filter((o, i, arr) => o && arr.indexOf(o) === i);
 
