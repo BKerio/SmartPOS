@@ -114,7 +114,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     if (user.status !== 'approved') {
       const msgs: Record<string, string> = {
         pending: 'Your account is pending admin approval',
-        rejected: 'Your account registration was rejected',
+        rejected: 'Your account registration was rejected. Please contact the administrator for more information.',
       };
       return res.status(403).json({ message: msgs[user.status] || 'Account not active' });
     }
