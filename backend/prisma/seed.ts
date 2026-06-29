@@ -65,7 +65,7 @@ async function seed() {
   const studentRegNo = 'STU001';
   const existingStudent = await prisma.student.findUnique({ where: { regNo: studentRegNo } });
   if (!existingStudent) {
-    const hashed = await bcrypt.hash('Student@12345y', 10);
+    const hashed = await bcrypt.hash('Student@12345', 10);
     await prisma.student.create({
       data: {
         name: 'John Student',
