@@ -5,7 +5,7 @@ import bcrypt from 'bcrypt';
 import prisma from '@/services/prisma';
 
 async function seed() {
-  console.log('🌱  Seeding database...');
+  console.log('──Seeding database──');
 
   // ── Default admin ──────────────────────────────────────────────────────────
   const adminEmail    = process.env.SEED_ADMIN_EMAIL    || 'admin@smartpos.com';
