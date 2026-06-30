@@ -40,7 +40,7 @@ async function seed() {
       data: [
         { name: 'Ugali Beef', description: 'Ugali with beef stew and vegetables', price: 150, category: 'Lunch' },
         { name: 'Chapati Beans', description: 'Two chapatis with bean stew', price: 100,  category: 'Lunch' },
-        { name: 'Tea & Mandazi', description: 'Ho tea with two mandazis',   price: 50, category: 'Breakfast' },
+        { name: 'Tea & Mandazi', description: 'Hot tea with two mandazis',   price: 50, category: 'Breakfast' },
       ],
     });
     console.log('Sample menu items seeded');
