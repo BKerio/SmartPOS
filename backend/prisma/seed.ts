@@ -2,7 +2,7 @@
 dotenv.config();
 
 import bcrypt from 'bcrypt';
-import prisma from '../services/prisma';
+import prisma from '@/services/prisma';
 
 async function seed() {
   console.log('──Seeding database──');
