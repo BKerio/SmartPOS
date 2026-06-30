@@ -43,7 +43,7 @@ async function seed() {
         { name: 'Tea & Mandazi', description: 'Hot tea with two mandazis',   price: 50, category: 'Breakfast' },
       ],
     });
-    console.log('Sample menu items seedeed');
+    console.log('Sample menu items seeded');
   }
 
   // ── Sample staff accounts (finance & restaurant) ───────────────────────────
