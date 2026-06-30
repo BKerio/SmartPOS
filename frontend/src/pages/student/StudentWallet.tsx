@@ -139,7 +139,7 @@ const StudentWallet = () => {
           </div>
 
           <p className="text-center text-xs text-gray-500">
-            Top-ups are made by your parent via M-Pesa. Ask them to add funds if your balance is low.
+            Top-ups are made by your parent via Kopokopo (M-Pesa). Ask them to add funds if your balance is low.
           </p>
         </>
       )}

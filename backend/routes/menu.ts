@@ -13,6 +13,10 @@ function devErrorDetail(error: unknown): string | undefined {
 
 const router = Router();
 
+function canManageMenu(role: string | undefined): boolean {
+  return !!role && ['admin', 'restaurant'].includes(role);
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 3 * 1024 * 1024 }, // 3 MB
@@ -21,6 +25,178 @@ const upload = multer({
     if (allowed.includes(file.mimetype)) cb(null, true);
     else cb(new Error('Only jpg, png, and webp images are allowed'));
   },
+});
+
+// ─── GET /api/menu/categories ─────────────────────────────────────────────────
+router.get('/categories', ensureAuthenticated, async (_req: Request, res: Response): Promise<any> => {
+  try {
+    const categories = await prisma.menuCategory.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+    return res.json(categories);
+  } catch (error) {
+    console.error('GET /menu/categories error:', error);
+    return res.status(500).json({
+      message: 'Something went wrong',
+      detail: devErrorDetail(error),
+    });
+  }
+});
+
+// ─── POST /api/menu/categories ────────────────────────────────────────────────
+router.post('/categories', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (!canManageMenu(req.user!.role)) {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
+
+  const name = String(req.body.name || '').trim();
+  if (!name) {
+    return res.status(422).json({ message: 'Category name is required' });
+  }
+
+  try {
+    const existing = await prisma.menuCategory.findUnique({ where: { name } });
+    if (existing) {
+      return res.status(409).json({ message: 'A category with this name already exists' });
+    }
+
+    const sortOrder = Number(req.body.sortOrder);
+    const category = await prisma.menuCategory.create({
+      data: {
+        name,
+        sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
+      },
+    });
+
+    await logAuditEvent({
+      eventType: 'menu_category_created',
+      userType: req.user!.role,
+      userId: req.user!.id,
+      userName: req.user!.name,
+      action: 'Create Menu Category',
+      description: `Added menu category "${name}"`,
+      ipAddress: req.ip,
+    });
+
+    return res.status(201).json(category);
+  } catch (error) {
+    console.error('POST /menu/categories error:', error);
+    return res.status(500).json({
+      message: 'Something went wrong',
+      detail: devErrorDetail(error),
+    });
+  }
+});
+
+// ─── PUT /api/menu/categories/:categoryId ─────────────────────────────────────
+router.put('/categories/:categoryId', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (!canManageMenu(req.user!.role)) {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
+
+  const categoryId = req.params.categoryId as string;
+  const name = req.body.name !== undefined ? String(req.body.name).trim() : undefined;
+  const sortOrder = req.body.sortOrder !== undefined ? Number(req.body.sortOrder) : undefined;
+
+  if (name !== undefined && !name) {
+    return res.status(422).json({ message: 'Category name cannot be empty' });
+  }
+
+  try {
+    const existing = await prisma.menuCategory.findUnique({ where: { id: categoryId } });
+    if (!existing) {
+      return res.status(404).json({ message: 'Category not found' });
+    }
+
+    if (name && name !== existing.name) {
+      const duplicate = await prisma.menuCategory.findUnique({ where: { name } });
+      if (duplicate) {
+        return res.status(409).json({ message: 'A category with this name already exists' });
+      }
+    }
+
+    const category = await prisma.$transaction(async (tx) => {
+      const updated = await tx.menuCategory.update({
+        where: { id: categoryId },
+        data: {
+          ...(name !== undefined ? { name } : {}),
+          ...(sortOrder !== undefined && Number.isFinite(sortOrder) ? { sortOrder } : {}),
+        },
+      });
+
+      if (name && name !== existing.name) {
+        await tx.menuItem.updateMany({
+          where: { category: existing.name },
+          data: { category: name },
+        });
+      }
+
+      return updated;
+    });
+
+    await logAuditEvent({
+      eventType: 'menu_category_updated',
+      userType: req.user!.role,
+      userId: req.user!.id,
+      userName: req.user!.name,
+      action: 'Update Menu Category',
+      description: `Updated menu category "${existing.name}"${name && name !== existing.name ? ` to "${name}"` : ''}`,
+      ipAddress: req.ip,
+    });
+
+    return res.json(category);
+  } catch (error: any) {
+    if (error.code === 'P2025') return res.status(404).json({ message: 'Category not found' });
+    console.error('PUT /menu/categories/:categoryId error:', error);
+    return res.status(500).json({
+      message: 'Something went wrong',
+      detail: devErrorDetail(error),
+    });
+  }
+});
+
+// ─── DELETE /api/menu/categories/:categoryId ──────────────────────────────────
+router.delete('/categories/:categoryId', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (!canManageMenu(req.user!.role)) {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
+
+  const categoryId = req.params.categoryId as string;
+
+  try {
+    const existing = await prisma.menuCategory.findUnique({ where: { id: categoryId } });
+    if (!existing) {
+      return res.status(404).json({ message: 'Category not found' });
+    }
+
+    const itemCount = await prisma.menuItem.count({ where: { category: existing.name } });
+    if (itemCount > 0) {
+      return res.status(409).json({
+        message: `Cannot delete category "${existing.name}" because ${itemCount} menu item(s) use it`,
+      });
+    }
+
+    await prisma.menuCategory.delete({ where: { id: categoryId } });
+
+    await logAuditEvent({
+      eventType: 'menu_category_deleted',
+      userType: req.user!.role,
+      userId: req.user!.id,
+      userName: req.user!.name,
+      action: 'Delete Menu Category',
+      description: `Removed menu category "${existing.name}"`,
+      ipAddress: req.ip,
+    });
+
+    return res.json({ message: 'Category deleted' });
+  } catch (error: any) {
+    if (error.code === 'P2025') return res.status(404).json({ message: 'Category not found' });
+    console.error('DELETE /menu/categories/:categoryId error:', error);
+    return res.status(500).json({
+      message: 'Something went wrong',
+      detail: devErrorDetail(error),
+    });
+  }
 });
 
 // ─── POST /api/menu/upload-image ──────────────────────────────────────────────

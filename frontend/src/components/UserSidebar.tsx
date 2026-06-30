@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-    LayoutDashboard, Sliders, User, Boxes, BarChart3, Store, BookOpen,
-    PlusCircle, Edit3, RefreshCw, Trash2, ChefHat, FileText, 
+    LayoutDashboard, User, Boxes, BarChart3, Store, BookOpen,
+    PlusCircle, Edit3, RefreshCw, Trash2, ChefHat, FileText, Tags,
     ChevronLeft, ChevronRight, LogOut, Coins, CreditCard, Clock, 
     Receipt, Scale
 } from "lucide-react";
@@ -29,6 +29,7 @@ const ROLE_CONFIG: Record<string, {
         menuItems: [
             { name: "POS Terminal", icon: Store, path: "/pos" },
             { name: "Menu Items", icon: BookOpen, path: "/menu-management/list" },
+            { name: "Menu Categories", icon: Tags, path: "/menu-management/categories" },
             { name: "Add Menu Item", icon: PlusCircle, path: "/menu-management/add" },
             { name: "Edit Menu Item", icon: Edit3, path: "/menu-management/edit" },
             { name: "Update Menu Item", icon: RefreshCw, path: "/menu-management/update" },
@@ -36,7 +37,6 @@ const ROLE_CONFIG: Record<string, {
             { name: "Menu Recipes", icon: ChefHat, path: "/menu-management/recipes" },
             { name: "Inventory", icon: Boxes, path: "/inventory" },
             { name: "Profile", icon: User, path: "/user-profile" },
-            { name: "Settings", icon: Sliders, path: "/settings" },
         ]
     },
     finance: {
@@ -47,7 +47,6 @@ const ROLE_CONFIG: Record<string, {
             { name: "Inventory Value", icon: Scale, path: "/inventory" },
             { name: "Receipts", icon: FileText, path: "/receipts" },
             { name: "Profile", icon: User, path: "/user-profile" },
-            { name: "Settings", icon: Sliders, path: "/settings" },
         ]
     }
 };

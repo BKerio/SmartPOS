@@ -1,0 +1,212 @@
+import axios from 'axios';
+import crypto from 'crypto';
+import 'dotenv/config';
+
+const {
+  KOPOKOPO_CLIENT_ID,
+  KOPOKOPO_CLIENT_SECRET,
+  KOPOKOPO_API_KEY,
+  KOPOKOPO_BASE_URL,
+  KOPOKOPO_TILL_NUMBER,
+  KOPOKOPO_CALLBACK_URL,
+} = process.env;
+
+interface TokenCache {
+  accessToken: string;
+  expiresAt: number;
+}
+
+let tokenCache: TokenCache | null = null;
+
+export const getAccessToken = async (): Promise<string> => {
+  const now = Date.now();
+
+  if (tokenCache && tokenCache.expiresAt - 60_000 > now) {
+    return tokenCache.accessToken;
+  }
+
+  const params = new URLSearchParams({
+    client_id: KOPOKOPO_CLIENT_ID!,
+    client_secret: KOPOKOPO_CLIENT_SECRET!,
+    grant_type: 'client_credentials',
+  });
+
+  const response = await axios.post(
+    `${KOPOKOPO_BASE_URL}/oauth/token`,
+    params.toString(),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'SmartPOS/1.0',
+      },
+    },
+  );
+
+  const { access_token, expires_in } = response.data as {
+    access_token: string;
+    expires_in: number;
+  };
+
+  tokenCache = {
+    accessToken: access_token,
+    expiresAt: now + expires_in * 1000,
+  };
+
+  console.log('[Kopokopo] Access token refreshed, expires in', expires_in, 's');
+  return access_token;
+};
+
+export interface StkPushOptions {
+  phone: string;
+  amount: number;
+  description?: string;
+  callbackUrl?: string;
+  studentId?: string;
+  paymentId?: string;
+}
+
+export interface StkPushResult {
+  location: string;
+}
+
+export const initiateSTKPush = async (opts: StkPushOptions): Promise<StkPushResult> => {
+  const accessToken = await getAccessToken();
+  const phone = formatKopoPhone(opts.phone);
+
+  const payload = {
+    payment_channel: 'M-PESA STK Push',
+    till_number: KOPOKOPO_TILL_NUMBER,
+    subscriber: {
+      phone_number: phone,
+    },
+    amount: {
+      currency: 'KES',
+      value: opts.amount,
+    },
+    metadata: {
+      description: opts.description || 'SmartPOS Payment',
+      student_id: opts.studentId || '',
+      payment_id: opts.paymentId || '',
+    },
+    _links: {
+      callback_url: opts.callbackUrl || KOPOKOPO_CALLBACK_URL,
+    },
+  };
+
+  const response = await axios.post(
+    `${KOPOKOPO_BASE_URL}/api/v2/incoming_payments`,
+    payload,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'SmartPOS/1.0',
+      },
+    },
+  );
+
+  const location: string =
+    response.headers['location'] ||
+    response.data?._links?.self ||
+    '';
+
+  if (!location) {
+    throw new Error('Kopokopo did not return a payment location URL');
+  }
+
+  return { location };
+};
+
+export interface PaymentStatus {
+  status: string;
+  amount?: number;
+  currency?: string;
+  reference?: string;
+  originationTime?: string;
+  phone?: string;
+  raw?: object;
+}
+
+export const getPaymentStatus = async (location: string): Promise<PaymentStatus> => {
+  const accessToken = await getAccessToken();
+
+  const response = await axios.get(location, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'User-Agent': 'SmartPOS/1.0',
+    },
+  });
+
+  const data = response.data as any;
+  const attrs = data?.data?.attributes ?? data?.attributes ?? {};
+  const resource = attrs?.event?.resource ?? {};
+
+  const amountRaw = resource.amount ?? attrs.amount?.value ?? attrs.amount ?? 0;
+
+  return {
+    status: resource.status || attrs.status || 'Unknown',
+    amount: Number(amountRaw) || 0,
+    currency: resource.currency ?? attrs.amount?.currency ?? 'KES',
+    reference: resource.reference ?? attrs.reference ?? data?.data?.id ?? attrs.id,
+    originationTime: resource.origination_time ?? attrs.origination_time ?? attrs.initiation_time,
+    phone: resource.sender_phone_number ?? attrs.sender_phone_number ?? '',
+    raw: data,
+  };
+};
+
+export const subscribeWebhook = async (eventType: string, url: string): Promise<string> => {
+  const accessToken = await getAccessToken();
+
+  const payload = {
+    event_type: eventType,
+    url,
+    scope: 'Till',
+    scope_reference: KOPOKOPO_TILL_NUMBER,
+  };
+
+  const response = await axios.post(
+    `${KOPOKOPO_BASE_URL}/api/v1/webhook_subscriptions`,
+    payload,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'SmartPOS/1.0',
+      },
+    },
+  );
+
+  return (
+    response.headers['location'] ||
+    response.data?._links?.self ||
+    ''
+  );
+};
+
+export const validateWebhookSignature = (
+  rawBody: string | Buffer,
+  signature: string,
+): boolean => {
+  if (!KOPOKOPO_API_KEY) return false;
+
+  const expected = crypto
+    .createHmac('sha256', KOPOKOPO_API_KEY)
+    .update(rawBody)
+    .digest('hex');
+
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(expected, 'hex'),
+      Buffer.from(signature, 'hex'),
+    );
+  } catch {
+    return false;
+  }
+};
+
+const formatKopoPhone = (phone: string): string => {
+  if (phone.startsWith('+')) return phone;
+  if (phone.startsWith('254')) return `+${phone}`;
+  if (phone.startsWith('0')) return `+254${phone.substring(1)}`;
+  return `+254${phone}`;
+};

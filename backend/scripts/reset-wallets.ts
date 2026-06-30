@@ -1,15 +1,15 @@
-import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
 dotenv.config();
+
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function resetWallets() {
   console.log('Clearing simulated wallet data...\n');
 
-  // 1. Delete all M-Pesa payment records
-  const mpesaDeleted = await prisma.mpesaPayment.deleteMany({});
-  console.log(`Deleted ${mpesaDeleted.count} M-Pesa payment record(s)`);
+  const kopoDeleted = await prisma.kopoPayment.deleteMany({});
+  console.log(`Deleted ${kopoDeleted.count} Kopokopo payment record(s)`);
 
   // 2. Delete all wallet transactions
   const txDeleted = await prisma.walletTransaction.deleteMany({});

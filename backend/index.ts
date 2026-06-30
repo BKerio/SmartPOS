@@ -17,13 +17,13 @@ import posRoutes        from '@/routes/pos';
 import inventoryRoutes  from '@/routes/inventory';
 import financeRoutes    from '@/routes/finance';
 import parentRoutes     from '@/routes/parents';
-import mpesaRoutes      from '@/routes/mpesa';
+import kopokopoRoutes  from '@/routes/kopokopo';
 import { getSupabaseConfigError, isSupabaseConfigured } from '@/services/supabase';
 import { checkDatabase, connectDatabase } from '@/services/prisma';
 
 const app = express();
 const PORT         = process.env.PORT         || 5000;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5175';
 
 const server = http.createServer(app);
 
@@ -53,6 +53,13 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('join_kopokopo', ({ location }: { location: string }) => {
+    if (location) {
+      socket.join(location);
+      console.log(`Socket ${socket.id} joined kopokopo room ${location}`);
+    }
+  });
+
   socket.on('disconnect', (reason: string) => {
     console.log('Socket disconnected:', socket.id, reason);
   });
@@ -67,7 +74,13 @@ const corsOrigin = (origin: string | undefined, callback: (err: Error | null, al
 };
 
 app.set('etag', false);
-app.use(express.json());
+app.use(express.json({
+  verify: (req: any, _res, buf) => {
+    if (req.originalUrl?.includes('/kopokopo/')) {
+      req.rawBody = buf;
+    }
+  },
+}));
 app.use(cors({
   origin: corsOrigin,
   credentials: true,
@@ -98,7 +111,7 @@ app.use('/api/pos',         posRoutes);
 app.use('/api/inventory',   inventoryRoutes);
 app.use('/api/finance',     financeRoutes);
 app.use('/api/parents',     parentRoutes);
-app.use('/api',             mpesaRoutes);
+app.use('/api/kopokopo',    kopokopoRoutes);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Route not found' });

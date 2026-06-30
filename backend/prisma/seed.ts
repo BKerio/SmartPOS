@@ -21,6 +21,18 @@ async function seed() {
     console.log(`Admin already exists: ${adminEmail}`);
   }
 
+  // ── Default menu categories ─────────────────────────────────────────────────
+  const defaultCategories = ['Breakfast', 'Lunch', 'Snack', 'Drink'];
+  for (let i = 0; i < defaultCategories.length; i++) {
+    const name = defaultCategories[i];
+    await prisma.menuCategory.upsert({
+      where: { name },
+      update: { sortOrder: i },
+      create: { name, sortOrder: i },
+    });
+  }
+  console.log('Menu categories seeded');
+
   // ── Sample Menu Items ─────────────────────────────────────
   const menuCount = await prisma.menuItem.count();
   if (menuCount === 0) {

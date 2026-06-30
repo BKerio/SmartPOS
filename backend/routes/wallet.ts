@@ -40,7 +40,7 @@ router.get('/history', ensureAuthenticated, async (req: Request, res: Response):
 router.post('/deposit', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
   const { studentId, amount, reference, description } = req.body;
 
-  // Only finance or admin can deposit (parents must use M-Pesa)
+  // Only finance or admin can deposit (parents must use Kopokopo)
   if (!['admin', 'finance'].includes(req.user!.role)) {
     return res.status(403).json({ message: 'Not authorized to perform deposits' });
   }

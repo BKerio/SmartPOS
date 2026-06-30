@@ -102,12 +102,22 @@ model WalletTransaction {
   @@map("wallet_transactions")
 }
 
+model MenuCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("menu_categories")
+}
+
 model MenuItem {
   id          String   @id @default(cuid())
   name        String
   description String?
   price       Float    @default(0)
-  category    String   // Breakfast, Lunch, Drink, Snack
+  category    String   // matches MenuCategory.name
   imageUrl    String?
   isAvailable Boolean  @default(true)
   
@@ -242,21 +252,27 @@ model AuditEvent {
   @@map("audit_events")
 }
 
-model MpesaPayment {
-  id                 String   @id @default(cuid())
-  merchantRequestId  String   @default("") @map("merchant_request_id")
-  checkoutRequestId  String   @unique @default("") @map("checkout_request_id")
-  resultCode         Int      @default(0) @map("result_code")
-  resultDesc         String   @default("") @map("result_desc")
-  amount             Float    @default(0)
-  mpesaReceiptNumber String   @default("") @map("mpesa_receipt_number")
-  transactionDate    DateTime @default(now()) @map("transaction_date")
-  phoneNumber        String   @default("") @map("phone_number")
-  studentId          String?  @map("student_id")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+model KopoPayment {
+  id                   String   @id @default(cuid())
+  reference            String?  @unique
+  location             String?  @unique
+  status               String   @default("pending")
+  eventType            String   @default("buygoods_transaction_received") @map("event_type")
+  amount               Float    @default(0)
+  currency             String   @default("KES")
+  phone                String   @default("")
+  description          String   @default("")
+  tillNumber           String   @default("") @map("till_number")
+  transactionReference String   @default("") @map("transaction_reference")
+  originationTime      String?  @map("origination_time")
+  rawPayload           Json?    @map("raw_payload")
+  studentId            String?  @map("student_id")
+  walletCredited       Boolean  @default(false) @map("wallet_credited")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
-  @@map("mpesa_payments")
+  @@index([studentId])
+  @@map("kopo_payments")
 }
 
 model PasswordReset {

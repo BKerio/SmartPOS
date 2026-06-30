@@ -34,6 +34,60 @@ const studentDetailSelect = {
   ...studentListSelect,
 } as const;
 
+const posStudentSelect = {
+  id: true,
+  name: true,
+  regNo: true,
+  phone: true,
+  walletBalance: true,
+  walletFrozen: true,
+  walletPinSetAt: true,
+  fingerprintTemplate: true,
+} as const;
+
+function toPosStudent(student: {
+  id: string;
+  name: string;
+  regNo: string;
+  phone?: string | null;
+  walletBalance: number;
+  walletFrozen?: boolean;
+  walletPinSetAt?: Date | null;
+  fingerprintTemplate?: string | null;
+}) {
+  return {
+    ...fmt(student),
+    walletFrozen: Boolean(student.walletFrozen),
+    pinEnabled: Boolean(student.walletPinSetAt),
+    hasFingerprint: Boolean(student.fingerprintTemplate),
+  };
+}
+
+function rankStudentSearch<T extends { name: string; regNo: string; phone?: string | null }>(
+  students: T[],
+  query: string,
+): T[] {
+  const lower = query.toLowerCase();
+  return students
+    .map((student) => {
+      const reg = student.regNo.toLowerCase();
+      const name = student.name.toLowerCase();
+      const phone = (student.phone || '').toLowerCase();
+      let score = 0;
+      if (reg === lower) score = 100;
+      else if (reg.startsWith(lower)) score = 80;
+      else if (name.startsWith(lower)) score = 70;
+      else if (phone.startsWith(lower)) score = 65;
+      else if (reg.includes(lower)) score = 50;
+      else if (name.includes(lower)) score = 40;
+      else if (phone.includes(lower)) score = 30;
+      return { student, score };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || a.student.name.localeCompare(b.student.name))
+    .map(({ student }) => student);
+}
+
 const generateRegNo = async (): Promise<string> => {
   const year = new Date().getFullYear();
   for (let i = 0; i < 10; i++) {
@@ -280,23 +334,50 @@ router.get('/me', ensureAuthenticated, async (req: Request, res: Response): Prom
   }
 });
 
+// ─── GET /api/students/search ─────────────────────────────────────────────────
+router.get('/search', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (!['admin', 'restaurant', 'finance'].includes(req.user!.role)) {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
+
+  const query = String(req.query.q || '').trim();
+  if (query.length < 2) {
+    return res.json([]);
+  }
+
+  try {
+    const students = await prisma.student.findMany({
+      where: {
+        OR: [
+          { regNo: { contains: query, mode: 'insensitive' } },
+          { name: { contains: query, mode: 'insensitive' } },
+          { phone: { contains: query, mode: 'insensitive' } },
+        ],
+      },
+      select: posStudentSelect,
+      take: 25,
+    });
+
+    const ranked = rankStudentSearch(students, query).slice(0, 8);
+    return res.json(ranked.map(toPosStudent));
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
 // ─── GET /api/students/lookup/:regNo ─────────────────────────────────────────
 router.get('/lookup/:regNo', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
   if (!['admin', 'restaurant', 'finance'].includes(req.user!.role)) {
     return res.status(403).json({ message: 'Not authorized' });
   }
   try {
-    const student = await prisma.student.findUnique({
-      where: { regNo: req.params.regNo as string },
-      select: { id: true, name: true, regNo: true, walletBalance: true, walletFrozen: true, walletPinSetAt: true, fingerprintTemplate: true },
+    const regNo = decodeURIComponent(req.params.regNo as string).trim();
+    const student = await prisma.student.findFirst({
+      where: { regNo: { equals: regNo, mode: 'insensitive' } },
+      select: posStudentSelect,
     });
     if (!student) return res.status(404).json({ message: 'Student not found' });
-    return res.json({
-      ...fmt(student),
-      walletFrozen: Boolean((student as any).walletFrozen),
-      pinEnabled: Boolean((student as any).walletPinSetAt),
-      hasFingerprint: Boolean((student as any).fingerprintTemplate),
-    });
+    return res.json(toPosStudent(student));
   } catch {
     return res.status(500).json({ message: 'Something went wrong' });
   }

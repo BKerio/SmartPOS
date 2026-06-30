@@ -30,7 +30,7 @@ import AuditLogs from "@/pages/AuditLogs";
 import UserProfile from "@/pages/UserProfile";
 import ParentProfile from "@/pages/parent/ParentProfile";
 import ParentDashboard from "@/pages/parent/ParentDashboard";
-import PayWithMpesa from "@/pages/parent/PayWithMpesa";
+import PayWithKopokopo from "@/pages/parent/PayWithKopokopo";
 import ParentTopUpWallet from "@/pages/parent/ParentTopUpWallet";
 import ParentManageWallet from "@/pages/parent/ParentManageWallet";
 import ParentWalletHistory from "@/pages/parent/ParentWalletHistory";
@@ -42,6 +42,7 @@ import MenuEditPage from "@/pages/restaurant/MenuEditPage";
 import MenuUpdatePage from "@/pages/restaurant/MenuUpdatePage";
 import MenuDeletePage from "@/pages/restaurant/MenuDeletePage";
 import MenuRecipesPage from "@/pages/restaurant/MenuRecipesPage";
+import MenuCategoriesPage from "@/pages/restaurant/MenuCategoriesPage";
 import InventoryPage from "@/pages/restaurant/InventoryPage";
 import FinanceDashboard from "@/pages/finance/FinanceDashboard";
 import ExpensesPage from "@/pages/finance/ExpensesPage";
@@ -121,7 +122,8 @@ function AppShell() {
 
           {/* Parent */}
           <Route path="/parent-dashboard" element={R(["parent"], <ParentDashboard />)} />
-          <Route path="/pay-mpesa" element={R(["parent"], <PayWithMpesa />)} />
+          <Route path="/pay-kopokopo" element={R(["parent"], <PayWithKopokopo />)} />
+          <Route path="/pay-mpesa" element={<Navigate to="/pay-kopokopo" replace />} />
           <Route path="/parent/topup" element={R(["parent"], <ParentTopUpWallet />)} />
           <Route path="/parent/wallet" element={R(["parent"], <ParentManageWallet />)} />
           <Route path="/parent/history" element={R(["parent"], <ParentWalletHistory />)} />
@@ -135,6 +137,7 @@ function AppShell() {
           <Route path="/menu-management/update" element={R(["restaurant"], <MenuUpdatePage />)} />
           <Route path="/menu-management/delete" element={R(["restaurant"], <MenuDeletePage />)} />
           <Route path="/menu-management/recipes" element={R(["restaurant"], <MenuRecipesPage />)} />
+          <Route path="/menu-management/categories" element={R(["restaurant"], <MenuCategoriesPage />)} />
           <Route path="/inventory" element={R(["restaurant", "finance"], <InventoryPage />)} />
 
           {/* Finance */}

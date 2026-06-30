@@ -1,9 +1,25 @@
-import { useEffect, useMemo, useState } from "react";
-import { ShoppingCart, Search, Trash2, Plus, Minus, Fingerprint, KeyRound, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ShoppingCart,
+  Search,
+  Trash2,
+  Plus,
+  Minus,
+  Fingerprint,
+  KeyRound,
+  X,
+  Loader2,
+  TrendingUp,
+  Receipt,
+  Package,
+  BarChart3,
+  Calendar,
+} from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
 import { captureFingerprint, checkScannerHealth, prepareScanner } from "@/services/fingerprintScanner";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 interface MenuItem { id: string; name: string; price: number; category: string; isAvailable: boolean; imageUrl?: string; }
 interface CartItem { menuItemId: string; name: string; price: number; quantity: number; }
@@ -16,11 +32,43 @@ interface StudentInfo {
   walletFrozen?: boolean;
 }
 
+interface SalesSummary {
+  date: string;
+  totalSales: number;
+  transactionCount: number;
+  itemsSold: number;
+  hourlyBreakdown: { hour: string; amount: number; count: number }[];
+}
+
+interface ReceiptItem {
+  id: string;
+  totalAmount: number;
+  status: string;
+  createdAt: string;
+  student: { name: string; regNo: string };
+  items: { quantity: number; price: number; menuItem: { name: string } }[];
+}
+
+type PosView = "checkout" | "sales";
+
+const todayDateString = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
 const PosTerminal = () => {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [regNo, setRegNo] = useState("");
   const [student, setStudent] = useState<StudentInfo | null>(null);
+  const [searchResults, setSearchResults] = useState<StudentInfo[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(-1);
+  const searchRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [category, setCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
@@ -28,10 +76,74 @@ const PosTerminal = () => {
   const [pin, setPin] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [scannerReady, setScannerReady] = useState<boolean | null>(null);
+  const [view, setView] = useState<PosView>("checkout");
+  const [salesDate, setSalesDate] = useState(todayDateString);
+  const [salesSummary, setSalesSummary] = useState<SalesSummary | null>(null);
+  const [salesReceipts, setSalesReceipts] = useState<ReceiptItem[]>([]);
+  const [salesLoading, setSalesLoading] = useState(false);
+  const [expandedReceipt, setExpandedReceipt] = useState<string | null>(null);
+
+  const fetchSalesData = useCallback(async (date: string) => {
+    setSalesLoading(true);
+    try {
+      const [summaryRes, receiptsRes] = await Promise.all([
+        API.get<SalesSummary>("/pos/sales/summary", { params: { date } }),
+        API.get<ReceiptItem[]>("/pos/receipts", { params: { date } }),
+      ]);
+      setSalesSummary(summaryRes.data);
+      setSalesReceipts(receiptsRes.data);
+    } catch (e: any) {
+      toast.error("Error", e.response?.data?.message ?? "Failed to load sales data");
+    } finally {
+      setSalesLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     API.get("/menu").then((r) => setMenu(r.data)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (view === "sales") {
+      fetchSalesData(salesDate);
+    }
+  }, [view, salesDate, fetchSalesData]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowResults(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const query = regNo.trim();
+    if (student || query.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      setHighlightIndex(-1);
+      return;
+    }
+
+    setSearching(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const { data } = await API.get<StudentInfo[]>(`/students/search`, { params: { q: query } });
+        setSearchResults(data);
+        setShowResults(true);
+        setHighlightIndex(data.length > 0 ? 0 : -1);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 280);
+
+    return () => window.clearTimeout(timer);
+  }, [regNo, student]);
 
   const categories = ["All", ...new Set(menu.map((m) => m.category))];
   
@@ -44,6 +156,11 @@ const PosTerminal = () => {
     });
   }, [menu, category, searchQuery]);
 
+  const hourlyChartData = useMemo(() => {
+    if (!salesSummary) return [];
+    return salesSummary.hourlyBreakdown.filter((row) => row.amount > 0);
+  }, [salesSummary]);
+
   const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
 
   const authOptions = useMemo(() => {
@@ -53,19 +170,74 @@ const PosTerminal = () => {
     };
   }, [student]);
 
+  const selectStudent = (picked: StudentInfo) => {
+    setStudent(picked);
+    setRegNo(picked.regNo);
+    setSearchResults([]);
+    setShowResults(false);
+    setHighlightIndex(-1);
+    setPin("");
+    setShowAuth(false);
+  };
+
+  const clearStudent = () => {
+    setStudent(null);
+    setRegNo("");
+    setSearchResults([]);
+    setShowResults(false);
+    setHighlightIndex(-1);
+  };
+
   const lookupStudent = async () => {
     const query = regNo.trim();
-    if (!query || query.length < 3) {
-      return toast.warning("Enter reg no", "Type at least 3 characters, then press Enter or Search");
+    if (!query) {
+      return toast.warning("Enter a search term", "Type a name, reg no, or phone number");
     }
+
+    if (highlightIndex >= 0 && searchResults[highlightIndex]) {
+      selectStudent(searchResults[highlightIndex]);
+      return;
+    }
+
+    if (searchResults.length === 1) {
+      selectStudent(searchResults[0]);
+      return;
+    }
+
+    if (query.length < 2) {
+      return toast.warning("Keep typing", "Enter at least 2 characters to search");
+    }
+
     try {
       const { data } = await API.get(`/students/lookup/${encodeURIComponent(query)}`);
-      setStudent(data);
-      setPin("");
-      setShowAuth(false);
+      selectStudent(data);
     } catch {
       setStudent(null);
-      toast.error("Student not found", `No student with reg no: ${regNo}`);
+      toast.error("Student not found", `No student matches "${query}"`);
+    }
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!showResults || searchResults.length === 0) return;
+      setHighlightIndex((prev) => (prev + 1) % searchResults.length);
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!showResults || searchResults.length === 0) return;
+      setHighlightIndex((prev) => (prev <= 0 ? searchResults.length - 1 : prev - 1));
+      return;
+    }
+    if (e.key === "Escape") {
+      setShowResults(false);
+      setHighlightIndex(-1);
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      lookupStudent();
     }
   };
 
@@ -118,6 +290,9 @@ const PosTerminal = () => {
       );
       setCart([]);
       setStudent({ ...student, walletBalance: data.newBalance });
+      if (view === "sales" || salesDate === todayDateString()) {
+        fetchSalesData(salesDate);
+      }
     } catch (e: any) {
       toast.error("Sale failed", e.response?.data?.message);
     } finally {
@@ -163,11 +338,203 @@ const PosTerminal = () => {
       <div className="bg-[#0A1F44] text-white rounded-2xl p-6 mb-6 shadow-sm border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black flex items-center gap-2"><ShoppingCart className="text-indigo-400" /> POS Terminal</h2>
-          <p className="text-blue-200 text-sm mt-1">Deduct meals and snacks from registered student wallets</p>
+          <p className="text-blue-200 text-sm mt-1">
+            {view === "checkout"
+              ? "Deduct meals and snacks from registered student wallets"
+              : "Track cafeteria sales and receipts by day"}
+          </p>
+        </div>
+        <div className="flex gap-2 bg-white/10 p-1 rounded-xl">
+          <button
+            type="button"
+            onClick={() => setView("checkout")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
+              view === "checkout" ? "bg-white text-[#0A1F44]" : "text-blue-100 hover:bg-white/10"
+            }`}
+          >
+            Checkout
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("sales")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
+              view === "sales" ? "bg-white text-[#0A1F44]" : "text-blue-100 hover:bg-white/10"
+            }`}
+          >
+            Sales Tracker
+          </button>
         </div>
       </div>
 
-      {/* Main Grid */}
+      {view === "sales" ? (
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Filter by day</p>
+              <p className="text-sm font-semibold text-[#0A1F44] mt-1">View sales for a specific date</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input
+                  type="date"
+                  value={salesDate}
+                  max={todayDateString()}
+                  onChange={(e) => setSalesDate(e.target.value)}
+                  className="pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200 font-semibold"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setSalesDate(todayDateString())}
+                className="px-3 py-2.5 text-xs font-bold text-[#0A1F44] border border-slate-200 rounded-xl hover:bg-slate-50 transition"
+              >
+                Today
+              </button>
+            </div>
+          </div>
+
+          {salesLoading ? (
+            <Loader size="sm" title="Loading sales..." subtitle="Fetching daily summary and receipts" className="py-8" />
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <div className="bg-white rounded-2xl p-6 border border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500">Total Sales</p>
+                      <p className="text-3xl font-bold text-green-600 mt-1">
+                        KES {(salesSummary?.totalSales ?? 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-green-50 rounded-xl text-green-600">
+                      <TrendingUp size={24} />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">Completed POS transactions</p>
+                </div>
+                <div className="bg-white rounded-2xl p-6 border border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500">Transactions</p>
+                      <p className="text-3xl font-bold text-[#0A1F44] mt-1">
+                        {salesSummary?.transactionCount ?? 0}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600">
+                      <Receipt size={24} />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">Receipts for selected day</p>
+                </div>
+                <div className="bg-white rounded-2xl p-6 border border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500">Items Sold</p>
+                      <p className="text-3xl font-bold text-indigo-600 mt-1">
+                        {salesSummary?.itemsSold ?? 0}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-amber-50 rounded-xl text-amber-600">
+                      <Package size={24} />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">Total menu items checked out</p>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-gray-100 p-6">
+                <h3 className="font-bold text-[#0A1F44] mb-4 flex items-center gap-2">
+                  <BarChart3 size={18} /> Hourly Sales
+                </h3>
+                {hourlyChartData.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-10">No sales recorded for this day.</p>
+                ) : (
+                  <div className="w-full min-w-0" style={{ height: 256 }}>
+                    <ResponsiveContainer width="100%" height={256} minWidth={0}>
+                      <BarChart data={hourlyChartData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="hour" />
+                        <YAxis />
+                        <Tooltip formatter={(v: number) => `KES ${v.toLocaleString()}`} />
+                        <Bar dataKey="amount" fill="#0A1F44" radius={[6, 6, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <h3 className="font-bold text-[#0A1F44] flex items-center gap-2">
+                    <Receipt size={18} /> Day Receipts
+                  </h3>
+                  <p className="text-xs text-gray-400">
+                    {new Date(`${salesDate}T12:00:00`).toLocaleDateString(undefined, {
+                      weekday: "long",
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </p>
+                </div>
+                {salesReceipts.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">No receipts for this day</div>
+                ) : (
+                  <div className="divide-y divide-gray-50">
+                    {salesReceipts.map((r) => (
+                      <div key={r.id}>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedReceipt(expandedReceipt === r.id ? null : r.id)}
+                          className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition text-left"
+                        >
+                          <div>
+                            <p className="font-semibold text-[#0A1F44]">
+                              {r.student.name}{" "}
+                              <span className="text-gray-400 font-normal">({r.student.regNo})</span>
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {new Date(r.createdAt).toLocaleString()} · #{r.id.slice(-8)}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-green-600">KES {r.totalAmount.toLocaleString()}</p>
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full ${
+                                r.status === "completed"
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {r.status}
+                            </span>
+                          </div>
+                        </button>
+                        {expandedReceipt === r.id && (
+                          <div className="px-5 pb-4 border-t border-gray-50 bg-slate-50/50">
+                            {r.items.map((item, i) => (
+                              <div key={i} className="flex justify-between text-sm py-1.5">
+                                <span>
+                                  {item.menuItem.name} × {item.quantity}
+                                </span>
+                                <span className="font-medium">
+                                  KES {(item.price * item.quantity).toLocaleString()}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+      <>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Left Column: Categories and Menu Grid */}
         <div className="lg:col-span-2 space-y-4">
@@ -261,26 +628,87 @@ const PosTerminal = () => {
           <div className="space-y-2">
             <label className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Student Account</label>
             {!student ? (
-              <div className="flex gap-2">
-                <input
-                  value={regNo}
-                  onChange={(e) => setRegNo(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && lookupStudent()}
-                  placeholder="Enter Student Reg No"
-                  className="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200"
-                />
-                <button 
-                  onClick={lookupStudent} 
-                  className="px-4 py-2.5 bg-[#0A1F44] text-white rounded-xl hover:bg-[#0A1F44]/90 active:scale-[0.97] transition duration-200 flex items-center justify-center shadow-sm"
-                  title="Search Student"
-                >
-                  <Search size={16} />
-                </button>
+              <div className="relative" ref={searchRef}>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                      <Search size={14} />
+                    </span>
+                    <input
+                      value={regNo}
+                      onChange={(e) => {
+                        setRegNo(e.target.value);
+                        setShowResults(true);
+                      }}
+                      onFocus={() => searchResults.length > 0 && setShowResults(true)}
+                      onKeyDown={handleSearchKeyDown}
+                      placeholder="Name, reg no, or phone"
+                      autoComplete="off"
+                      className="w-full pl-9 pr-9 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200"
+                    />
+                    {searching && (
+                      <span className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400">
+                        <Loader2 size={14} className="animate-spin" />
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={lookupStudent}
+                    className="px-4 py-2.5 bg-[#0A1F44] text-white rounded-xl hover:bg-[#0A1F44]/90 active:scale-[0.97] transition duration-200 flex items-center justify-center shadow-sm shrink-0"
+                    title="Select student"
+                  >
+                    <Search size={16} />
+                  </button>
+                </div>
+
+                {showResults && regNo.trim().length >= 2 && (
+                  <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+                    {searching && searchResults.length === 0 ? (
+                      <p className="px-3 py-3 text-xs text-gray-400">Searching...</p>
+                    ) : searchResults.length === 0 ? (
+                      <p className="px-3 py-3 text-xs text-gray-400">No students found</p>
+                    ) : (
+                      <ul className="max-h-56 overflow-y-auto">
+                        {searchResults.map((result, index) => (
+                          <li key={result.regNo}>
+                            <button
+                              type="button"
+                              onMouseEnter={() => setHighlightIndex(index)}
+                              onClick={() => selectStudent(result)}
+                              className={`w-full px-3 py-2.5 text-left flex items-center gap-3 transition ${
+                                highlightIndex === index ? "bg-indigo-50" : "hover:bg-gray-50"
+                              }`}
+                            >
+                              <div className="h-8 w-8 flex items-center justify-center rounded-lg bg-[#0A1F44]/10 text-[#0A1F44] font-extrabold text-[10px] shrink-0 uppercase">
+                                {result.name.slice(0, 2)}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="font-bold text-[#0A1F44] text-xs truncate">{result.name}</p>
+                                <p className="text-[10px] text-gray-400 font-semibold mt-0.5">{result.regNo}</p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="text-[10px] font-black text-emerald-600">
+                                  KES {Number(result.walletBalance || 0).toLocaleString()}
+                                </p>
+                                {result.walletFrozen && (
+                                  <p className="text-[9px] font-bold text-red-500 mt-0.5">Frozen</p>
+                                )}
+                              </div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="px-3 py-2 border-t border-slate-100 text-[9px] text-gray-400 bg-slate-50">
+                      ↑↓ to navigate · Enter to select
+                    </p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl relative">
-                <button 
-                  onClick={() => { setStudent(null); setRegNo(""); }} 
+                <button
+                  onClick={clearStudent}
                   className="absolute top-3 right-3 text-emerald-600 hover:bg-emerald-100 p-1 rounded-lg transition"
                   title="Clear selection"
                 >
@@ -399,6 +827,8 @@ const PosTerminal = () => {
           </div>
         </div>
       </div>
+      </>
+      )}
 
       {/* Payment Authentication Overlay */}
       {showAuth && student && (

@@ -93,14 +93,14 @@ const ParentTopUpWallet = () => {
             </div>
 
             <div className="rounded-xl bg-stone-50 border border-gray-200 p-4">
-              <p className="text-sm font-semibold text-stone-700">Top up is via M-Pesa only</p>
+              <p className="text-sm font-semibold text-stone-700">Top up via Kopokopo (M-Pesa STK Push)</p>
               <p className="text-sm text-stone-500 mt-1">
                 Click below to initiate an STK Push. You’ll enter the amount and phone number on the next screen.
               </p>
             </div>
 
             <Link
-              to="/pay-mpesa"
+              to="/pay-kopokopo"
               state={selected ? { studentId: selected.id, studentName: selected.name, regNo: selected.regNo, currentBalance: selected.walletBalance } : undefined}
               onClick={(e) => {
                 if (!selected) {
@@ -110,7 +110,7 @@ const ParentTopUpWallet = () => {
               }}
               className="block w-full py-3 rounded-xl bg-[#111] hover:bg-black text-sm font-extrabold text-white text-center"
             >
-              Continue to M-Pesa
+              Continue to Payment
             </Link>
           </div>
         )}

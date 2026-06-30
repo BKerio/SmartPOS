@@ -13,11 +13,12 @@ import {
   ImagePlus,
   X,
   Loader2,
+  Tags,
 } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 
-export type Tab = "list" | "add" | "edit" | "update" | "delete" | "recipes";
+export type Tab = "list" | "add" | "edit" | "update" | "delete" | "recipes" | "categories";
 
 interface InventoryOption {
   id: string;
@@ -37,6 +38,12 @@ interface MenuIngredient {
   inventoryItem: InventoryOption;
 }
 
+interface MenuCategory {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
+
 interface MenuItem {
   id: string;
   name: string;
@@ -48,11 +55,11 @@ interface MenuItem {
   ingredients?: MenuIngredient[];
 }
 
-const CATEGORIES = ["Breakfast", "Lunch", "Snack", "Drink"];
-const EMPTY_FORM = { name: "", description: "", price: "", category: "Lunch", imageUrl: "" };
+const EMPTY_FORM = { name: "", description: "", price: "", category: "", imageUrl: "" };
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ size?: number }> }[] = [
   { id: "list", label: "All Items", icon: List },
+  { id: "categories", label: "Categories", icon: Tags },
   { id: "add", label: "Add", icon: Plus },
   { id: "edit", label: "Edit", icon: Pencil },
   { id: "update", label: "Update", icon: Save },
@@ -198,6 +205,7 @@ const ImageUploader = ({ value, onChange, disabled }: ImageUploaderProps) => {
 const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [items, setItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [inventory, setInventory] = useState<InventoryOption[]>([]);
 
   const [addForm, setAddForm] = useState(EMPTY_FORM);
@@ -205,11 +213,28 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
   const [draft, setDraft] = useState(EMPTY_FORM);
   const [deleteId, setDeleteId] = useState("");
 
+  const [categoryForm, setCategoryForm] = useState({ name: "", sortOrder: "" });
+  const [editingCategoryId, setEditingCategoryId] = useState("");
+  const [categoryDraft, setCategoryDraft] = useState({ name: "", sortOrder: "" });
+  const [deleteCategoryId, setDeleteCategoryId] = useState("");
+
   const [recipeMenuId, setRecipeMenuId] = useState("");
   const [recipeRows, setRecipeRows] = useState<RecipeRow[]>([]);
   const [savingRecipe, setSavingRecipe] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+
+  const fetchCategories = async () => {
+    try {
+      const { data } = await API.get<MenuCategory[]>("/menu/categories");
+      setCategories(data);
+      const defaultCategory = data[0]?.name ?? "";
+      setAddForm((prev) => (prev.category ? prev : { ...prev, category: defaultCategory }));
+      setDraft((prev) => (prev.category ? prev : { ...prev, category: defaultCategory }));
+    } catch (e: any) {
+      toast.error("Error", e.response?.data?.message);
+    }
+  };
 
   const fetchItems = async () => {
     try {
@@ -231,6 +256,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
 
   useEffect(() => {
     fetchItems();
+    fetchCategories();
     fetchInventory();
   }, []);
 
@@ -240,6 +266,9 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
 
   const selectedItem = items.find((i) => i.id === selectedId);
   const deleteTarget = items.find((i) => i.id === deleteId);
+  const editingCategory = categories.find((c) => c.id === editingCategoryId);
+  const deleteCategoryTarget = categories.find((c) => c.id === deleteCategoryId);
+  const categoryNames = categories.map((c) => c.name);
 
   const loadIntoDraft = (item: MenuItem) => {
     setSelectedId(item.id);
@@ -275,7 +304,9 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addForm.name || !addForm.price) return;
+    if (!addForm.name || !addForm.price || !addForm.category) {
+      return toast.warning("Name, price, and category are required");
+    }
     setSubmitting(true);
     try {
       await API.post("/menu", {
@@ -283,7 +314,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
         price: Number(addForm.price),
         imageUrl: addForm.imageUrl || undefined,
       });
-      setAddForm(EMPTY_FORM);
+      setAddForm({ ...EMPTY_FORM, category: categories[0]?.name ?? "" });
       await fetchItems();
       toast.success("Menu item added");
       if (showTabs) setTab("list");
@@ -376,6 +407,79 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
     } catch (e: any) {
       toast.error("Error", e.response?.data?.message);
     }
+  };
+
+  const handleAddCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = categoryForm.name.trim();
+    if (!name) return toast.warning("Category name is required");
+    setSubmitting(true);
+    try {
+      await API.post("/menu/categories", {
+        name,
+        sortOrder: categoryForm.sortOrder ? Number(categoryForm.sortOrder) : 0,
+      });
+      setCategoryForm({ name: "", sortOrder: "" });
+      await fetchCategories();
+      toast.success("Category added");
+    } catch (e: any) {
+      toast.error("Error", e.response?.data?.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCategoryId) return toast.warning("Select a category to update");
+    const name = categoryDraft.name.trim();
+    if (!name) return toast.warning("Category name is required");
+    setSubmitting(true);
+    try {
+      await API.put(`/menu/categories/${editingCategoryId}`, {
+        name,
+        sortOrder: categoryDraft.sortOrder ? Number(categoryDraft.sortOrder) : 0,
+      });
+      await fetchCategories();
+      await fetchItems();
+      toast.success("Category updated");
+    } catch (e: any) {
+      toast.error("Error", e.response?.data?.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteCategory = async () => {
+    if (!deleteCategoryId) return toast.warning("Select a category to delete");
+    const confirmed = await toast.confirm(
+      `Delete category "${deleteCategoryTarget?.name}"?`,
+      { confirmLabel: "Delete" },
+    );
+    if (!confirmed) return;
+    setSubmitting(true);
+    try {
+      await API.delete(`/menu/categories/${deleteCategoryId}`);
+      if (editingCategoryId === deleteCategoryId) {
+        setEditingCategoryId("");
+        setCategoryDraft({ name: "", sortOrder: "" });
+      }
+      setDeleteCategoryId("");
+      await fetchCategories();
+      toast.success("Category deleted");
+    } catch (e: any) {
+      toast.error("Error", e.response?.data?.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const loadCategoryIntoDraft = (category: MenuCategory) => {
+    setEditingCategoryId(category.id);
+    setCategoryDraft({
+      name: category.name,
+      sortOrder: String(category.sortOrder),
+    });
   };
 
   const goToEdit = (item: MenuItem) => {
@@ -558,6 +662,204 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
         </div>
       )}
 
+      {tab === "categories" && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="font-extrabold text-[#0A1F44]">All Categories</h3>
+              <p className="text-xs text-gray-400 mt-1">Categories appear in POS filters and menu item forms.</p>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-gray-500 uppercase text-[10px] border-b border-slate-100">
+                <tr>
+                  <th className="px-5 py-3 text-left font-extrabold tracking-wider">Name</th>
+                  <th className="px-5 py-3 text-left font-extrabold tracking-wider">Sort</th>
+                  <th className="px-5 py-3 text-left font-extrabold tracking-wider">Items</th>
+                  <th className="px-5 py-3 text-right font-extrabold tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {categories.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-5 py-10 text-center text-gray-400">
+                      No categories yet. Add your first category on the right.
+                    </td>
+                  </tr>
+                ) : (
+                  categories.map((category) => {
+                    const itemCount = items.filter((i) => i.category === category.name).length;
+                    return (
+                      <tr key={category.id} className="hover:bg-slate-50/40 transition">
+                        <td className="px-5 py-4 font-bold text-[#0A1F44]">{category.name}</td>
+                        <td className="px-5 py-4 text-gray-500">{category.sortOrder}</td>
+                        <td className="px-5 py-4 text-gray-500">{itemCount}</td>
+                        <td className="px-5 py-4 text-right">
+                          <div className="inline-flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => loadCategoryIntoDraft(category)}
+                              className="px-2.5 py-1 text-xs font-bold text-indigo-600 hover:bg-indigo-50 border border-indigo-100 rounded-lg transition"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteCategoryId(category.id)}
+                              className="px-2.5 py-1 text-xs font-bold text-red-650 hover:bg-red-50 border border-red-100 rounded-lg transition"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="space-y-6">
+            <form
+              onSubmit={handleAddCategory}
+              className="bg-white rounded-2xl p-6 border border-slate-100 space-y-4 shadow-sm"
+            >
+              <h3 className="font-extrabold text-[#0A1F44] text-lg">Add Category</h3>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Name</label>
+                <input
+                  placeholder="e.g. Breakfast"
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Sort Order (optional)</label>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={categoryForm.sortOrder}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, sortOrder: e.target.value })}
+                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200"
+                  min="0"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full py-3 bg-[#0A1F44] hover:bg-[#0A1F44]/90 text-white rounded-xl font-extrabold text-sm disabled:opacity-50 transition duration-200 shadow-sm"
+              >
+                {submitting ? "Adding..." : "Add Category"}
+              </button>
+            </form>
+
+            <form
+              onSubmit={handleUpdateCategory}
+              className="bg-white rounded-2xl p-6 border border-slate-100 space-y-4 shadow-sm"
+            >
+              <h3 className="font-extrabold text-[#0A1F44] text-lg">Update Category</h3>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Select Category</label>
+                <select
+                  value={editingCategoryId}
+                  onChange={(e) => {
+                    const category = categories.find((c) => c.id === e.target.value);
+                    if (category) loadCategoryIntoDraft(category);
+                    else {
+                      setEditingCategoryId("");
+                      setCategoryDraft({ name: "", sortOrder: "" });
+                    }
+                  }}
+                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200 font-semibold"
+                >
+                  <option value="">Select category</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">New Name</label>
+                <input
+                  placeholder="Category name"
+                  value={categoryDraft.name}
+                  onChange={(e) => setCategoryDraft({ ...categoryDraft, name: e.target.value })}
+                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200 disabled:opacity-50"
+                  disabled={!editingCategoryId}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Sort Order</label>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={categoryDraft.sortOrder}
+                  onChange={(e) => setCategoryDraft({ ...categoryDraft, sortOrder: e.target.value })}
+                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200 disabled:opacity-50"
+                  disabled={!editingCategoryId}
+                  min="0"
+                />
+              </div>
+              {editingCategory && (
+                <p className="text-xs text-gray-400">
+                  Renaming updates all menu items currently in &quot;{editingCategory.name}&quot;.
+                </p>
+              )}
+              <button
+                type="submit"
+                disabled={!editingCategoryId || submitting}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-extrabold text-sm disabled:opacity-40 transition duration-200 shadow-sm"
+              >
+                {submitting ? "Saving..." : "Save Category"}
+              </button>
+            </form>
+
+            <div className="bg-white rounded-2xl p-6 border border-slate-100 space-y-4 shadow-sm">
+              <h3 className="font-extrabold text-red-750 text-lg">Delete Category</h3>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Select Category</label>
+                <select
+                  value={deleteCategoryId}
+                  onChange={(e) => setDeleteCategoryId(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200 font-semibold"
+                >
+                  <option value="">Select category</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {deleteCategoryTarget && (
+                <div className="rounded-2xl border border-rose-100 bg-rose-50/50 p-4 text-xs text-rose-800 space-y-2">
+                  <p>
+                    Items using this category:{" "}
+                    <strong>{items.filter((i) => i.category === deleteCategoryTarget.name).length}</strong>
+                  </p>
+                  <p className="text-rose-700">
+                    Categories with menu items cannot be deleted. Reassign or remove those items first.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleDeleteCategory}
+                    disabled={submitting}
+                    className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-extrabold text-xs transition duration-200 shadow-sm disabled:opacity-40"
+                  >
+                    {submitting ? "Deleting..." : "Delete Category"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {tab === "add" && (
         <form
           onSubmit={handleAdd}
@@ -610,12 +912,17 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
                 value={addForm.category}
                 onChange={(e) => setAddForm({ ...addForm, category: e.target.value })}
                 className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200 font-semibold"
+                required
               >
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
+                {categoryNames.length === 0 ? (
+                  <option value="">No categories — add one first</option>
+                ) : (
+                  categoryNames.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>
@@ -783,12 +1090,17 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
                 onChange={(e) => setDraft({ ...draft, category: e.target.value })}
                 className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200 disabled:opacity-50 font-semibold"
                 disabled={!selectedId}
+                required
               >
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
+                {categoryNames.length === 0 ? (
+                  <option value="">No categories available</option>
+                ) : (
+                  categoryNames.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>

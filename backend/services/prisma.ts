@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 
-const globalForPrisma = globalThis as unknown as { prisma: ReturnType<typeof createPrismaClient> };
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 const RETRYABLE_CODES = new Set(['P1001', 'P1002', 'P1017']);
 
@@ -16,47 +16,44 @@ function isRetryableDbError(error: unknown): boolean {
   );
 }
 
-function createPrismaClient() {
-  const client = new PrismaClient({
+function createPrismaClient(): PrismaClient {
+  return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-  });
-
-  return client.$extends({
-    query: {
-      async $allOperations({ args, query }) {
-        const maxAttempts = 3;
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          try {
-            return await query(args);
-          } catch (error) {
-            if (!isRetryableDbError(error) || attempt === maxAttempts) throw error;
-            console.warn(`Database unreachable — retrying (${attempt}/${maxAttempts - 1})...`);
-            await client.$disconnect().catch(() => {});
-            await new Promise((r) => setTimeout(r, 400 * attempt));
-            await client.$connect().catch(() => {});
-          }
-        }
-        throw new Error('Database query failed after retries');
-      },
-    },
   });
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
+/** Generated Prisma client type (includes all schema models). */
+export type AppPrisma = typeof prisma;
+
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
+export async function withDbRetry<T>(operation: () => Promise<T>): Promise<T> {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isRetryableDbError(error) || attempt === maxAttempts) throw error;
+      console.warn(`Database unreachable — retrying (${attempt}/${maxAttempts - 1})...`);
+      await prisma.$disconnect().catch(() => {});
+      await new Promise((r) => setTimeout(r, 400 * attempt));
+      await prisma.$connect().catch(() => {});
+    }
+  }
+  throw new Error('Database query failed after retries');
+}
+
 export async function connectDatabase(): Promise<void> {
-  const base = prisma as unknown as PrismaClient;
-  await base.$connect();
+  await withDbRetry(() => prisma.$connect());
 }
 
 export async function checkDatabase(): Promise<boolean> {
   try {
-    const base = prisma as unknown as PrismaClient;
-    await base.$queryRaw`SELECT 1`;
+    await withDbRetry(() => prisma.$queryRaw`SELECT 1`);
     return true;
   } catch {
     return false;

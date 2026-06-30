@@ -64,6 +64,23 @@ const mapSaleError = (message: string): { status: number; body: { message: strin
 
 const startOfUtcDay = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 
+const parseDayBounds = (dateStr: string): { start: Date; end: Date } | null => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return {
+    start: new Date(year, month - 1, day, 0, 0, 0, 0),
+    end: new Date(year, month - 1, day, 23, 59, 59, 999),
+  };
+};
+
+const todayDateString = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 // Monday 00:00 UTC
 const startOfUtcWeek = (date: Date) => {
   const dayStart = startOfUtcDay(date);
@@ -365,6 +382,68 @@ router.post('/student-order', ensureAuthenticated, async (req: Request, res: Res
   }
 });
 
+// ─── GET /api/pos/sales/summary ───────────────────────────────────────────────
+router.get('/sales/summary', ensureAuthenticated, async (req: Request, res: Response): Promise<void> => {
+  if (!['admin', 'restaurant', 'finance'].includes(req.user!.role)) {
+    res.status(403).json({ message: 'Not authorized' });
+    return;
+  }
+
+  const dateStr = String(req.query.date || '').trim() || todayDateString();
+  const bounds = parseDayBounds(dateStr);
+  if (!bounds) {
+    res.status(422).json({ message: 'Invalid date format. Use YYYY-MM-DD' });
+    return;
+  }
+
+  const where = {
+    status: 'completed',
+    createdAt: { gte: bounds.start, lte: bounds.end },
+  };
+
+  try {
+    const [aggregate, transactionCount, receipts] = await Promise.all([
+      prisma.posTransaction.aggregate({ where, _sum: { totalAmount: true } }),
+      prisma.posTransaction.count({ where }),
+      prisma.posTransaction.findMany({
+        where,
+        select: {
+          createdAt: true,
+          totalAmount: true,
+          items: { select: { quantity: true } },
+        },
+      }),
+    ]);
+
+    const itemsSold = receipts.reduce(
+      (sum, receipt) => sum + receipt.items.reduce((lineSum, item) => lineSum + item.quantity, 0),
+      0,
+    );
+
+    const hourly = Array.from({ length: 24 }, (_, hour) => ({
+      hour: `${String(hour).padStart(2, '0')}:00`,
+      amount: 0,
+      count: 0,
+    }));
+
+    for (const receipt of receipts) {
+      const hour = new Date(receipt.createdAt).getHours();
+      hourly[hour].amount += receipt.totalAmount;
+      hourly[hour].count += 1;
+    }
+
+    res.json({
+      date: dateStr,
+      totalSales: aggregate._sum.totalAmount || 0,
+      transactionCount,
+      itemsSold,
+      hourlyBreakdown: hourly,
+    });
+  } catch {
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
 // ─── GET /api/pos/receipts/me ─────────────────────────────────────────────────
 router.get('/receipts/me', ensureAuthenticated, async (req: Request, res: Response): Promise<void> => {
   if (req.user!.role !== 'student') {
@@ -394,10 +473,20 @@ router.get('/receipts', ensureAuthenticated, async (req: Request, res: Response)
     return;
   }
 
+  const dateStr = String(req.query.date || '').trim();
+  const bounds = dateStr ? parseDayBounds(dateStr) : null;
+  if (dateStr && !bounds) {
+    res.status(422).json({ message: 'Invalid date format. Use YYYY-MM-DD' });
+    return;
+  }
+
   try {
     const receipts = await prisma.posTransaction.findMany({
+      where: bounds
+        ? { createdAt: { gte: bounds.start, lte: bounds.end } }
+        : undefined,
       orderBy: { createdAt: 'desc' },
-      take: 100,
+      take: bounds ? 500 : 100,
       include: {
         student: { select: { name: true, regNo: true } },
         items: { include: { menuItem: { select: { name: true } } } },

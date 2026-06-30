@@ -176,11 +176,11 @@ const ParentDashboard = () => {
                 <History className="w-4 h-4 text-stone-600" /> View History
               </button>
               <Link
-                to="/pay-mpesa"
+                to="/pay-kopokopo"
                 state={{ studentId: active.id, studentName: active.name, regNo: active.regNo, currentBalance: active.walletBalance }}
                 className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-sm font-bold flex items-center gap-2 text-stone-800"
               >
-                Lipa na M-Pesa
+                Pay via Kopokopo
               </Link>
             </div>
           </div>
