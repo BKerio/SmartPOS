@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, LogOut, UserCheck, PiggyBank, Clock, UtensilsCrossed } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut, UserCheck, PiggyBank, Clock } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "@/services/toast";
@@ -13,7 +13,7 @@ const StudentSidebar = () => {
   const studentName = user?.name || localStorage.getItem("studentName") || "Student";
 
   const menuItems = [
-    { name: "Order Food", icon: UtensilsCrossed, path: "/student/order" },
+    // { name: "Order Food", icon: UtensilsCrossed, path: "/student/order" },
     { name: "My Wallet", icon: PiggyBank, path: "/student/wallet" },
     { name: "History", icon: Clock, path: "/student/history" },
     { name: "Profile", icon: UserCheck, path: "/student-profile" },

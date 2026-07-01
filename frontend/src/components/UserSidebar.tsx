@@ -43,7 +43,7 @@ const ROLE_CONFIG: Record<string, {
         label: "Finance Dept",
         menuItems: [
             { name: "Finance Dashboard", icon: BarChart3, path: "/finance" },
-            { name: "M-Pesa STK Pay", icon: CreditCard, path: "/pay-kopokopo" },
+            // { name: "M-Pesa STK Pay", icon: CreditCard, path: "/pay-kopokopo" },
             { name: "Collections", icon: Receipt, path: "/collections" },
             { name: "Expenses", icon: Receipt, path: "/expenses" },
             { name: "Inventory Value", icon: Scale, path: "/inventory" },
