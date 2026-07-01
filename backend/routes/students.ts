@@ -325,6 +325,7 @@ router.get('/me', ensureAuthenticated, async (req: Request, res: Response): Prom
         id: true, name: true, regNo: true,
         phone: true, gender: true, walletBalance: true, walletFrozen: true,
         dailySpendLimit: true, weeklySpendLimit: true, createdAt: true,
+        walletPinSetAt: true, fingerprintTemplate: true,
       },
     });
     if (!student) return res.status(404).json({ message: 'Student not found' });

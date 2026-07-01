@@ -23,6 +23,7 @@ import Login from "@/pages/Login";
 import ForgotPassword from "@/pages/ForgotPassword";
 import AdminProfile from "@/pages/AdminProfile";
 import StudentProfile from "@/pages/StudentProfile";
+import OrderDisplay from "@/pages/order/OrderDisplay";
 import StudentWallet from "@/pages/student/StudentWallet";
 import StudentHistory from "@/pages/student/StudentHistory";
 import Reports from "@/pages/Reports";
@@ -57,9 +58,10 @@ const R = (roles: UserRole[], element: JSX.Element) => (
 function AppShell() {
   const location = useLocation();
   const { status, user } = useAuth();
-  const authPages = ["/login", "/register", "/forgot-password"];
-  const isAuthPage = authPages.includes(location.pathname);
-  const showShell = status === "authenticated" && !!user && !isAuthPage;
+  const publicPages = ["/login", "/register", "/forgot-password", "/kiosk"];
+  const isAuthPage = publicPages.includes(location.pathname);
+  const isKioskPage = location.pathname === "/kiosk";
+  const showShell = status === "authenticated" && !!user && !isAuthPage && !isKioskPage;
   const role = user?.role;
 
   let SidebarComponent: React.FC = AdminSidebar;
@@ -88,6 +90,14 @@ function AppShell() {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  if (isKioskPage) {
+    return (
+      <Routes>
+        <Route path="/kiosk" element={<OrderDisplay mode="kiosk" />} />
+      </Routes>
+    );
+  }
+
   return (
     <div className="flex">
       {showShell && <SidebarComponent />}
@@ -113,7 +123,7 @@ function AppShell() {
           <Route path="/settings" element={R(["admin", "parent", "finance", "restaurant"], <Settings />)} />
 
           {/* Student */}
-          <Route path="/student/order" element={<Navigate to="/student/wallet" replace />} />
+          <Route path="/student/order" element={R(["student"], <OrderDisplay mode="student" />)} />
           <Route path="/student-fees" element={<Navigate to="/student/wallet" replace />} />
           <Route path="/student-dashboard" element={R(["student"], <Navigate to="/student/wallet" replace />)} />
           <Route path="/student/wallet" element={R(["student"], <StudentWallet />)} />

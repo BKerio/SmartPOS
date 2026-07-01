@@ -27,6 +27,30 @@ const upload = multer({
   },
 });
 
+// ─── GET /api/menu/display ────────────────────────────────────────────────────
+// Public cafeteria menu for student kiosks (no stock or recipe data)
+router.get('/display', async (_req: Request, res: Response): Promise<any> => {
+  try {
+    const items = await prisma.menuItem.findMany({
+      where: { isAvailable: true },
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        price: true,
+        category: true,
+        imageUrl: true,
+        isAvailable: true,
+      },
+    });
+    return res.json(items);
+  } catch (error) {
+    console.error('GET /menu/display error:', error);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
 // ─── GET /api/menu/categories ─────────────────────────────────────────────────
 router.get('/categories', ensureAuthenticated, async (_req: Request, res: Response): Promise<any> => {
   try {

@@ -112,7 +112,6 @@ const assertSaleAuthorized = async (student: any, auth: any): Promise<void> => {
   const pin = typeof auth?.pin === 'string' ? auth.pin.trim() : '';
   const fp = typeof auth?.fingerprintTemplate === 'string' ? auth.fingerprintTemplate.trim() : '';
 
-  // prefer PIN if provided
   if (pin) {
     if (!pinEnabled) throw new Error('AUTH_REQUIRED');
     if (!/^\d{4}$/.test(pin)) throw new Error('INVALID_PIN');
@@ -121,7 +120,6 @@ const assertSaleAuthorized = async (student: any, auth: any): Promise<void> => {
     return;
   }
 
-  // otherwise fingerprint
   if (fp) {
     if (!fpEnabled) throw new Error('FINGERPRINT_NOT_ENROLLED');
     const match = await verifyFingerprint(fp, student.fingerprintTemplate);
@@ -131,6 +129,110 @@ const assertSaleAuthorized = async (student: any, auth: any): Promise<void> => {
 
   throw new Error('AUTH_REQUIRED');
 };
+
+type CartLine = { menuItemId: string; quantity: number };
+
+async function executeSelfServiceOrder(
+  student: {
+    id: string;
+    name: string;
+    regNo: string;
+    walletBalance: number;
+    walletFrozen: boolean;
+    dailySpendLimit: number | null;
+    weeklySpendLimit: number | null;
+    walletPinHash: string | null;
+    fingerprintTemplate: string | null;
+  },
+  items: CartLine[],
+  auth: { pin?: string; fingerprintTemplate?: string },
+  cashierId: string,
+) {
+  if (student.walletFrozen) throw new Error('WALLET_FROZEN');
+  await assertSaleAuthorized(student, auth);
+
+  return prisma.$transaction(async (tx) => {
+    const itemIds = items.map((i) => i.menuItemId);
+    const menuItems = await tx.menuItem.findMany({ where: { id: { in: itemIds } } });
+
+    let totalAmount = 0;
+    const orderLines = items.map((cartItem) => {
+      const quantity = Math.floor(Number(cartItem.quantity));
+      const menuItem = menuItems.find((m) => m.id === cartItem.menuItemId);
+
+      if (!menuItem) throw new Error(`ITEM_NOT_FOUND:${cartItem.menuItemId}`);
+      if (!menuItem.isAvailable) throw new Error(`ITEM_UNAVAILABLE:${menuItem.name}`);
+      if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('INVALID_QUANTITY');
+
+      totalAmount += menuItem.price * quantity;
+      return { menuItemId: menuItem.id, quantity, price: menuItem.price };
+    });
+
+    if (student.walletBalance < totalAmount) {
+      throw new Error('INSUFFICIENT_BALANCE');
+    }
+
+    const now = new Date();
+    const dayStart = startOfUtcDay(now);
+    const weekStart = startOfUtcWeek(now);
+
+    if (student.dailySpendLimit != null) {
+      const daily = await tx.posTransaction.aggregate({
+        where: { studentId: student.id, status: 'completed', createdAt: { gte: dayStart } },
+        _sum: { totalAmount: true },
+      });
+      const spentToday = Number(daily._sum.totalAmount || 0);
+      if (spentToday + totalAmount > Number(student.dailySpendLimit)) throw new Error('DAILY_LIMIT_EXCEEDED');
+    }
+    if (student.weeklySpendLimit != null) {
+      const weekly = await tx.posTransaction.aggregate({
+        where: { studentId: student.id, status: 'completed', createdAt: { gte: weekStart } },
+        _sum: { totalAmount: true },
+      });
+      const spentWeek = Number(weekly._sum.totalAmount || 0);
+      if (spentWeek + totalAmount > Number(student.weeklySpendLimit)) throw new Error('WEEKLY_LIMIT_EXCEEDED');
+    }
+
+    const posTx = await tx.posTransaction.create({
+      data: {
+        studentId: student.id,
+        cashierId,
+        totalAmount,
+        items: { create: orderLines },
+      },
+      include: { items: { include: { menuItem: { select: { name: true } } } } },
+    });
+
+    const updatedStudent = await tx.student.update({
+      where: { id: student.id },
+      data: { walletBalance: { decrement: totalAmount } },
+      select: { id: true, name: true, regNo: true, walletBalance: true },
+    });
+
+    await tx.walletTransaction.create({
+      data: {
+        studentId: student.id,
+        amount: -totalAmount,
+        type: 'purchase',
+        reference: posTx.id,
+        description: `Cafeteria order (Receipt: ${posTx.id.slice(-6)})`,
+      },
+    });
+
+    return { student: updatedStudent, posTx, totalAmount };
+  });
+}
+
+function respondSaleError(res: Response, error: unknown, logLabel: string) {
+  const message = getErrorMessage(error);
+  console.error(`${logLabel}:`, message);
+  const mapped = mapSaleError(message);
+  if (mapped !== null) {
+    res.status(mapped.status).json(mapped.body);
+    return;
+  }
+  res.status(500).json({ message: 'Failed to process order' });
+}
 
 // ─── POST /api/pos/sale ───────────────────────────────────────────────────────
 router.post('/sale', ensureAuthenticated, async (req: Request, res: Response): Promise<void> => {
@@ -149,85 +251,13 @@ router.post('/sale', ensureAuthenticated, async (req: Request, res: Response): P
   const cashierId = req.user!.id;
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const student = await tx.student.findUnique({ where: { regNo: studentRegNo } });
-      if (!student) throw new Error('STUDENT_NOT_FOUND');
-      if (student.walletFrozen) throw new Error('WALLET_FROZEN');
+    const student = await prisma.student.findUnique({ where: { regNo: studentRegNo } });
+    if (!student) {
+      res.status(404).json({ message: 'Student not found' });
+      return;
+    }
 
-      await assertSaleAuthorized(student, auth);
-
-      const itemIds = items.map((i: { menuItemId: string }) => i.menuItemId);
-      const menuItems = await tx.menuItem.findMany({ where: { id: { in: itemIds } } });
-
-      let totalAmount = 0;
-      const orderLines = items.map((cartItem: { menuItemId: string; quantity: number }) => {
-        const quantity = Math.floor(Number(cartItem.quantity));
-        const menuItem = menuItems.find((m) => m.id === cartItem.menuItemId);
-
-        if (!menuItem) throw new Error(`ITEM_NOT_FOUND:${cartItem.menuItemId}`);
-        if (!menuItem.isAvailable) throw new Error(`ITEM_UNAVAILABLE:${menuItem.name}`);
-        if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('INVALID_QUANTITY');
-
-        const lineTotal = menuItem.price * quantity;
-        totalAmount += lineTotal;
-
-        return { menuItemId: menuItem.id, quantity, price: menuItem.price };
-      });
-
-      if (student.walletBalance < totalAmount) {
-        throw new Error('INSUFFICIENT_FUNDS');
-      }
-
-      // Spend limits
-      const now = new Date();
-      const dayStart = startOfUtcDay(now);
-      const weekStart = startOfUtcWeek(now);
-
-      if (student.dailySpendLimit != null) {
-        const daily = await tx.posTransaction.aggregate({
-          where: { studentId: student.id, status: 'completed', createdAt: { gte: dayStart } },
-          _sum: { totalAmount: true },
-        });
-        const spentToday = Number(daily._sum.totalAmount || 0);
-        if (spentToday + totalAmount > Number(student.dailySpendLimit)) throw new Error('DAILY_LIMIT_EXCEEDED');
-      }
-      if (student.weeklySpendLimit != null) {
-        const weekly = await tx.posTransaction.aggregate({
-          where: { studentId: student.id, status: 'completed', createdAt: { gte: weekStart } },
-          _sum: { totalAmount: true },
-        });
-        const spentWeek = Number(weekly._sum.totalAmount || 0);
-        if (spentWeek + totalAmount > Number(student.weeklySpendLimit)) throw new Error('WEEKLY_LIMIT_EXCEEDED');
-      }
-
-      const posTx = await tx.posTransaction.create({
-        data: {
-          studentId: student.id,
-          cashierId,
-          totalAmount,
-          items: { create: orderLines },
-        },
-        include: { items: true },
-      });
-
-      const updatedStudent = await tx.student.update({
-        where: { id: student.id },
-        data: { walletBalance: { decrement: totalAmount } },
-        select: { id: true, name: true, regNo: true, walletBalance: true },
-      });
-
-      await tx.walletTransaction.create({
-        data: {
-          studentId: student.id,
-          amount: -totalAmount,
-          type: 'purchase',
-          reference: posTx.id,
-          description: `Cafeteria purchase (Receipt: ${posTx.id.slice(-6)})`,
-        },
-      });
-
-      return { student: updatedStudent, posTx, totalAmount };
-    });
+    const result = await executeSelfServiceOrder(student, items, auth, cashierId);
 
     await logAuditEvent({
       eventType: 'pos_sale',
@@ -246,111 +276,211 @@ router.post('/sale', ensureAuthenticated, async (req: Request, res: Response): P
       newBalance: result.student.walletBalance,
     });
   } catch (error: unknown) {
-    const message = getErrorMessage(error);
-    console.error('POS Sale Error:', message);
+    respondSaleError(res, error, 'POS Sale Error');
+  }
+});
 
-    const mapped = mapSaleError(message);
-    if (mapped !== null) {
-      res.status(mapped!.status).json(mapped!.body);
+const kioskStudentSelect = {
+  name: true,
+  regNo: true,
+  phone: true,
+  walletBalance: true,
+  walletFrozen: true,
+  walletPinSetAt: true,
+  fingerprintTemplate: true,
+} as const;
+
+type KioskStudentRow = {
+  name: string;
+  regNo: string;
+  phone?: string | null;
+  walletBalance: number;
+  walletFrozen?: boolean;
+  walletPinSetAt?: Date | null;
+  fingerprintTemplate?: string | null;
+};
+
+const toKioskStudent = (student: KioskStudentRow) => ({
+  name: student.name,
+  regNo: student.regNo,
+  walletBalance: student.walletBalance,
+  walletFrozen: Boolean(student.walletFrozen),
+  pinEnabled: Boolean(student.walletPinSetAt),
+  hasFingerprint: Boolean(student.fingerprintTemplate),
+});
+
+const rankKioskStudentSearch = <T extends { name: string; regNo: string; phone?: string | null }>(
+  students: T[],
+  query: string,
+): T[] => {
+  const lower = query.toLowerCase();
+  return students
+    .map((student) => {
+      const reg = student.regNo.toLowerCase();
+      const name = student.name.toLowerCase();
+      const phone = (student.phone || '').toLowerCase();
+      let score = 0;
+      if (reg === lower) score = 100;
+      else if (reg.startsWith(lower)) score = 80;
+      else if (name.startsWith(lower)) score = 70;
+      else if (phone.startsWith(lower)) score = 65;
+      else if (reg.includes(lower)) score = 50;
+      else if (name.includes(lower)) score = 40;
+      else if (phone.includes(lower)) score = 30;
+      return { student, score };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || a.student.name.localeCompare(b.student.name))
+    .map(({ student }) => student);
+};
+
+// ─── GET /api/pos/kiosk/search ────────────────────────────────────────────────
+// Public: typeahead search for cafeteria kiosk (name, reg no, or phone)
+router.get('/kiosk/search', async (req: Request, res: Response): Promise<void> => {
+  const query = String(req.query.q || '').trim();
+  if (query.length < 2) {
+    res.json([]);
+    return;
+  }
+
+  try {
+    const students = await prisma.student.findMany({
+      where: {
+        OR: [
+          { regNo: { contains: query, mode: 'insensitive' } },
+          { name: { contains: query, mode: 'insensitive' } },
+          { phone: { contains: query, mode: 'insensitive' } },
+        ],
+      },
+      select: kioskStudentSelect,
+      take: 25,
+    });
+
+    const ranked = rankKioskStudentSearch(students, query).slice(0, 8);
+    res.json(ranked.map(toKioskStudent));
+  } catch {
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── GET /api/pos/kiosk/lookup/:query ─────────────────────────────────────────
+router.get('/kiosk/lookup/:query', async (req: Request, res: Response): Promise<void> => {
+  const query = decodeURIComponent(req.params.query as string).trim();
+  if (!query) {
+    res.status(422).json({ message: 'Search term is required' });
+    return;
+  }
+
+  try {
+    const student = await prisma.student.findFirst({
+      where: { regNo: { equals: query, mode: 'insensitive' } },
+      select: kioskStudentSelect,
+    });
+    if (!student) {
+      res.status(404).json({ message: 'Student not found' });
+      return;
+    }
+    res.json(toKioskStudent(student));
+  } catch {
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── POST /api/pos/kiosk/preview ─────────────────────────────────────────────
+// Public: minimal student info for cafeteria kiosk checkout (no auth token)
+router.post('/kiosk/preview', async (req: Request, res: Response): Promise<void> => {
+  const regNo = String(req.body.regNo || '').trim();
+  if (!regNo) {
+    res.status(422).json({ message: 'Registration number is required' });
+    return;
+  }
+
+  try {
+    const student = await prisma.student.findFirst({
+      where: { regNo: { equals: regNo, mode: 'insensitive' } },
+      select: kioskStudentSelect,
+    });
+    if (!student) {
+      res.status(404).json({ message: 'Student not found' });
       return;
     }
 
-    res.status(500).json({ message: 'Failed to process sale' });
+    res.json(toKioskStudent(student));
+  } catch {
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── POST /api/pos/kiosk-order ────────────────────────────────────────────────
+router.post('/kiosk-order', async (req: Request, res: Response): Promise<void> => {
+  const { regNo, items, auth } = req.body as {
+    regNo?: string;
+    items?: CartLine[];
+    auth?: { pin?: string; fingerprintTemplate?: string };
+  };
+
+  if (!regNo?.trim() || !Array.isArray(items) || items.length === 0) {
+    res.status(422).json({ message: 'Registration number and cart items are required' });
+    return;
+  }
+
+  try {
+    const student = await prisma.student.findFirst({
+      where: { regNo: { equals: regNo.trim(), mode: 'insensitive' } },
+    });
+    if (!student) {
+      res.status(404).json({ message: 'Student not found' });
+      return;
+    }
+
+    const result = await executeSelfServiceOrder(student, items, auth || {}, 'kiosk');
+
+    await logAuditEvent({
+      eventType: 'kiosk_order',
+      userType: 'student',
+      userId: student.id,
+      userName: student.name,
+      action: 'Kiosk Meal Order',
+      description: `Kiosk order of KES ${result.totalAmount}`,
+      metadata: { receiptId: result.posTx.id, regNo: student.regNo },
+      ipAddress: req.ip,
+    });
+
+    res.status(201).json({
+      message: 'Order placed successfully',
+      receipt: result.posTx,
+      newBalance: result.student.walletBalance,
+    });
+  } catch (error: unknown) {
+    respondSaleError(res, error, 'Kiosk order error');
   }
 });
 
 // ─── POST /api/pos/student-order ──────────────────────────────────────────────
-// Student self-checkout from wallet balance
 router.post('/student-order', ensureAuthenticated, async (req: Request, res: Response): Promise<void> => {
-  // Disabled: student ordering is now handled at restaurant POS with authorization
-  res.status(403).json({ message: 'Student ordering is disabled. Please use the restaurant POS.' });
-  return;
+  if (req.user!.role !== 'student') {
+    res.status(403).json({ message: 'Student access only' });
+    return;
+  }
 
-  const { items } = req.body;
+  const { items, auth } = req.body as {
+    items?: CartLine[];
+    auth?: { pin?: string; fingerprintTemplate?: string };
+  };
 
   if (!Array.isArray(items) || items.length === 0) {
     res.status(422).json({ message: 'Cart items are required' });
     return;
   }
 
-  const studentId = req.user!.id;
-
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const student = await tx.student.findUnique({ where: { id: studentId } });
-      if (!student) throw new Error('STUDENT_NOT_FOUND');
-      if (student.walletFrozen) throw new Error('WALLET_FROZEN');
+    const student = await prisma.student.findUnique({ where: { id: req.user!.id } });
+    if (!student) {
+      res.status(404).json({ message: 'Student not found' });
+      return;
+    }
 
-      const itemIds = items.map((i: { menuItemId: string }) => i.menuItemId);
-      const menuItems = await tx.menuItem.findMany({ where: { id: { in: itemIds } } });
-
-      let totalAmount = 0;
-      const orderLines = items.map((cartItem: { menuItemId: string; quantity: number }) => {
-        const quantity = Math.floor(Number(cartItem.quantity));
-        const menuItem = menuItems.find((m) => m.id === cartItem.menuItemId);
-
-        if (!menuItem) throw new Error(`ITEM_NOT_FOUND:${cartItem.menuItemId}`);
-        if (!menuItem.isAvailable) throw new Error(`ITEM_UNAVAILABLE:${menuItem.name}`);
-        if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('INVALID_QUANTITY');
-
-        totalAmount += menuItem.price * quantity;
-        return { menuItemId: menuItem.id, quantity, price: menuItem.price };
-      });
-
-      if (student.walletBalance < totalAmount) {
-        throw new Error('INSUFFICIENT_BALANCE');
-      }
-
-      // Spend limits
-      const now = new Date();
-      const dayStart = startOfUtcDay(now);
-      const weekStart = startOfUtcWeek(now);
-
-      if (student.dailySpendLimit != null) {
-        const daily = await tx.posTransaction.aggregate({
-          where: { studentId: student.id, status: 'completed', createdAt: { gte: dayStart } },
-          _sum: { totalAmount: true },
-        });
-        const spentToday = Number(daily._sum.totalAmount || 0);
-        if (spentToday + totalAmount > Number(student.dailySpendLimit)) throw new Error('DAILY_LIMIT_EXCEEDED');
-      }
-      if (student.weeklySpendLimit != null) {
-        const weekly = await tx.posTransaction.aggregate({
-          where: { studentId: student.id, status: 'completed', createdAt: { gte: weekStart } },
-          _sum: { totalAmount: true },
-        });
-        const spentWeek = Number(weekly._sum.totalAmount || 0);
-        if (spentWeek + totalAmount > Number(student.weeklySpendLimit)) throw new Error('WEEKLY_LIMIT_EXCEEDED');
-      }
-
-      const posTx = await tx.posTransaction.create({
-        data: {
-          studentId,
-          cashierId: 'self-service',
-          totalAmount,
-          items: { create: orderLines },
-        },
-        include: { items: { include: { menuItem: { select: { name: true } } } } },
-      });
-
-      const updatedStudent = await tx.student.update({
-        where: { id: studentId },
-        data: { walletBalance: { decrement: totalAmount } },
-        select: { id: true, name: true, regNo: true, walletBalance: true },
-      });
-
-      await tx.walletTransaction.create({
-        data: {
-          studentId,
-          amount: -totalAmount,
-          type: 'purchase',
-          reference: posTx.id,
-          description: `Meal order (Receipt: ${posTx.id.slice(-6)})`,
-        },
-      });
-
-      return { student: updatedStudent, posTx, totalAmount };
-    });
+    const result = await executeSelfServiceOrder(student, items, auth || {}, 'self-service');
 
     await logAuditEvent({
       eventType: 'student_order',
@@ -369,16 +499,7 @@ router.post('/student-order', ensureAuthenticated, async (req: Request, res: Res
       newBalance: result.student.walletBalance,
     });
   } catch (error: unknown) {
-    const message = getErrorMessage(error);
-    console.error('Student order error:', message);
-
-    const mapped = mapSaleError(message);
-    if (mapped !== null) {
-      res.status(mapped!.status).json(mapped!.body);
-      return;
-    }
-
-    res.status(500).json({ message: 'Failed to place order' });
+    respondSaleError(res, error, 'Student order error');
   }
 });
 

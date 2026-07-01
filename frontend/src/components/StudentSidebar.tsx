@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, LogOut, UserCheck, PiggyBank, Clock } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut, UserCheck, PiggyBank, Clock, UtensilsCrossed } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "@/services/toast";
@@ -13,6 +13,7 @@ const StudentSidebar = () => {
   const studentName = user?.name || localStorage.getItem("studentName") || "Student";
 
   const menuItems = [
+    { name: "Order Food", icon: UtensilsCrossed, path: "/student/order" },
     { name: "My Wallet", icon: PiggyBank, path: "/student/wallet" },
     { name: "History", icon: Clock, path: "/student/history" },
     { name: "Profile", icon: UserCheck, path: "/student-profile" },
@@ -20,7 +21,8 @@ const StudentSidebar = () => {
 
   const isActive = (path: string) =>
     location.pathname === path ||
-    (path === "/student/wallet" && ["/student-fees", "/student-dashboard", "/student/order"].includes(location.pathname));
+    (path === "/student/wallet" && ["/student-fees", "/student-dashboard"].includes(location.pathname)) ||
+    (path === "/student/order" && location.pathname === "/student/order");
 
   const handleLogout = async () => {
     const confirmed = await toast.confirm("Logout?", {
