@@ -144,6 +144,7 @@ model MenuItemIngredient {
 
 model PosTransaction {
   id          String   @id @default(cuid())
+  receiptNo   String?  @unique
   studentId   String
   student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   cashierId   String   // The User (restaurant staff) who processed it

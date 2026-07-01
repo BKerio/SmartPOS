@@ -3,6 +3,7 @@ import { ShoppingCart, Plus, Minus, Trash2, Wallet } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
+import { displayReceiptNo } from "@/lib/receipt";
 import logo from "@/assets/LOGO.png";
 
 interface MenuItem {
@@ -88,7 +89,7 @@ const StudentOrder = () => {
 
       toast.success(
         "Order placed!",
-        `Receipt #${data.receipt.id.slice(-8)} · Balance KES ${data.newBalance.toLocaleString()}`,
+        `${displayReceiptNo(data.receipt)} · Balance KES ${data.newBalance.toLocaleString()}`,
       );
       setCart([]);
       setBalance(data.newBalance);

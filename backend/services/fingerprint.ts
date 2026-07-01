@@ -17,6 +17,17 @@ export class FingerprintDuplicateError extends Error {
 export const hashFingerprintTemplate = (templateBase64: string): string =>
   crypto.createHash('sha256').update(Buffer.from(templateBase64, 'base64')).digest('hex');
 
+export const parseFingerprintTemplate = (value: unknown): string | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (typeof value !== 'string') throw new Error('INVALID_FINGERPRINT');
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const buf = Buffer.from(trimmed, 'base64');
+  if (buf.length < 32) throw new Error('INVALID_FINGERPRINT');
+  return trimmed;
+};
+
 export const fingerprintEnrollmentData = (template: string | null) => {
   if (!template) {
     return {

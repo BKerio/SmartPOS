@@ -19,6 +19,7 @@ import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
 import { captureFingerprint, checkScannerHealth, prepareScanner } from "@/services/fingerprintScanner";
+import { displayReceiptNo } from "@/lib/receipt";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 interface MenuItem { id: string; name: string; price: number; category: string; isAvailable: boolean; imageUrl?: string; }
@@ -42,6 +43,7 @@ interface SalesSummary {
 
 interface ReceiptItem {
   id: string;
+  receiptNo?: string | null;
   totalAmount: number;
   status: string;
   createdAt: string;
@@ -286,7 +288,7 @@ const PosTerminal = () => {
       });
       toast.success(
         "Sale complete",
-        `Receipt #${data.receipt.id.slice(-8)} · KES ${total} · Balance: KES ${data.newBalance}`
+        `${displayReceiptNo(data.receipt)} · KES ${total} · Balance: KES ${data.newBalance}`,
       );
       setCart([]);
       setStudent({ ...student, walletBalance: data.newBalance });
@@ -495,7 +497,7 @@ const PosTerminal = () => {
                               <span className="text-gray-400 font-normal">({r.student.regNo})</span>
                             </p>
                             <p className="text-xs text-gray-400 mt-0.5">
-                              {new Date(r.createdAt).toLocaleString()} · #{r.id.slice(-8)}
+                              {new Date(r.createdAt).toLocaleString()} · {displayReceiptNo(r)}
                             </p>
                           </div>
                           <div className="text-right">

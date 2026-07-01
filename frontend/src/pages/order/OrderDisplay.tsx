@@ -18,6 +18,7 @@ import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
 import { captureFingerprint, checkScannerHealth, prepareScanner } from "@/services/fingerprintScanner";
+import { displayReceiptNo } from "@/lib/receipt";
 import logo from "@/assets/LOGO.png";
 
 interface MenuItem {
@@ -71,7 +72,12 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
   const searchRef = useRef<HTMLDivElement>(null);
   const [scannerReady, setScannerReady] = useState<boolean | null>(null);
   const [processing, setProcessing] = useState(false);
-  const [lastReceipt, setLastReceipt] = useState<{ id: string; total: number; balance: number } | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<{
+    receiptNo: string;
+    total: number;
+    balance: number;
+    fingerprintEnrolled?: boolean;
+  } | null>(null);
 
   const isKiosk = mode === "kiosk";
 
@@ -173,16 +179,13 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
     return {
       pin: Boolean(active?.pinEnabled),
       fingerprint: Boolean(active?.hasFingerprint),
+      canEnrollFingerprint: Boolean(active && !active.hasFingerprint && scannerReady !== false),
     };
-  }, [isKiosk, studentPreview, studentProfile]);
+  }, [isKiosk, studentPreview, studentProfile, scannerReady]);
 
   const validateStudentForCheckout = (student: StudentPreview): boolean => {
     if (student.walletFrozen) {
       toast.error("Wallet frozen", "Contact your parent or school admin");
-      return false;
-    }
-    if (!student.pinEnabled && !student.hasFingerprint) {
-      toast.error("No payment method", "Ask your parent to set a wallet PIN or enroll fingerprint");
       return false;
     }
     return true;
@@ -303,7 +306,10 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
     }
   };
 
-  const submitOrder = async (auth: { pin?: string; fingerprintTemplate?: string }) => {
+  const submitOrder = async (
+    auth: { pin?: string; fingerprintTemplate?: string },
+    options?: { enrollFingerprint?: boolean },
+  ) => {
     const active = isKiosk ? studentPreview : studentProfile;
     if (!active) return;
 
@@ -316,6 +322,7 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
       const payload = {
         items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
         auth,
+        enrollFingerprint: options?.enrollFingerprint,
       };
 
       const { data } = isKiosk
@@ -323,15 +330,28 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
         : await API.post("/pos/student-order", payload);
 
       setLastReceipt({
-        id: data.receipt.id,
+        receiptNo: displayReceiptNo(data.receipt),
         total: data.receipt.totalAmount,
         balance: data.newBalance,
+        fingerprintEnrolled: Boolean(data.fingerprintEnrolled),
       });
       setCart([]);
       setPin("");
       setCheckoutStep("success");
+
+      const profilePatch = {
+        walletBalance: data.newBalance,
+        hasFingerprint: active.hasFingerprint || Boolean(data.fingerprintEnrolled),
+      };
       if (!isKiosk && studentProfile) {
-        setStudentProfile({ ...studentProfile, walletBalance: data.newBalance });
+        setStudentProfile({ ...studentProfile, ...profilePatch });
+      }
+      if (isKiosk && studentPreview) {
+        setStudentPreview({ ...studentPreview, ...profilePatch });
+      }
+
+      if (data.fingerprintEnrolled) {
+        toast.success("Fingerprint enrolled", "Your fingerprint is saved for future orders");
       }
     } catch (e: any) {
       toast.error("Order failed", e.response?.data?.message || "Could not complete order");
@@ -364,6 +384,33 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
     }
   };
 
+  const enrollFingerprintAndPay = async () => {
+    if (authOptions.fingerprint) {
+      return placeOrderWithFingerprint();
+    }
+    if (scannerReady === false) {
+      return toast.error("Scanner offline", "Fingerprint scanner is not available on this kiosk");
+    }
+    if (authOptions.pin && !/^\d{4}$/.test(pin)) {
+      return toast.error("PIN required", "Enter your wallet PIN to enroll your fingerprint");
+    }
+    setProcessing(true);
+    try {
+      await prepareScanner();
+      const tpl = await captureFingerprint();
+      await submitOrder(
+        {
+          fingerprintTemplate: tpl,
+          pin: authOptions.pin ? pin : undefined,
+        },
+        { enrollFingerprint: true },
+      );
+    } catch (e: any) {
+      toast.error("Enrollment failed", e.message || "Could not enroll fingerprint");
+      setProcessing(false);
+    }
+  };
+
   const appendPin = (digit: string) => {
     if (pin.length < 4) setPin((p) => p + digit);
   };
@@ -386,7 +433,8 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
         <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 text-center border border-gray-100">
           <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-[#0A1F44]">Order Complete!</h1>
-          <p className="text-sm text-gray-500 mt-2">Receipt #{lastReceipt.id.slice(-8)}</p>
+          <p className="text-lg font-black tracking-wide text-[#0A1F44] mt-3">{lastReceipt.receiptNo}</p>
+          <p className="text-xs text-gray-400 mt-1">Keep this receipt number for your records</p>
           <div className="mt-6 bg-gray-50 rounded-2xl p-5 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-gray-500">Paid</span>
@@ -396,6 +444,11 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
               <span className="text-gray-500">New balance</span>
               <span className="font-bold">KES {lastReceipt.balance.toLocaleString()}</span>
             </div>
+            {lastReceipt.fingerprintEnrolled && (
+              <p className="text-xs text-teal-600 font-semibold pt-2 border-t border-gray-200">
+                Fingerprint enrolled — you can use it on your next order.
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -623,8 +676,12 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
                                   <p className="text-xs font-black text-emerald-600">
                                     KES {Number(result.walletBalance || 0).toLocaleString()}
                                   </p>
-                                  {result.walletFrozen && (
+                                  {result.walletFrozen ? (
                                     <p className="text-[10px] font-bold text-red-500 mt-0.5">Frozen</p>
+                                  ) : result.hasFingerprint ? (
+                                    <p className="text-[10px] font-bold text-teal-600 mt-0.5">Fingerprint</p>
+                                  ) : (
+                                    <p className="text-[10px] font-bold text-amber-600 mt-0.5">No fingerprint</p>
                                   )}
                                 </div>
                               </button>
@@ -665,8 +722,10 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
                     {studentPreview.pinEnabled && (
                       <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-indigo-100 text-indigo-700 rounded">PIN</span>
                     )}
-                    {studentPreview.hasFingerprint && (
-                      <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-teal-100 text-teal-700 rounded">Fingerprint</span>
+                    {studentPreview.hasFingerprint ? (
+                      <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-teal-100 text-teal-700 rounded">Fingerprint enrolled</span>
+                    ) : (
+                      <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-amber-100 text-amber-700 rounded">No fingerprint yet</span>
                     )}
                   </div>
                 </div>
@@ -701,13 +760,21 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
                   {" · "}
                   Total: <strong className="text-emerald-600">KES {total.toLocaleString()}</strong>
                 </p>
+                <p className="text-xs mt-2">
+                  Fingerprint:{" "}
+                  <strong className={activeStudent.hasFingerprint ? "text-teal-600" : "text-amber-600"}>
+                    {activeStudent.hasFingerprint ? "Enrolled in system" : "Not enrolled yet"}
+                  </strong>
+                </p>
               </div>
 
               {authOptions.pin && (
                 <div className="space-y-3 shrink-0">
                   <div className="flex items-center justify-center gap-2 text-[#0A1F44]">
                     <KeyRound size={18} />
-                    <span className="text-sm font-semibold">Option A: Wallet PIN</span>
+                    <span className="text-sm font-semibold">
+                      {authOptions.fingerprint ? "Option A: Wallet PIN" : authOptions.canEnrollFingerprint ? "Wallet PIN" : "Option A: Wallet PIN"}
+                    </span>
                   </div>
 
                   <div className="flex justify-center gap-3">
@@ -771,7 +838,7 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
                     ) : (
                       <Fingerprint size={20} className={scannerReady !== false ? "text-indigo-600" : ""} />
                     )}
-                    {processing ? "Scanning..." : "Authenticating with fingerprint"}
+                    {processing ? "Scanning..." : "Pay with fingerprint"}
                   </button>
                   {scannerReady === false && (
                     <p className="text-xs text-amber-600 text-center">Fingerprint scanner is offline on this device.</p>
@@ -779,8 +846,50 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
                 </div>
               )}
 
-              {!authOptions.pin && !authOptions.fingerprint && (
-                <p className="text-sm text-amber-600 text-center">No PIN or fingerprint is set up for this wallet.</p>
+              {authOptions.canEnrollFingerprint && (
+                <div
+                  className={`space-y-3 shrink-0 ${
+                    authOptions.pin || authOptions.fingerprint ? "border-t border-gray-100 pt-4" : ""
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2 text-[#0A1F44]">
+                    <Fingerprint size={18} />
+                    <span className="text-sm font-semibold">
+                      {authOptions.fingerprint
+                        ? "Fingerprint"
+                        : authOptions.pin
+                          ? "First time? Enroll fingerprint"
+                          : "Enroll fingerprint & pay"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 text-center leading-relaxed">
+                    {authOptions.pin
+                      ? "Enter your PIN above, then scan your finger once to save it and complete this order."
+                      : "Place your finger on the scanner to register it and pay for this order."}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={processing || (authOptions.pin && pin.length !== 4)}
+                    onClick={enrollFingerprintAndPay}
+                    className="w-full py-4 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold rounded-2xl transition flex items-center justify-center gap-2 disabled:opacity-50 border border-teal-200"
+                  >
+                    {processing ? (
+                      <Loader2 className="animate-spin" size={20} />
+                    ) : (
+                      <Fingerprint size={20} className="text-teal-600" />
+                    )}
+                    {processing ? "Scanning..." : `Enroll fingerprint & pay KES ${total.toLocaleString()}`}
+                  </button>
+                </div>
+              )}
+
+              {!authOptions.pin && !authOptions.fingerprint && !authOptions.canEnrollFingerprint && (
+                <div className="text-sm text-amber-600 text-center space-y-2">
+                  <p>No wallet PIN or fingerprint is set up yet.</p>
+                  <p className="text-xs text-gray-500">
+                    Ask your parent to set a wallet PIN, or use a kiosk with a fingerprint scanner to enroll.
+                  </p>
+                </div>
               )}
 
               <div className="flex gap-2 mt-auto shrink-0">

@@ -3,6 +3,13 @@ import { Router, Request, Response } from 'express';
 import prisma from '@/services/prisma';
 import { ensureAuthenticated } from '@/middlewares/auth';
 import { logAuditEvent } from '@/services/audit';
+import {
+  assertFingerprintUnique,
+  fingerprintEnrollmentData,
+  FingerprintDuplicateError,
+  parseFingerprintTemplate,
+} from '@/services/fingerprint';
+import { displayReceiptNo, generateReceiptNo } from '@/services/receipt';
 
 const router = Router();
 
@@ -58,6 +65,19 @@ const mapSaleError = (message: string): { status: number; body: { message: strin
   if (message.startsWith('ITEM_UNAVAILABLE')) {
     const name = message.split(':')[1];
     return { status: 422, body: { message: name ? `${name} is currently unavailable` : 'An item is unavailable' } };
+  }
+  if (message === 'FINGERPRINT_ALREADY_ENROLLED') {
+    return { status: 409, body: { message: 'Fingerprint is already enrolled for this student' } };
+  }
+  if (message === 'INVALID_FINGERPRINT') {
+    return { status: 422, body: { message: 'Invalid fingerprint scan. Please try again.' } };
+  }
+  if (message.startsWith('FINGERPRINT_DUPLICATE')) {
+    const detail = message.split(':').slice(1).join(':');
+    return {
+      status: 409,
+      body: { message: detail || 'This fingerprint is already enrolled for another student' },
+    };
   }
   return null;
 };
@@ -130,7 +150,50 @@ const assertSaleAuthorized = async (student: any, auth: any): Promise<void> => {
   throw new Error('AUTH_REQUIRED');
 };
 
+const assertPinValid = async (student: { walletPinHash: string | null }, pin: string): Promise<void> => {
+  if (!student.walletPinHash) throw new Error('AUTH_REQUIRED');
+  if (!/^\d{4}$/.test(pin)) throw new Error('INVALID_PIN');
+  const ok = await bcrypt.compare(pin, student.walletPinHash);
+  if (!ok) throw new Error('INVALID_PIN');
+};
+
+const resolveEnrollmentTemplate = async (
+  student: { id: string; fingerprintTemplate: string | null; walletPinHash: string | null },
+  auth: { pin?: string; fingerprintTemplate?: string },
+): Promise<string> => {
+  if (student.fingerprintTemplate) throw new Error('FINGERPRINT_ALREADY_ENROLLED');
+
+  const rawFp = typeof auth?.fingerprintTemplate === 'string' ? auth.fingerprintTemplate.trim() : '';
+  if (!rawFp) throw new Error('FINGERPRINT_REQUIRED');
+
+  let parsed: string | null;
+  try {
+    parsed = parseFingerprintTemplate(rawFp) ?? null;
+  } catch {
+    throw new Error('INVALID_FINGERPRINT');
+  }
+  if (!parsed) throw new Error('FINGERPRINT_REQUIRED');
+
+  if (student.walletPinHash) {
+    const pin = typeof auth?.pin === 'string' ? auth.pin.trim() : '';
+    await assertPinValid(student, pin);
+  }
+
+  try {
+    await assertFingerprintUnique(parsed, student.id);
+  } catch (err) {
+    if (err instanceof FingerprintDuplicateError) {
+      throw new Error(`FINGERPRINT_DUPLICATE:${err.message}`);
+    }
+    throw err;
+  }
+
+  return parsed;
+};
+
 type CartLine = { menuItemId: string; quantity: number };
+
+type SelfServiceAuth = { pin?: string; fingerprintTemplate?: string };
 
 async function executeSelfServiceOrder(
   student: {
@@ -145,11 +208,18 @@ async function executeSelfServiceOrder(
     fingerprintTemplate: string | null;
   },
   items: CartLine[],
-  auth: { pin?: string; fingerprintTemplate?: string },
+  auth: SelfServiceAuth,
   cashierId: string,
+  options?: { enrollFingerprint?: boolean },
 ) {
   if (student.walletFrozen) throw new Error('WALLET_FROZEN');
-  await assertSaleAuthorized(student, auth);
+
+  let enrollmentTemplate: string | null = null;
+  if (options?.enrollFingerprint) {
+    enrollmentTemplate = await resolveEnrollmentTemplate(student, auth);
+  } else {
+    await assertSaleAuthorized(student, auth);
+  }
 
   return prisma.$transaction(async (tx) => {
     const itemIds = items.map((i) => i.menuItemId);
@@ -193,11 +263,25 @@ async function executeSelfServiceOrder(
       if (spentWeek + totalAmount > Number(student.weeklySpendLimit)) throw new Error('WEEKLY_LIMIT_EXCEEDED');
     }
 
+    if (enrollmentTemplate) {
+      await tx.student.update({
+        where: { id: student.id },
+        data: fingerprintEnrollmentData(enrollmentTemplate),
+      });
+    }
+
+    const receiptNo = await generateReceiptNo(async (no) =>
+      Boolean(
+        await tx.posTransaction.findFirst({ where: { receiptNo: no }, select: { id: true } }),
+      ),
+    );
+
     const posTx = await tx.posTransaction.create({
       data: {
         studentId: student.id,
         cashierId,
         totalAmount,
+        receiptNo,
         items: { create: orderLines },
       },
       include: { items: { include: { menuItem: { select: { name: true } } } } },
@@ -215,11 +299,11 @@ async function executeSelfServiceOrder(
         amount: -totalAmount,
         type: 'purchase',
         reference: posTx.id,
-        description: `Cafeteria order (Receipt: ${posTx.id.slice(-6)})`,
+        description: `Cafeteria order (${displayReceiptNo(posTx)})`,
       },
     });
 
-    return { student: updatedStudent, posTx, totalAmount };
+    return { student: updatedStudent, posTx, totalAmount, fingerprintEnrolled: Boolean(enrollmentTemplate) };
   });
 }
 
@@ -413,10 +497,11 @@ router.post('/kiosk/preview', async (req: Request, res: Response): Promise<void>
 
 // ─── POST /api/pos/kiosk-order ────────────────────────────────────────────────
 router.post('/kiosk-order', async (req: Request, res: Response): Promise<void> => {
-  const { regNo, items, auth } = req.body as {
+  const { regNo, items, auth, enrollFingerprint } = req.body as {
     regNo?: string;
     items?: CartLine[];
-    auth?: { pin?: string; fingerprintTemplate?: string };
+    auth?: SelfServiceAuth;
+    enrollFingerprint?: boolean;
   };
 
   if (!regNo?.trim() || !Array.isArray(items) || items.length === 0) {
@@ -433,7 +518,22 @@ router.post('/kiosk-order', async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const result = await executeSelfServiceOrder(student, items, auth || {}, 'kiosk');
+    const result = await executeSelfServiceOrder(student, items, auth || {}, 'kiosk', {
+      enrollFingerprint: Boolean(enrollFingerprint),
+    });
+
+    if (result.fingerprintEnrolled) {
+      await logAuditEvent({
+        eventType: 'fingerprint_enrolled',
+        userType: 'student',
+        userId: student.id,
+        userName: student.name,
+        action: 'Kiosk Fingerprint Enrollment',
+        description: `Enrolled fingerprint during kiosk checkout for ${student.regNo}`,
+        metadata: { regNo: student.regNo },
+        ipAddress: req.ip,
+      });
+    }
 
     await logAuditEvent({
       eventType: 'kiosk_order',
@@ -450,6 +550,7 @@ router.post('/kiosk-order', async (req: Request, res: Response): Promise<void> =
       message: 'Order placed successfully',
       receipt: result.posTx,
       newBalance: result.student.walletBalance,
+      fingerprintEnrolled: result.fingerprintEnrolled,
     });
   } catch (error: unknown) {
     respondSaleError(res, error, 'Kiosk order error');
@@ -463,9 +564,10 @@ router.post('/student-order', ensureAuthenticated, async (req: Request, res: Res
     return;
   }
 
-  const { items, auth } = req.body as {
+  const { items, auth, enrollFingerprint } = req.body as {
     items?: CartLine[];
-    auth?: { pin?: string; fingerprintTemplate?: string };
+    auth?: SelfServiceAuth;
+    enrollFingerprint?: boolean;
   };
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -480,7 +582,22 @@ router.post('/student-order', ensureAuthenticated, async (req: Request, res: Res
       return;
     }
 
-    const result = await executeSelfServiceOrder(student, items, auth || {}, 'self-service');
+    const result = await executeSelfServiceOrder(student, items, auth || {}, 'self-service', {
+      enrollFingerprint: Boolean(enrollFingerprint),
+    });
+
+    if (result.fingerprintEnrolled) {
+      await logAuditEvent({
+        eventType: 'fingerprint_enrolled',
+        userType: 'student',
+        userId: req.user!.id,
+        userName: req.user!.name,
+        action: 'Student Fingerprint Enrollment',
+        description: `Enrolled fingerprint during self-service order`,
+        metadata: { regNo: student.regNo },
+        ipAddress: req.ip,
+      });
+    }
 
     await logAuditEvent({
       eventType: 'student_order',
@@ -497,6 +614,7 @@ router.post('/student-order', ensureAuthenticated, async (req: Request, res: Res
       message: 'Order placed successfully',
       receipt: result.posTx,
       newBalance: result.student.walletBalance,
+      fingerprintEnrolled: result.fingerprintEnrolled,
     });
   } catch (error: unknown) {
     respondSaleError(res, error, 'Student order error');
