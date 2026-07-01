@@ -7,6 +7,7 @@ import {
   Heart,
   ChefHat,
   Coins,
+  Receipt,
   ShieldCheck,
   TrendingUp,
   Activity,
@@ -42,6 +43,7 @@ const menuSections: { title?: string; items: MenuItem[] }[] = [
     title: "System",
     items: [
       { name: "System Reports", icon: TrendingUp, path: "/reports" },
+      { name: "Collections", icon: Receipt, path: "/collections" },
       { name: "Audit Logs", icon: Activity, path: "/audit-logs" },
       { name: "Settings", icon: Sliders, path: "/settings" },
     ],

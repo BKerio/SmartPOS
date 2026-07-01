@@ -193,6 +193,8 @@ const resolveEnrollmentTemplate = async (
 
 type CartLine = { menuItemId: string; quantity: number };
 
+export type { CartLine };
+
 type SelfServiceAuth = { pin?: string; fingerprintTemplate?: string };
 
 async function executeSelfServiceOrder(
@@ -304,6 +306,50 @@ async function executeSelfServiceOrder(
     });
 
     return { student: updatedStudent, posTx, totalAmount, fingerprintEnrolled: Boolean(enrollmentTemplate) };
+  });
+}
+
+/** Cash / M-Pesa guest sale at POS (no student wallet). */
+export async function executeGuestMpesaSale(
+  cashierId: string,
+  items: CartLine[],
+  _mpesaReference: string,
+) {
+  return prisma.$transaction(async (tx) => {
+    const itemIds = items.map((i) => i.menuItemId);
+    const menuItems = await tx.menuItem.findMany({ where: { id: { in: itemIds } } });
+
+    let totalAmount = 0;
+    const orderLines = items.map((cartItem) => {
+      const quantity = Math.floor(Number(cartItem.quantity));
+      const menuItem = menuItems.find((m) => m.id === cartItem.menuItemId);
+
+      if (!menuItem) throw new Error(`ITEM_NOT_FOUND:${cartItem.menuItemId}`);
+      if (!menuItem.isAvailable) throw new Error(`ITEM_UNAVAILABLE:${menuItem.name}`);
+      if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('INVALID_QUANTITY');
+
+      totalAmount += menuItem.price * quantity;
+      return { menuItemId: menuItem.id, quantity, price: menuItem.price };
+    });
+
+    const receiptNo = await generateReceiptNo(async (no) =>
+      Boolean(
+        await tx.posTransaction.findFirst({ where: { receiptNo: no }, select: { id: true } }),
+      ),
+    );
+
+    const posTx = await tx.posTransaction.create({
+      data: {
+        cashierId,
+        totalAmount,
+        receiptNo,
+        paymentMethod: 'mpesa',
+        items: { create: orderLines },
+      },
+      include: { items: { include: { menuItem: { select: { name: true } } } } },
+    });
+
+    return { posTx, totalAmount };
   });
 }
 

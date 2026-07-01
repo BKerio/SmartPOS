@@ -46,6 +46,8 @@ model Student {
   gender        String
   dateOfBirth   DateTime?
   course            String?
+  className         String?             @map("class_name")
+  category          String?             @default("regular") // regular | sponsored
   password      String
   parentRelationship String?
   
@@ -145,11 +147,12 @@ model MenuItemIngredient {
 model PosTransaction {
   id          String   @id @default(cuid())
   receiptNo   String?  @unique
-  studentId   String
-  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId   String?
+  student     Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
   cashierId   String   // The User (restaurant staff) who processed it
   totalAmount Float
   status      String   @default("completed") // completed, voided
+  paymentMethod String @default("wallet") @map("payment_method") // wallet | mpesa
   
   items       PosTransactionItem[]
 
@@ -268,11 +271,18 @@ model KopoPayment {
   originationTime      String?  @map("origination_time")
   rawPayload           Json?    @map("raw_payload")
   studentId            String?  @map("student_id")
+  payerUserId          String?  @map("payer_user_id")
+  payerRole            String?  @map("payer_role")
+  purpose              String   @default("wallet_topup") // wallet_topup | pos_sale | general
+  posCart              Json?    @map("pos_cart")
+  posCompleted         Boolean  @default(false) @map("pos_completed")
+  posTransactionId     String?  @unique @map("pos_transaction_id")
   walletCredited       Boolean  @default(false) @map("wallet_credited")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   @@index([studentId])
+  @@index([payerUserId])
   @@map("kopo_payments")
 }
 

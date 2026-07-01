@@ -9,6 +9,13 @@ const StudentProfile: React.FC = () => {
     phone: "",
     regNo: "",
     gender: "male",
+    className: "",
+    course: "",
+    category: "",
+    parentName: "",
+    parentPhone: "",
+    parentEmail: "",
+    parentRelationship: "",
     password: "",
   });
 
@@ -22,6 +29,13 @@ const StudentProfile: React.FC = () => {
         phone: data.phone || "",
         regNo: data.regNo || "",
         gender: data.gender || "male",
+        className: data.className || "",
+        course: data.course || "",
+        category: data.category || "",
+        parentName: data.parent?.name || "",
+        parentPhone: data.parent?.phone || "",
+        parentEmail: data.parent?.email || "",
+        parentRelationship: data.parentRelationship || "",
         password: "",
       });
     } catch (error: any) {
@@ -34,6 +48,14 @@ const StudentProfile: React.FC = () => {
     try {
       const payload = { ...form } as any;
       if (!payload.password) delete payload.password;
+      delete payload.regNo;
+      delete payload.className;
+      delete payload.course;
+      delete payload.category;
+      delete payload.parentName;
+      delete payload.parentPhone;
+      delete payload.parentEmail;
+      delete payload.parentRelationship;
 
       await API.put("/students/me", payload, {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
@@ -84,6 +106,36 @@ const StudentProfile: React.FC = () => {
             readOnly
             className="w-full bg-gray-100 border border-gray-300 p-2.5 rounded-md text-gray-500 cursor-not-allowed"
           />
+        </div>
+
+        <div>
+          <label className="text-sm text-gray-600 mb-1 block">Class</label>
+          <input
+            value={form.className || "-"}
+            readOnly
+            className="w-full bg-gray-100 border border-gray-300 p-2.5 rounded-md text-gray-500 cursor-not-allowed"
+          />
+        </div>
+
+        <div>
+          <label className="text-sm text-gray-600 mb-1 block">Category</label>
+          <input
+            value={form.category ? (form.category === "sponsored" ? "Sponsored" : "Regular") : "-"}
+            readOnly
+            className="w-full bg-gray-100 border border-gray-300 p-2.5 rounded-md text-gray-500 cursor-not-allowed"
+          />
+        </div>
+
+        <div className="sm:col-span-2">
+          <label className="text-sm text-gray-600 mb-1 block">Parent / Guardian</label>
+          <div className="w-full bg-gray-50 border border-gray-200 p-4 rounded-md space-y-1">
+            <p className="text-sm font-semibold text-gray-800">{form.parentName || "-"}</p>
+            <p className="text-sm text-gray-600">Phone: {form.parentPhone || "-"}</p>
+            <p className="text-sm text-gray-600">Email: {form.parentEmail || "-"}</p>
+            <p className="text-sm text-gray-600">
+              Relationship: {form.parentRelationship ? form.parentRelationship : "-"}
+            </p>
+          </div>
         </div>
 
         <div>

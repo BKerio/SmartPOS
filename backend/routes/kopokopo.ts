@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import prisma from '@/services/prisma';
 import {
   initiateSTKPush,
@@ -6,9 +7,26 @@ import {
   subscribeWebhook,
   validateWebhookSignature,
 } from '@/services/kopokopo.service';
+import { executeGuestMpesaSale } from '@/routes/pos';
+import { displayReceiptNo } from '@/services/receipt';
+import type { AuthPayload } from '@/middlewares/auth';
 import 'dotenv/config';
 
 const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'smartpos-secret-key';
+
+type KopoPurpose = 'wallet_topup' | 'pos_sale' | 'general';
+type PosCartLine = { menuItemId: string; quantity: number };
+
+function getOptionalUser(req: Request): AuthPayload | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return null;
+  try {
+    return jwt.verify(authHeader.split(' ')[1], JWT_SECRET) as AuthPayload;
+  } catch {
+    return null;
+  }
+}
 
 const SUCCESS_STATUSES = new Set(['success', 'received', 'complete', 'completed', 'paid']);
 
@@ -176,8 +194,58 @@ async function creditStudentWallet(
   }
 }
 
+async function completePosSaleFromPayment(
+  paymentId: string,
+  mpesaReference: string,
+): Promise<{ receiptNo: string; posTransactionId: string } | null> {
+  const payment = await prisma.kopoPayment.findUnique({ where: { id: paymentId } });
+  if (!payment || payment.purpose !== 'pos_sale' || payment.posCompleted || !payment.payerUserId) {
+    return null;
+  }
+
+  const cart = payment.posCart as PosCartLine[] | null;
+  if (!Array.isArray(cart) || cart.length === 0) return null;
+
+  const claimed = await prisma.kopoPayment.updateMany({
+    where: { id: paymentId, posCompleted: false },
+    data: { posCompleted: true },
+  });
+  if (claimed.count === 0) return null;
+
+  try {
+    const { posTx } = await executeGuestMpesaSale(
+      payment.payerUserId,
+      cart,
+      mpesaReference,
+    );
+
+    await prisma.kopoPayment.update({
+      where: { id: paymentId },
+      data: { posTransactionId: posTx.id },
+    });
+
+    console.log(`[Kopokopo] POS M-Pesa sale completed: ${displayReceiptNo(posTx)}`);
+    return { receiptNo: displayReceiptNo(posTx), posTransactionId: posTx.id };
+  } catch (err) {
+    await prisma.kopoPayment.update({
+      where: { id: paymentId },
+      data: { posCompleted: false },
+    });
+    console.error('[Kopokopo] POS sale completion failed:', err);
+    return null;
+  }
+}
+
 async function applyPaymentUpdate(
-  existing: { id: string; studentId: string | null; amount: number; phone: string; walletCredited: boolean },
+  existing: {
+    id: string;
+    studentId: string | null;
+    amount: number;
+    phone: string;
+    walletCredited: boolean;
+    purpose: string;
+    posCompleted: boolean;
+  },
   parsed: ParsedKopoPayload,
 ) {
   const studentId = existing.studentId || parsed.studentId || null;
@@ -209,7 +277,44 @@ async function applyPaymentUpdate(
     );
   }
 
-  return prisma.kopoPayment.findUnique({ where: { id: payment.id } });
+  let posReceiptNo: string | undefined;
+  if (
+    isSuccessStatus(parsed.rawStatus) &&
+    payment.purpose === 'pos_sale' &&
+    !payment.posCompleted
+  ) {
+    const posResult = await completePosSaleFromPayment(
+      payment.id,
+      parsed.transactionReference || parsed.reference || payment.id,
+    );
+    posReceiptNo = posResult?.receiptNo;
+  }
+
+  const updated = await prisma.kopoPayment.findUnique({ where: { id: payment.id } });
+  return { payment: updated, posReceiptNo };
+}
+
+function buildKopoEmitPayload(
+  payment: Awaited<ReturnType<typeof prisma.kopoPayment.findUnique>>,
+  parsed: Partial<ParsedKopoPayload>,
+  extras?: { posReceiptNo?: string },
+) {
+  return {
+    paymentId: payment?.id,
+    location: payment?.location || parsed.location,
+    reference: parsed.reference,
+    status: parsed.status ?? payment?.status,
+    amount: payment?.amount ?? parsed.amount,
+    currency: parsed.currency ?? payment?.currency,
+    phone: payment?.phone ?? parsed.phone,
+    transactionReference: parsed.transactionReference ?? payment?.transactionReference,
+    originationTime: parsed.originationTime,
+    studentId: payment?.studentId,
+    walletCredited: payment?.walletCredited ?? false,
+    purpose: payment?.purpose,
+    posCompleted: payment?.posCompleted ?? false,
+    posReceiptNo: extras?.posReceiptNo,
+  };
 }
 
 function emitKopokopoUpdate(req: Request, payload: Record<string, unknown>) {
@@ -226,11 +331,21 @@ function emitKopokopoUpdate(req: Request, payload: Record<string, unknown>) {
 
 // POST /api/kopokopo/stkpush
 router.post('/stkpush', async (req: Request, res: Response) => {
-  const { phone, amount, description, studentId } = req.body as {
+  const user = getOptionalUser(req);
+  const {
+    phone,
+    amount,
+    description,
+    studentId,
+    purpose: rawPurpose,
+    items,
+  } = req.body as {
     phone: string;
     amount: number;
     description?: string;
     studentId?: string;
+    purpose?: KopoPurpose;
+    items?: PosCartLine[];
   };
 
   if (!phone || !amount) {
@@ -238,30 +353,68 @@ router.post('/stkpush', async (req: Request, res: Response) => {
     return;
   }
 
-  if (!studentId) {
-    res.status(422).json({ error: 'studentId is required to credit a wallet' });
+  const numericAmount = Number(amount);
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+    res.status(422).json({ error: 'amount must be a positive number' });
     return;
   }
 
+  let purpose: KopoPurpose = rawPurpose || (studentId ? 'wallet_topup' : 'general');
+
+  if (studentId) {
+    purpose = 'wallet_topup';
+    const student = await prisma.student.findUnique({ where: { id: studentId } });
+    if (!student) {
+      res.status(404).json({ error: 'Student not found' });
+      return;
+    }
+  } else if (purpose === 'pos_sale') {
+    if (!user || !['admin', 'restaurant'].includes(user.role)) {
+      res.status(403).json({ error: 'Only restaurant staff can initiate POS M-Pesa sales' });
+      return;
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(422).json({ error: 'Cart items are required for POS M-Pesa sales' });
+      return;
+    }
+  } else {
+    if (!user || user.role === 'student') {
+      res.status(403).json({ error: 'STK push is available for parents and staff only' });
+      return;
+    }
+    purpose = 'general';
+  }
+
   try {
-    console.log('[Kopokopo] Initiating STK Push →', { phone, amount, studentId });
+    console.log('[Kopokopo] Initiating STK Push →', { phone, amount: numericAmount, studentId, purpose, user: user?.role });
 
     const pending = await prisma.kopoPayment.create({
       data: {
         status: 'pending',
-        amount,
+        amount: numericAmount,
         phone,
-        studentId,
-        description: description || 'SmartPOS Wallet Top-up',
+        studentId: studentId || null,
+        payerUserId: user?.id || null,
+        payerRole: user?.role || null,
+        purpose,
+        posCart: purpose === 'pos_sale' ? items : undefined,
+        description:
+          description ||
+          (purpose === 'pos_sale'
+            ? 'SmartPOS Cafeteria Sale'
+            : purpose === 'wallet_topup'
+              ? 'SmartPOS Wallet Top-up'
+              : 'SmartPOS Payment'),
       },
     });
 
     const { location: rawLocation } = await initiateSTKPush({
       phone,
-      amount,
-      description: description || 'SmartPOS Wallet Top-up',
+      amount: numericAmount,
+      description: pending.description,
       studentId,
       paymentId: pending.id,
+      purpose,
     });
 
     const location = normalizeLocation(rawLocation);
@@ -276,7 +429,7 @@ router.post('/stkpush', async (req: Request, res: Response) => {
     });
 
     console.log('[Kopokopo] STK Push queued. Location:', location);
-    res.status(201).json({ location, paymentId: payment.id });
+    res.status(201).json({ location, paymentId: payment.id, purpose: payment.purpose });
   } catch (err: any) {
     console.error('[Kopokopo] STK Push Error:', err?.response?.data || err.message);
     res.status(500).json({
@@ -312,9 +465,12 @@ router.get('/status', async (req: Request, res: Response) => {
     };
 
     let payment = await findKopoPayment(parsed, location);
+    let posReceiptNo: string | undefined;
 
     if (payment && isSuccessStatus(statusData.status)) {
-      payment = await applyPaymentUpdate(payment, parsed);
+      const result = await applyPaymentUpdate(payment, parsed);
+      payment = result.payment;
+      posReceiptNo = result.posReceiptNo;
     } else if (payment) {
       payment = await prisma.kopoPayment.update({
         where: { id: payment.id },
@@ -333,6 +489,9 @@ router.get('/status', async (req: Request, res: Response) => {
       paymentId: payment?.id,
       studentId: payment?.studentId,
       walletCredited: payment?.walletCredited ?? false,
+      purpose: payment?.purpose,
+      posCompleted: payment?.posCompleted ?? false,
+      posReceiptNo,
     });
   } catch (err: any) {
     console.error('[Kopokopo] Status Check Error:', err?.response?.data || err.message);
@@ -363,9 +522,12 @@ router.post('/payment/callback', async (req: Request, res: Response) => {
   try {
     const parsed = parseKopoPayload(payload);
     let payment = await findKopoPayment(parsed);
+    let posReceiptNo: string | undefined;
 
     if (payment) {
-      payment = await applyPaymentUpdate(payment, parsed);
+      const result = await applyPaymentUpdate(payment, parsed);
+      payment = result.payment;
+      posReceiptNo = result.posReceiptNo;
     } else if (parsed.location || parsed.reference) {
       payment = await prisma.kopoPayment.create({
         data: {
@@ -396,19 +558,7 @@ router.post('/payment/callback', async (req: Request, res: Response) => {
       }
     }
 
-    emitKopokopoUpdate(req, {
-      paymentId: payment?.id,
-      location: payment?.location || parsed.location,
-      reference: parsed.reference,
-      status: parsed.status,
-      amount: payment?.amount ?? parsed.amount,
-      currency: parsed.currency,
-      phone: payment?.phone ?? parsed.phone,
-      transactionReference: parsed.transactionReference,
-      originationTime: parsed.originationTime,
-      studentId: payment?.studentId,
-      walletCredited: payment?.walletCredited ?? false,
-    });
+    emitKopokopoUpdate(req, buildKopoEmitPayload(payment, parsed, { posReceiptNo }));
 
     res.status(200).json({ message: 'Callback processed successfully' });
   } catch (err: any) {
@@ -450,9 +600,12 @@ router.post('/webhooks', async (req: Request, res: Response) => {
       parsed.rawStatus = 'Received';
 
       let payment = await findKopoPayment(parsed);
+      let posReceiptNo: string | undefined;
 
       if (payment) {
-        payment = await applyPaymentUpdate(payment, parsed);
+        const result = await applyPaymentUpdate(payment, parsed);
+        payment = result.payment;
+        posReceiptNo = result.posReceiptNo;
       } else {
         payment = await prisma.kopoPayment.create({
           data: {
@@ -481,16 +634,7 @@ router.post('/webhooks', async (req: Request, res: Response) => {
         }
       }
 
-      emitKopokopoUpdate(req, {
-        paymentId: payment?.id,
-        reference: parsed.reference,
-        status: 'success',
-        amount: payment?.amount,
-        currency: parsed.currency,
-        phone: payment?.phone,
-        studentId: payment?.studentId,
-        walletCredited: payment?.walletCredited ?? false,
-      });
+      emitKopokopoUpdate(req, buildKopoEmitPayload(payment, parsed, { posReceiptNo }));
     }
 
     res.status(200).json({ message: 'Webhook received' });

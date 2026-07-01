@@ -62,6 +62,7 @@ export interface StkPushOptions {
   description?: string;
   callbackUrl?: string;
   studentId?: string;
+  purpose?: string;
   paymentId?: string;
 }
 
@@ -87,6 +88,7 @@ export const initiateSTKPush = async (opts: StkPushOptions): Promise<StkPushResu
       description: opts.description || 'SmartPOS Payment',
       student_id: opts.studentId || '',
       payment_id: opts.paymentId || '',
+      purpose: opts.purpose || (opts.studentId ? 'wallet_topup' : 'general'),
     },
     _links: {
       callback_url: opts.callbackUrl || KOPOKOPO_CALLBACK_URL,

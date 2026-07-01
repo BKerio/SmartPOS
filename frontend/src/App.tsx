@@ -48,6 +48,7 @@ import InventoryPage from "@/pages/restaurant/InventoryPage";
 import FinanceDashboard from "@/pages/finance/FinanceDashboard";
 import ExpensesPage from "@/pages/finance/ExpensesPage";
 import ReceiptsPage from "@/pages/finance/ReceiptsPage";
+import CollectionsPage from "@/pages/finance/CollectionsPage";
 
 const USER_ROLES: UserRole[] = ["parent", "finance", "restaurant"];
 
@@ -132,7 +133,7 @@ function AppShell() {
 
           {/* Parent */}
           <Route path="/parent-dashboard" element={R(["parent"], <ParentDashboard />)} />
-          <Route path="/pay-kopokopo" element={R(["parent"], <PayWithKopokopo />)} />
+          <Route path="/pay-kopokopo" element={R(["parent", "admin", "restaurant", "finance"], <PayWithKopokopo />)} />
           <Route path="/pay-mpesa" element={<Navigate to="/pay-kopokopo" replace />} />
           <Route path="/parent/topup" element={R(["parent"], <ParentTopUpWallet />)} />
           <Route path="/parent/wallet" element={R(["parent"], <ParentManageWallet />)} />
@@ -154,6 +155,7 @@ function AppShell() {
           <Route path="/finance" element={R(["finance"], <FinanceDashboard />)} />
           <Route path="/expenses" element={R(["finance"], <ExpensesPage />)} />
           <Route path="/receipts" element={R(["finance"], <ReceiptsPage />)} />
+          <Route path="/collections" element={R(["admin", "finance"], <CollectionsPage />)} />
 
           {/* Shared profile */}
           <Route

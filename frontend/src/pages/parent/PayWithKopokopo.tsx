@@ -1,22 +1,27 @@
-import { useState, useRef, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 import { Loader2, Smartphone, Coins, ArrowLeft, ArrowUp, ArrowDown, Info } from 'lucide-react';
-import { io, Socket } from 'socket.io-client';
+import { useAuth } from '@/context/AuthContext';
+import { initiateStkPushAndWait } from '@/services/kopokopoPayment';
 
 const MySwal = withReactContent(Swal);
 
 const PayWithKopokopo = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { studentId, studentName, regNo, currentBalance } = (location.state || {}) as {
+  const { user } = useAuth();
+  const { studentId, studentName, regNo, currentBalance, purpose: routePurpose } = (location.state || {}) as {
     studentId?: string;
     studentName?: string;
     regNo?: string;
     currentBalance?: number;
+    purpose?: 'wallet_topup' | 'general';
   };
+
+  const isWalletTopUp = Boolean(studentId);
+  const isParent = user?.role === 'parent';
 
   const [phone, setPhone] = useState('');
   const [amount, setAmount] = useState('');
@@ -25,12 +30,6 @@ const PayWithKopokopo = () => {
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'success'>('idle');
   const [lastReceipt, setLastReceipt] = useState<any>(null);
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
-
-  const API_URL = import.meta.env.VITE_API_URL;
-  const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || '').toString();
-  const socketRef = useRef<Socket | null>(null);
-  const hardTimeoutRef = useRef<number | null>(null);
-  const pollIntervalRef = useRef<number | null>(null);
 
   const validateInputs = (): boolean => {
     const errors: { phone?: string; amount?: string } = {};
@@ -45,37 +44,18 @@ const PayWithKopokopo = () => {
     return Object.keys(errors).length === 0;
   };
 
-  const connectSocket = () => {
-    if (socketRef.current?.connected) return socketRef.current;
-
-    let url = SOCKET_URL;
-    if (!url) {
-      if (API_URL && !API_URL.startsWith('/')) {
-        url = API_URL.replace(/\/?api\/?$/, '');
-      } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        url = 'http://localhost:5000';
-      } else {
-        url = window.location.origin;
-      }
-    }
-
-    socketRef.current = io(url, { transports: ['polling', 'websocket'] });
-    return socketRef.current;
-  };
-
-  const clearTimers = () => {
-    if (hardTimeoutRef.current) {
-      window.clearTimeout(hardTimeoutRef.current);
-      hardTimeoutRef.current = null;
-    }
-    if (pollIntervalRef.current) {
-      window.clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-  };
+  const backPath = isWalletTopUp
+    ? '/parent/topup'
+    : user?.role === 'finance'
+      ? '/finance'
+      : user?.role === 'restaurant'
+        ? '/pos'
+        : user?.role === 'admin'
+          ? '/'
+          : '/parent-dashboard';
 
   useEffect(() => {
-    if (!studentId) {
+    if (isParent && !studentId) {
       MySwal.fire({
         title: 'Select a student',
         text: 'Choose which student wallet to top up first.',
@@ -83,13 +63,11 @@ const PayWithKopokopo = () => {
         confirmButtonText: 'Go to Top Up',
       }).then(() => navigate('/parent/topup'));
     }
-  }, [studentId, navigate]);
+  }, [studentId, isParent, navigate]);
 
   useEffect(() => {
     return () => {
-      clearTimers();
-      socketRef.current?.disconnect();
-      socketRef.current = null;
+      setAwaitingConfirmation(false);
     };
   }, []);
 
@@ -149,7 +127,7 @@ const PayWithKopokopo = () => {
     setValidationErrors({});
     if (!validateInputs()) return;
 
-    if (!studentId) return;
+    if (isParent && !studentId) return;
 
     setLoading(true);
     setAwaitingConfirmation(false);
@@ -158,58 +136,27 @@ const PayWithKopokopo = () => {
     const sourcePhone = phone;
 
     try {
-      const response = await axios.post(`${API_URL}/kopokopo/stkpush`, {
-        phone,
-        amount: numericAmount,
-        description: studentName ? `Wallet top-up for ${studentName}` : 'SmartPOS Payment',
-        studentId: studentId || null,
-      });
+      const result = await initiateStkPushAndWait(
+        {
+          phone,
+          amount: numericAmount,
+          description: isWalletTopUp
+            ? studentName
+              ? `Wallet top-up for ${studentName}`
+              : 'SmartPOS Wallet Top-up'
+            : 'SmartPOS Payment',
+          studentId: studentId || undefined,
+          purpose: isWalletTopUp ? 'wallet_topup' : routePurpose || 'general',
+          useAuth: !isWalletTopUp,
+        },
+        () => {
+          setAwaitingConfirmation(true);
+          setLoading(false);
+        },
+      );
 
-      const { location: paymentLocation } = response.data || {};
-      if (!paymentLocation) throw new Error('No location returned from Kopokopo');
-
-      setAwaitingConfirmation(true);
-      setLoading(false);
-
-      const socket = connectSocket();
-      socket.off('kopokopo_update');
-      socket.emit('join_kopokopo', { location: paymentLocation });
-
-      socket.on('kopokopo_update', (data: any) => {
-        clearTimers();
-        setAwaitingConfirmation(false);
-        socket.off('kopokopo_update');
-        handlePaymentResult(data, numericAmount, sourcePhone);
-      });
-
-      pollIntervalRef.current = window.setInterval(async () => {
-        try {
-          const statusRes = await axios.get(`${API_URL}/kopokopo/status`, {
-            params: { location: paymentLocation },
-          });
-          const { status } = statusRes.data as { status: string };
-          if (status && status !== 'pending' && status !== 'Pending') {
-            clearTimers();
-            socket.off('kopokopo_update');
-            setAwaitingConfirmation(false);
-            handlePaymentResult(statusRes.data, numericAmount, sourcePhone);
-          }
-        } catch {
-          // silent poll failures
-        }
-      }, 5000);
-
-      hardTimeoutRef.current = window.setTimeout(() => {
-        clearTimers();
-        setAwaitingConfirmation(false);
-        socket.off('kopokopo_update');
-        MySwal.fire({
-          title: 'Payment Timeout',
-          text: 'We did not receive a response in time. Please check your M-Pesa messages and try again.',
-          icon: 'warning',
-          confirmButtonText: 'OK',
-        });
-      }, 180_000);
+      setAwaitingConfirmation(false);
+      handlePaymentResult(result, numericAmount, sourcePhone);
     } catch (err: any) {
       setLoading(false);
       setAwaitingConfirmation(false);
@@ -269,10 +216,10 @@ const PayWithKopokopo = () => {
           </div>
 
           <button
-            onClick={() => navigate('/parent-dashboard')}
+            onClick={() => navigate(backPath)}
             className="w-full py-5 text-base font-extrabold text-white bg-[#15A84F] hover:bg-[#108c40] rounded-[1.5rem] transition-all"
           >
-            Back to Dashboard
+            Done
           </button>
         </div>
       </div>
@@ -328,15 +275,21 @@ const PayWithKopokopo = () => {
     <div className="bg-gradient-to-tr from-slate-50 via-white to-green-50/10 min-h-screen flex items-center justify-center p-6 font-sans">
       <div className="w-full max-w-[420px] bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.03)] border border-slate-100/80 p-10 relative">
         <button
-          onClick={() => navigate(studentId ? '/parent/topup' : '/parent-dashboard')}
+          onClick={() => navigate(backPath)}
           className="absolute top-8 left-8 text-slate-400 hover:text-slate-700 transition-colors z-10"
         >
           <ArrowLeft className="w-6 h-6 stroke-[2]" />
         </button>
 
         <div className="text-center mb-6 mt-6">
-          <h1 className="text-3xl font-extrabold text-[#0D233A] tracking-tight mb-2">Pay with Kopokopo</h1>
-          <p className="text-slate-400 font-medium text-sm">Secure M-Pesa payment via STK Push</p>
+          <h1 className="text-3xl font-extrabold text-[#0D233A] tracking-tight mb-2">
+            {isWalletTopUp ? 'Pay with Kopokopo' : 'M-Pesa STK Payment'}
+          </h1>
+          <p className="text-slate-400 font-medium text-sm">
+            {isWalletTopUp
+              ? 'Secure M-Pesa payment via STK Push'
+              : 'Collect payment from staff or visitors via STK Push'}
+          </p>
         </div>
 
         {studentName && (

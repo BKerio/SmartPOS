@@ -234,7 +234,7 @@ router.get('/', ensureAdmin, async (_req: Request, res: Response): Promise<any> 
 // ─── POST /api/students ───────────────────────────────────────────────────────
 router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
   const {
-    name, regNo, phone, email, gender, dateOfBirth, course, password,
+    name, regNo, phone, email, gender, dateOfBirth, course, className, category, password,
     parentId, parentRelationship, parent: parentInfo, fingerprintTemplate,
   } = req.body;
   if (!name || !gender) {
@@ -287,6 +287,8 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
         gender,
         dateOfBirth: parsedDob,
         course: course?.trim() || null,
+        className: className?.trim() || null,
+        category: category?.trim() || 'regular',
         parentRelationship: parentRelationship?.trim() || null,
         password: hashed,
         parentId: finalParentId,
@@ -323,9 +325,11 @@ router.get('/me', ensureAuthenticated, async (req: Request, res: Response): Prom
       where: { id: req.user!.id },
       select: {
         id: true, name: true, regNo: true,
-        phone: true, gender: true, walletBalance: true, walletFrozen: true,
+        phone: true, gender: true, className: true, course: true, category: true, parentRelationship: true,
+        walletBalance: true, walletFrozen: true,
         dailySpendLimit: true, weeklySpendLimit: true, createdAt: true,
         walletPinSetAt: true, fingerprintTemplate: true,
+        parent: { select: { id: true, name: true, phone: true, email: true } },
       },
     });
     if (!student) return res.status(404).json({ message: 'Student not found' });
@@ -473,7 +477,7 @@ router.get('/:id', ensureAuthenticated, async (req: Request, res: Response): Pro
 // ─── PUT /api/students/:id ────────────────────────────────────────────────────
 router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
   const {
-    name, phone, email, gender, dateOfBirth, course, password,
+    name, phone, email, gender, dateOfBirth, course, className, category, password,
     parentId, parentRelationship, parent: parentInfo, fingerprintTemplate,
   } = req.body;
   try {
@@ -489,6 +493,8 @@ router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
     if (email !== undefined) data.email = email?.trim() || null;
     if (gender !== undefined) data.gender = gender;
     if (course !== undefined) data.course = course?.trim() || null;
+    if (className !== undefined) data.className = className?.trim() || null;
+    if (category !== undefined) data.category = category?.trim() || 'regular';
     if (parentRelationship !== undefined) data.parentRelationship = parentRelationship?.trim() || null;
     if (password) data.password = await bcrypt.hash(password, 10);
 

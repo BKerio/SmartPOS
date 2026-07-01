@@ -14,12 +14,14 @@ import {
   Package,
   BarChart3,
   Calendar,
+  Smartphone,
 } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
 import { captureFingerprint, checkScannerHealth, prepareScanner } from "@/services/fingerprintScanner";
 import { displayReceiptNo } from "@/lib/receipt";
+import { initiateStkPushAndWait } from "@/services/kopokopoPayment";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 interface MenuItem { id: string; name: string; price: number; category: string; isAvailable: boolean; imageUrl?: string; }
@@ -47,7 +49,7 @@ interface ReceiptItem {
   totalAmount: number;
   status: string;
   createdAt: string;
-  student: { name: string; regNo: string };
+  student: { name: string; regNo: string } | null;
   items: { quantity: number; price: number; menuItem: { name: string } }[];
 }
 
@@ -84,6 +86,9 @@ const PosTerminal = () => {
   const [salesReceipts, setSalesReceipts] = useState<ReceiptItem[]>([]);
   const [salesLoading, setSalesLoading] = useState(false);
   const [expandedReceipt, setExpandedReceipt] = useState<string | null>(null);
+  const [showMpesa, setShowMpesa] = useState(false);
+  const [mpesaPhone, setMpesaPhone] = useState("");
+  const [mpesaLoading, setMpesaLoading] = useState(false);
 
   const fetchSalesData = useCallback(async (date: string) => {
     setSalesLoading(true);
@@ -334,6 +339,47 @@ const PosTerminal = () => {
     }
   };
 
+  const payGuestWithMpesa = async () => {
+    if (cart.length === 0) return toast.warning("Cart is empty");
+    if (!/^(01|07)\d{8}$/.test(mpesaPhone.trim())) {
+      return toast.error("Invalid phone", "Enter a valid 10-digit M-Pesa number");
+    }
+
+    setMpesaLoading(true);
+    try {
+      const result = await initiateStkPushAndWait({
+        phone: mpesaPhone.trim(),
+        amount: total,
+        description: "SmartPOS Cafeteria Sale",
+        purpose: "pos_sale",
+        items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
+        useAuth: true,
+      });
+
+      const status = (result.status || "").toLowerCase();
+      if (status === "success" || status === "received" || status === "complete") {
+        toast.success(
+          "M-Pesa sale complete",
+          `${result.posReceiptNo || "ORDER"} · KES ${total.toLocaleString()}`,
+        );
+        setCart([]);
+        setShowMpesa(false);
+        setMpesaPhone("");
+        if (view === "sales" || salesDate === todayDateString()) {
+          fetchSalesData(salesDate);
+        }
+      } else if (status === "failed" || status === "error") {
+        toast.error("Payment failed", "M-Pesa payment was not completed");
+      } else {
+        toast.warning("Payment status", result.status || "Unknown");
+      }
+    } catch (e: any) {
+      toast.error("M-Pesa failed", e.message || "Could not complete STK push");
+    } finally {
+      setMpesaLoading(false);
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 bg-[#E8F4FD] min-h-screen font-sans">
       {/* Header Panel */}
@@ -493,8 +539,14 @@ const PosTerminal = () => {
                         >
                           <div>
                             <p className="font-semibold text-[#0A1F44]">
-                              {r.student.name}{" "}
-                              <span className="text-gray-400 font-normal">({r.student.regNo})</span>
+                              {r.student ? (
+                                <>
+                                  {r.student.name}{" "}
+                                  <span className="text-gray-400 font-normal">({r.student.regNo})</span>
+                                </>
+                              ) : (
+                                <span>Guest <span className="text-gray-400 font-normal">(M-Pesa)</span></span>
+                              )}
                             </p>
                             <p className="text-xs text-gray-400 mt-0.5">
                               {new Date(r.createdAt).toLocaleString()} · {displayReceiptNo(r)}
@@ -823,13 +875,73 @@ const PosTerminal = () => {
                   <span>Processing Sale...</span>
                 </>
               ) : (
-                <span>Complete Sale</span>
+                <span>Complete Sale (Wallet)</span>
               )}
             </button>
+
+            <button
+              type="button"
+              onClick={() => setShowMpesa(true)}
+              disabled={mpesaLoading || cart.length === 0 || !!student}
+              className="w-full py-3 bg-[#15A84F] text-white rounded-xl font-extrabold hover:bg-[#108c40] disabled:opacity-40 disabled:cursor-not-allowed transition duration-200 flex items-center justify-center gap-2 shadow-sm"
+            >
+              <Smartphone size={16} />
+              <span>M-Pesa STK (Guest)</span>
+            </button>
+            {student && cart.length > 0 && (
+              <p className="text-[10px] text-gray-400 text-center">
+                Clear the student to accept a guest M-Pesa payment instead of wallet.
+              </p>
+            )}
           </div>
         </div>
       </div>
       </>
+      )}
+
+      {showMpesa && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden">
+            <div className="px-6 py-5 bg-[#15A84F] text-white flex items-center justify-between">
+              <div>
+                <p className="text-sm font-black uppercase tracking-wider">Guest M-Pesa Payment</p>
+                <p className="text-xs text-green-100 mt-0.5">STK Push · KES {total.toLocaleString()}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => !mpesaLoading && setShowMpesa(false)}
+                className="p-1.5 rounded-lg hover:bg-white/10"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                For non-student customers. Enter their M-Pesa number - they will receive an STK prompt on their phone.
+              </p>
+              <div className="relative flex items-center bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+                <Smartphone className="w-5 h-5 text-gray-400 mr-3" />
+                <input
+                  type="tel"
+                  value={mpesaPhone}
+                  onChange={(e) => setMpesaPhone(e.target.value)}
+                  placeholder="0712345678"
+                  className="w-full bg-transparent outline-none text-lg font-semibold"
+                  disabled={mpesaLoading}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={payGuestWithMpesa}
+                disabled={mpesaLoading}
+                className="w-full py-4 bg-[#15A84F] text-white rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {mpesaLoading ? <Loader2 className="animate-spin" size={18} /> : <Smartphone size={18} />}
+                {mpesaLoading ? "Awaiting M-Pesa PIN..." : `Send STK · KES ${total.toLocaleString()}`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Payment Authentication Overlay */}

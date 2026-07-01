@@ -26,6 +26,8 @@ const emptyStudent = {
   gender: "",
   dateOfBirth: "",
   course: "",
+  className: "",
+  category: "regular",
   password: "",
   parentRelationship: "father",
   parentName: "",
@@ -111,6 +113,8 @@ const ManageStudents: React.FC = () => {
         gender: studentForm.gender,
         dateOfBirth: studentForm.dateOfBirth || null,
         course: studentForm.course || null,
+        className: studentForm.className || null,
+        category: studentForm.category || "regular",
         parentRelationship: studentForm.parentRelationship || null,
         parent: {
           name: studentForm.parentName.trim(),
@@ -206,6 +210,8 @@ const ManageStudents: React.FC = () => {
       gender: s.gender || "",
       dateOfBirth: formatDateInput(s.dateOfBirth),
       course: s.course || "",
+      className: s.className || "",
+      category: s.category || "regular",
       password: "",
       parentRelationship: s.parentRelationship || "father",
       parentName: s.parent?.name || "",
@@ -336,6 +342,22 @@ const ManageStudents: React.FC = () => {
                     <select className={inputCls} value={studentForm.course} onChange={(e) => setField("course", e.target.value)}>
                       <option value="">Select…</option>
                       {COURSE_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Class</label>
+                    <input
+                      className={inputCls}
+                      placeholder="e.g. Year 1 / Form 2 / Grade 6"
+                      value={studentForm.className}
+                      onChange={(e) => setField("className", e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Category</label>
+                    <select className={inputCls} value={studentForm.category} onChange={(e) => setField("category", e.target.value)}>
+                      <option value="regular">Regular</option>
+                      <option value="sponsored">Sponsored</option>
                     </select>
                   </div>
                   <div>
