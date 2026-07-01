@@ -6,8 +6,6 @@ import {
   Pencil,
   Save,
   Trash2,
-  CheckCircle,
-  XCircle,
   List,
   Link2,
   ImagePlus,
