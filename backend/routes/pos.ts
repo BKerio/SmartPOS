@@ -7,6 +7,7 @@ import {
   assertFingerprintUnique,
   fingerprintEnrollmentData,
   FingerprintDuplicateError,
+  getScannerUrl,
   parseFingerprintTemplate,
 } from '@/services/fingerprint';
 import { displayReceiptNo, generateReceiptNo } from '@/services/receipt';
@@ -109,11 +110,10 @@ const startOfUtcWeek = (date: Date) => {
   return new Date(dayStart.getTime() - diff * 24 * 60 * 60 * 1000);
 };
 
-const SCANNER_URL = process.env.FINGERPRINT_SCANNER_URL || 'http://127.0.0.1:17890';
 const SCANNER_TIMEOUT_MS = 8_000;
 
 const verifyFingerprint = async (candidateTemplate: string, storedTemplate: string): Promise<boolean> => {
-  const res = await fetch(`${SCANNER_URL}/check-duplicate`, {
+  const res = await fetch(`${getScannerUrl()}/check-duplicate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ template: candidateTemplate, candidates: [storedTemplate] }),

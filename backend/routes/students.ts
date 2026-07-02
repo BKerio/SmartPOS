@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import prisma from '@/services/prisma';
 import { signToken, ensureAdmin, ensureAuthenticated } from '@/middlewares/auth';
 import { logAuditEvent } from '@/services/audit';
+import { sendParentWelcomeNotifications } from '@/services/parentWelcome';
 import {
   assertFingerprintUnique,
   checkFingerprintUnique,
@@ -107,14 +108,19 @@ type ParentEnrollmentInput = {
   receiveEmail?: boolean;
 };
 
+function buildDefaultParentPassword(phone: string): string {
+  const digits = String(phone || '').replace(/\D/g, '');
+  return (digits.slice(-6).padStart(6, '0') || 'parent1');
+}
+
 const resolveParentId = async (
   parentId: string | null | undefined,
   parentInfo: ParentEnrollmentInput | undefined,
   existingParentId?: string | null,
-): Promise<string | null> => {
-  if (parentId) return parentId;
+): Promise<{ parentId: string | null; welcome?: { parent: { name: string; email: string; phone?: string | null; receiveSms?: boolean; receiveEmail?: boolean }; password: string } }> => {
+  if (parentId) return { parentId };
   if (!parentInfo?.name?.trim() || !parentInfo?.phone?.trim()) {
-    return existingParentId ?? null;
+    return { parentId: existingParentId ?? null };
   }
 
   const phone = parentInfo.phone.trim();
@@ -130,12 +136,16 @@ const resolveParentId = async (
   const existing = await prisma.parent.findUnique({ where: { email } });
   if (existing) {
     await prisma.parent.update({ where: { id: existing.id }, data: parentData });
-    return existing.id;
+    return { parentId: existing.id };
   }
 
-  const hashed = await bcrypt.hash(phone.slice(-6).padStart(6, '0') || 'parent1', 10);
+  const plainPassword = buildDefaultParentPassword(phone);
+  const hashed = await bcrypt.hash(plainPassword, 10);
   const created = await prisma.parent.create({ data: { ...parentData, password: hashed } });
-  return created.id;
+  return {
+    parentId: created.id,
+    welcome: { parent: parentData, password: plainPassword },
+  };
 };
 
 const parseDateOfBirth = (value: unknown): Date | null | undefined => {
@@ -275,7 +285,8 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       }
     }
 
-    const finalParentId = await resolveParentId(parentId, parentInfo);
+    const parentResolved = await resolveParentId(parentId, parentInfo);
+    const finalParentId = parentResolved.parentId;
     const plainPassword = password || finalRegNo.slice(-6);
     const hashed = await bcrypt.hash(plainPassword, 10);
     const student = await prisma.student.create({
@@ -296,6 +307,18 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       },
       select: studentDetailSelect,
     });
+
+    if (parentResolved.welcome && finalParentId) {
+      try {
+        await sendParentWelcomeNotifications({
+          parent: parentResolved.welcome.parent,
+          password: parentResolved.welcome.password,
+          students: [{ name: student.name, regNo: student.regNo }],
+        });
+      } catch (err: any) {
+        console.error('Parent welcome notification error:', err?.message || err);
+      }
+    }
 
     await logAuditEvent({
       eventType: 'student_created',
@@ -507,7 +530,8 @@ router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
     }
 
     if (parentId !== undefined || parentInfo) {
-      data.parentId = await resolveParentId(parentId, parentInfo, current.parentId);
+      const parentResolved = await resolveParentId(parentId, parentInfo, current.parentId);
+      data.parentId = typeof parentResolved === 'string' ? parentResolved : parentResolved.parentId;
     }
 
     if (fingerprintTemplate !== undefined) {

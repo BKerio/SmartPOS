@@ -4,17 +4,13 @@ C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\bin\Debug\net8.0\Fingerprint
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\bin\Debug\net8.0\FingerprintScanner.runtimeconfig.json
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\bin\Debug\net8.0\FingerprintScanner.dll
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\bin\Debug\net8.0\FingerprintScanner.pdb
-C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\bin\Debug\net8.0\libzkfpcsharp.dll
-C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\FingerprintScanner.csproj.AssemblyReference.cache
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\FingerprintScanner.GeneratedMSBuildEditorConfig.editorconfig
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\FingerprintScanner.AssemblyInfoInputs.cache
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\FingerprintScanner.AssemblyInfo.cs
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\FingerprintScanner.csproj.CoreCompileInputs.cache
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\FingerprintScanner.sourcelink.json
-C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\Fingerpr.905062B7.Up2Date
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\FingerprintScanner.dll
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\refint\FingerprintScanner.dll
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\FingerprintScanner.pdb
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\FingerprintScanner.genruntimeconfig.cache
 C:\Users\brian\PROJECTS\SmartPOS\FingerprintScanner\obj\Debug\net8.0\ref\FingerprintScanner.dll
-C:\Users\brian\PROJECTS\SmartPOS\fingerprintscanner\bin\Debug\net8.0\libs\libzkfpcsharp.dll

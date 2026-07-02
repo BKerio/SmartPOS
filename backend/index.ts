@@ -1,5 +1,8 @@
 import dotenv from 'dotenv';
-dotenv.config();
+import path from 'path';
+
+// Always load env from backend/.env even if started from repo root.
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 import express, { Request, Response } from 'express';
 import cors from 'cors';
@@ -18,6 +21,7 @@ import inventoryRoutes  from '@/routes/inventory';
 import financeRoutes    from '@/routes/finance';
 import parentRoutes     from '@/routes/parents';
 import kopokopoRoutes  from '@/routes/kopokopo';
+import fingerprintScannerRoutes from '@/routes/fingerprintScanner';
 import { getSupabaseConfigError, isSupabaseConfigured } from '@/services/supabase';
 import { checkDatabase, connectDatabase } from '@/services/prisma';
 
@@ -112,6 +116,7 @@ app.use('/api/inventory',   inventoryRoutes);
 app.use('/api/finance',     financeRoutes);
 app.use('/api/parents',     parentRoutes);
 app.use('/api/kopokopo',    kopokopoRoutes);
+app.use('/api/fingerprint-scanner', fingerprintScannerRoutes);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Route not found' });

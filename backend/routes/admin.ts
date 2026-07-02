@@ -3,6 +3,9 @@ import bcrypt from 'bcrypt';
 import prisma from '@/services/prisma';
 import { signToken, ensureAdmin } from '@/middlewares/auth';
 import { logAuditEvent } from '@/services/audit';
+import { sendParentWelcomeNotifications } from '@/services/parentWelcome';
+import { isMailConfigured } from '@/services/mail';
+import { isAdvantaSmsConfigured } from '@/services/sms';
 
 const router = Router();
 
@@ -99,6 +102,63 @@ router.put('/profile', ensureAdmin, async (req: Request, res: Response): Promise
     return res.json({ ...updated, _id: updated.id, role: 'admin' });
   } catch (error) {
     return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── POST /api/admin/notifications/test ───────────────────────────────────────
+router.post('/notifications/test', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  const { email, phone, parentName, password, studentName, studentRegNo, dryRun } = req.body || {};
+
+  const config = {
+    mailConfigured: isMailConfigured(),
+    smsConfigured: isAdvantaSmsConfigured(),
+  };
+
+  try {
+    if (!email && !phone) {
+      return res.status(422).json({ message: 'Provide at least email or phone', config });
+    }
+    if (!password) {
+      return res.status(422).json({ message: 'password is required', config });
+    }
+
+    if (dryRun === true) {
+      return res.json({
+        ok: true,
+        dryRun: true,
+        config,
+        wouldSend: {
+          email: Boolean(email && config.mailConfigured),
+          sms: Boolean(phone && config.smsConfigured),
+        },
+      });
+    }
+
+    const parent = {
+      name: String(parentName || 'Test Parent'),
+      email: String(email || ''),
+      phone: phone ? String(phone) : null,
+      receiveEmail: true,
+      receiveSms: true,
+    };
+    const students = [{
+      name: String(studentName || 'Test Student'),
+      regNo: String(studentRegNo || 'TEST-001'),
+    }];
+
+    await sendParentWelcomeNotifications({
+      parent,
+      password: String(password),
+      students,
+    });
+
+    return res.json({ ok: true, config });
+  } catch (err: any) {
+    return res.status(500).json({
+      ok: false,
+      config,
+      error: err?.message || String(err),
+    });
   }
 });
 

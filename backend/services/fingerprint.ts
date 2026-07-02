@@ -1,7 +1,10 @@
 import crypto from 'crypto';
 import prisma from '@/services/prisma';
 
-const SCANNER_URL = process.env.FINGERPRINT_SCANNER_URL || 'http://127.0.0.1:17890';
+export const getScannerUrl = (): string =>
+  (process.env.FINGERPRINT_SCANNER_URL || 'http://127.0.0.1:17890').replace(/\/$/, '');
+
+const SCANNER_URL = getScannerUrl();
 const SCANNER_TIMEOUT_MS = 8_000;
 
 export class FingerprintDuplicateError extends Error {

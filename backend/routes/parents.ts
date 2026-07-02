@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import prisma from '@/services/prisma';
 import { signToken, ensureAdmin, ensureAuthenticated } from '@/middlewares/auth';
 import { logAuditEvent } from '@/services/audit';
+import { sendParentWelcomeNotifications } from '@/services/parentWelcome';
 
 const router = Router();
 
@@ -49,10 +50,22 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
     const result = await prisma.parent.findUnique({
       where: { id: parent.id },
       select: {
-        id: true, name: true, email: true, phone: true, createdAt: true,
+        id: true, name: true, email: true, phone: true, receiveSms: true, receiveEmail: true, createdAt: true,
         students: { select: { id: true, name: true, regNo: true } },
       },
     });
+
+    if (result) {
+      try {
+        await sendParentWelcomeNotifications({
+          parent: result,
+          password: String(password),
+          students: result.students.map((s) => ({ name: s.name, regNo: s.regNo })),
+        });
+      } catch (err: any) {
+        console.error('Parent welcome notification error:', err?.message || err);
+      }
+    }
 
     await logAuditEvent({
       eventType: 'parent_created',

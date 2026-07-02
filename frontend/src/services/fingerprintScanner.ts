@@ -1,7 +1,9 @@
 import API from "@/services/api";
 
+const apiBase = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/api\/?$/, "") ?? "";
 const SCANNER_URL =
-  import.meta.env.VITE_FINGERPRINT_SCANNER_URL || "http://127.0.0.1:17890";
+  import.meta.env.VITE_FINGERPRINT_SCANNER_URL ||
+  (apiBase ? `${apiBase}/api/fingerprint-scanner` : "http://127.0.0.1:17890");
 
 const CAPTURE_TIMEOUT_SEC = 15;
 
