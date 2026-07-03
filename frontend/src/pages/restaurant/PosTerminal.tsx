@@ -15,16 +15,27 @@ import {
   BarChart3,
   Calendar,
   Smartphone,
+  Download,
+  Printer,
+  CheckCircle2,
 } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
 import { captureFingerprint, checkScannerHealth, prepareScanner } from "@/services/fingerprintScanner";
 import { displayReceiptNo } from "@/lib/receipt";
+import {
+  downloadOrderReceipt,
+  printOrderReceipt,
+  receiptFromPosTransaction,
+  type OrderReceiptData,
+} from "@/lib/orderReceipt";
+import OrderReceiptCard from "@/components/OrderReceiptCard";
+import logo from "@/assets/LOGO.png";
 import { initiateStkPushAndWait } from "@/services/kopokopoPayment";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
-interface MenuItem { id: string; name: string; price: number; category: string; isAvailable: boolean; imageUrl?: string; }
+interface MenuItem { id: string; name: string; price: number; category: string; isAvailable: boolean; imageUrl?: string; stockLevel?: number | null; }
 interface CartItem { menuItemId: string; name: string; price: number; quantity: number; }
 interface StudentInfo {
   name: string;
@@ -49,6 +60,7 @@ interface ReceiptItem {
   totalAmount: number;
   status: string;
   createdAt: string;
+  paymentMethod?: string;
   student: { name: string; regNo: string } | null;
   items: { quantity: number; price: number; menuItem: { name: string } }[];
 }
@@ -86,6 +98,32 @@ const PosTerminal = () => {
   const [salesReceipts, setSalesReceipts] = useState<ReceiptItem[]>([]);
   const [salesLoading, setSalesLoading] = useState(false);
   const [expandedReceipt, setExpandedReceipt] = useState<string | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<OrderReceiptData | null>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
+
+  const toReceiptData = (r: ReceiptItem) => receiptFromPosTransaction(r);
+
+  const handlePrintReceipt = async (r: ReceiptItem) => {
+    try {
+      await printOrderReceipt(toReceiptData(r), logo);
+    } catch (e: any) {
+      toast.error("Print failed", e.message);
+    }
+  };
+
+  const handleDownloadReceipt = async (r: ReceiptItem) => {
+    try {
+      await downloadOrderReceipt(toReceiptData(r), logo);
+      toast.success("Receipt downloaded", "Saved as PDF");
+    } catch (e: any) {
+      toast.error("Download failed", e.message);
+    }
+  };
+
+  const closeReceipt = () => {
+    setShowReceipt(false);
+    setLastReceipt(null);
+  };
   const [showMpesa, setShowMpesa] = useState(false);
   const [mpesaPhone, setMpesaPhone] = useState("");
   const [mpesaLoading, setMpesaLoading] = useState(false);
@@ -106,9 +144,13 @@ const PosTerminal = () => {
     }
   }, []);
 
-  useEffect(() => {
+  const fetchMenu = useCallback(() => {
     API.get("/menu").then((r) => setMenu(r.data)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    fetchMenu();
+  }, [fetchMenu]);
 
   useEffect(() => {
     if (view === "sales") {
@@ -293,10 +335,15 @@ const PosTerminal = () => {
       });
       toast.success(
         "Sale complete",
-        `${displayReceiptNo(data.receipt)} · KES ${total} · Balance: KES ${data.newBalance}`,
+        `${displayReceiptNo(data.receipt)} · KES ${total}`,
       );
+      setLastReceipt(
+        receiptFromPosTransaction(data.receipt, { name: student.name, regNo: student.regNo }),
+      );
+      setShowReceipt(true);
       setCart([]);
       setStudent({ ...student, walletBalance: data.newBalance });
+      fetchMenu();
       if (view === "sales" || salesDate === todayDateString()) {
         fetchSalesData(salesDate);
       }
@@ -358,13 +405,45 @@ const PosTerminal = () => {
 
       const status = (result.status || "").toLowerCase();
       if (status === "success" || status === "received" || status === "complete") {
+        const cartSnapshot = [...cart];
+        const saleTotal = total;
+        const phone = mpesaPhone.trim();
+
+        let receiptData: OrderReceiptData | null = null;
+        if (result.posTransactionId) {
+          try {
+            const { data: receipt } = await API.get(`/pos/receipts/${result.posTransactionId}`);
+            receiptData = receiptFromPosTransaction(receipt);
+          } catch {
+            /* fall back to cart snapshot */
+          }
+        }
+        if (!receiptData) {
+          receiptData = {
+            receiptNo: result.posReceiptNo || `ORDER-${Date.now()}`,
+            studentName: "Guest",
+            regNo: phone,
+            items: cartSnapshot.map((c) => ({
+              name: c.name,
+              quantity: c.quantity,
+              price: c.price,
+            })),
+            total: saleTotal,
+            paidAt: new Date().toISOString(),
+            paymentMethod: "M-Pesa",
+          };
+        }
+
         toast.success(
           "M-Pesa sale complete",
-          `${result.posReceiptNo || "ORDER"} · KES ${total.toLocaleString()}`,
+          `${receiptData.receiptNo} · KES ${saleTotal.toLocaleString()}`,
         );
+        setLastReceipt(receiptData);
+        setShowReceipt(true);
         setCart([]);
         setShowMpesa(false);
         setMpesaPhone("");
+        fetchMenu();
         if (view === "sales" || salesDate === todayDateString()) {
           fetchSalesData(salesDate);
         }
@@ -577,6 +656,22 @@ const PosTerminal = () => {
                                 </span>
                               </div>
                             ))}
+                            <div className="flex gap-2 mt-3 pt-3 border-t border-gray-200">
+                              <button
+                                type="button"
+                                onClick={() => handlePrintReceipt(r)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0A1F44] border border-[#0A1F44]/20 rounded-lg hover:bg-[#0A1F44]/5"
+                              >
+                                <Printer size={14} /> Print
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadReceipt(r)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#0A1F44] rounded-lg hover:bg-[#0A1F44]/90"
+                              >
+                                <Download size={14} /> Download PDF
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -630,7 +725,9 @@ const PosTerminal = () => {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {filtered.map((item) => {
-                const available = item.isAvailable !== false;
+                const available =
+                  item.isAvailable !== false &&
+                  (item.stockLevel == null || item.stockLevel > 0);
                 return (
                   <button
                     key={item.id}
@@ -668,6 +765,9 @@ const PosTerminal = () => {
                       <p className="font-extrabold text-[#0A1F44] text-xs leading-tight line-clamp-2">{item.name}</p>
                       <p className="text-[9px] text-gray-400 uppercase tracking-wider font-bold">{item.category}</p>
                       <p className="text-emerald-600 font-black text-sm mt-1">KES {item.price.toLocaleString()}</p>
+                      {item.stockLevel != null && (
+                        <p className="text-[9px] text-gray-400 font-semibold">{item.stockLevel} left</p>
+                      )}
                     </div>
                   </button>
                 );
@@ -1023,6 +1123,34 @@ const PosTerminal = () => {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showReceipt && lastReceipt && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-emerald-600">
+                <CheckCircle2 size={22} />
+                <h3 className="font-bold text-[#0A1F44]">Sale Complete</h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeReceipt}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <OrderReceiptCard data={lastReceipt} />
+            <button
+              type="button"
+              onClick={closeReceipt}
+              className="mt-4 w-full py-3 bg-[#0A1F44] text-white rounded-xl font-bold text-sm hover:bg-[#0A1F44]/90"
+            >
+              New Sale
+            </button>
           </div>
         </div>
       )}

@@ -4,7 +4,7 @@ import {
     LayoutDashboard, User, Boxes, BarChart3, Store, BookOpen,
     PlusCircle, Edit3, RefreshCw, Trash2, ChefHat, FileText, Tags,
     ChevronLeft, ChevronRight, LogOut, Coins, CreditCard, Clock, 
-    Receipt, Scale
+    Receipt, Scale, Monitor,
 } from "lucide-react";
 import { toast } from "@/services/toast";
 import { useAuth } from "@/context/AuthContext";
@@ -28,6 +28,7 @@ const ROLE_CONFIG: Record<string, {
         label: "Restaurant POS",
         menuItems: [
             { name: "POS Terminal", icon: Store, path: "/pos" },
+            { name: "Order Display", icon: Monitor, path: "/kiosk" },
             { name: "Menu Items", icon: BookOpen, path: "/menu-management/list" },
             { name: "Menu Categories", icon: Tags, path: "/menu-management/categories" },
             { name: "Add Menu Item", icon: PlusCircle, path: "/menu-management/add" },

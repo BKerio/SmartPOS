@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useState } from "react";
-import { Users, Plus, Edit, Trash2, X } from "lucide-react";
+﻿import React, { useEffect, useMemo, useState } from "react";
+import { Users, Plus, Edit, Trash2, X, Search } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
@@ -14,6 +14,22 @@ const ManageParents: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [parentForm, setParentForm] = useState(emptyParent);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredParents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return parents;
+    return parents.filter((p) => {
+      const linked = (p.students || [])
+        .map((s: any) => `${s.name || ""} ${s.regNo || ""}`)
+        .join(" ");
+      const haystack = [p.name, p.email, p.phone, linked]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [parents, searchQuery]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -91,11 +107,23 @@ const ManageParents: React.FC = () => {
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 border-b border-gray-100">
             <h2 className="font-bold text-[#0A1F44]">View All Parents</h2>
-            <button onClick={() => { closeForm(); setShowForm(true); }} className="flex items-center gap-2 bg-[#0A1F44] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#0A1F44]/90">
-              <Plus size={16} /> Add a Parent
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3 sm:items-center w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search parents or linked students..."
+                  className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#0A1F44] outline-none"
+                />
+              </div>
+              <button onClick={() => { closeForm(); setShowForm(true); }} className="flex items-center justify-center gap-2 bg-[#0A1F44] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#0A1F44]/90">
+                <Plus size={16} /> Add a Parent
+              </button>
+            </div>
           </div>
 
           {loading ? (
@@ -114,7 +142,9 @@ const ManageParents: React.FC = () => {
                 <tbody>
                   {parents.length === 0 ? (
                     <tr><td colSpan={4} className="p-8 text-center text-gray-400">No parents yet</td></tr>
-                  ) : parents.map((p) => (
+                  ) : filteredParents.length === 0 ? (
+                    <tr><td colSpan={4} className="p-8 text-center text-gray-400">No parents match your search</td></tr>
+                  ) : filteredParents.map((p) => (
                     <tr key={p._id || p.id} className="border-t border-gray-50 hover:bg-gray-50/50">
                       <td className="px-4 py-3 font-semibold">{p.name}</td>
                       <td className="px-4 py-3">

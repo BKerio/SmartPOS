@@ -1,9 +1,16 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { History, ArrowUpCircle, ArrowDownCircle, Receipt, Wallet } from "lucide-react";
+import { History, ArrowUpCircle, ArrowDownCircle, Receipt, Wallet, Download, Printer } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
+import { displayReceiptNo } from "@/lib/receipt";
+import {
+  downloadOrderReceipt,
+  printOrderReceipt,
+  receiptFromApiResponse,
+} from "@/lib/orderReceipt";
+import logo from "@/assets/LOGO.png";
 
 type WalletTx = {
   id: string;
@@ -16,8 +23,10 @@ type WalletTx = {
 
 type ReceiptItem = {
   id: string;
+  receiptNo?: string | null;
   totalAmount: number;
   createdAt: string;
+  paymentMethod?: string;
   items: { quantity: number; price: number; menuItem: { name: string } }[];
 };
 
@@ -29,6 +38,29 @@ const StudentHistory = () => {
   const [transactions, setTransactions] = useState<WalletTx[]>([]);
   const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
   const [balance, setBalance] = useState(0);
+
+  const studentName = localStorage.getItem("studentName") || "Student";
+  const regNo = localStorage.getItem("regNo") || "";
+
+  const toReceiptData = (r: ReceiptItem) =>
+    receiptFromApiResponse(r, { name: studentName, regNo });
+
+  const handlePrintReceipt = async (r: ReceiptItem) => {
+    try {
+      await printOrderReceipt(toReceiptData(r), logo);
+    } catch (e: any) {
+      toast.error("Print failed", e.message);
+    }
+  };
+
+  const handleDownloadReceipt = async (r: ReceiptItem) => {
+    try {
+      await downloadOrderReceipt(toReceiptData(r), logo);
+      toast.success("Receipt downloaded", "Saved as PDF");
+    } catch (e: any) {
+      toast.error("Download failed", e.message);
+    }
+  };
 
   useEffect(() => {
     Promise.all([API.get("/wallet/balance"), API.get("/wallet/history"), API.get("/pos/receipts/me")])
@@ -159,17 +191,33 @@ const StudentHistory = () => {
                   <div className="space-y-3 max-h-[28rem] overflow-y-auto">
                     {receipts.map((r) => (
                       <div key={r.id} className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                        <div className="flex justify-between items-center mb-2">
+                        <div className="flex justify-between items-start gap-2 mb-2">
                           <span className="text-xs text-gray-400">
-                            #{r.id.slice(-8)} · {new Date(r.createdAt).toLocaleString()}
+                            {displayReceiptNo({ receiptNo: r.receiptNo, id: r.id })} · {new Date(r.createdAt).toLocaleString()}
                           </span>
-                          <span className="font-bold text-red-600">-KES {r.totalAmount.toLocaleString()}</span>
+                          <span className="font-bold text-red-600 shrink-0">-KES {r.totalAmount.toLocaleString()}</span>
                         </div>
                         {r.items.map((item, i) => (
                           <p key={i} className="text-sm text-gray-600">
                             {item.menuItem.name} × {item.quantity} - KES {(item.price * item.quantity).toLocaleString()}
                           </p>
                         ))}
+                        <div className="flex gap-2 mt-3 pt-3 border-t border-gray-200">
+                          <button
+                            type="button"
+                            onClick={() => handlePrintReceipt(r)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0A1F44] border border-[#0A1F44]/20 rounded-lg hover:bg-[#0A1F44]/5"
+                          >
+                            <Printer size={14} /> Print
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadReceipt(r)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#0A1F44] rounded-lg hover:bg-[#0A1F44]/90"
+                          >
+                            <Download size={14} /> Download
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

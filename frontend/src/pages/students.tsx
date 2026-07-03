@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Eye, Edit, Trash2, X, User, Phone, Mail, BookOpen, Clock } from "lucide-react";
+import { Plus, Eye, Edit, Trash2, X, User, Phone, Mail, BookOpen, Clock, Search } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 
@@ -17,9 +17,30 @@ interface Student {
 
 const students: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<any>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+
+  const filteredStudents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter((s) => {
+      const haystack = [
+        s.name,
+        s.regNo,
+        s.course,
+        s.email,
+        s.phone,
+        s.gender,
+        s.year?.toString(),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [students, searchQuery]);
 
   const fetchStudents = async () => {
     const { data } = await API.get("/students");
@@ -88,6 +109,17 @@ const students: React.FC = () => {
         </Link>
       </div>
 
+      <div className="relative mb-6">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by name, reg no, course, email, or phone..."
+          className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#0A1F44] focus:border-transparent outline-none"
+        />
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -105,8 +137,14 @@ const students: React.FC = () => {
                   No students found. Add a new student to get started.
                 </td>
               </tr>
+            ) : filteredStudents.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="p-8 text-center text-gray-500">
+                  No students match your search.
+                </td>
+              </tr>
             ) : (
-              students.map((s) => (
+              filteredStudents.map((s) => (
                 <tr key={s._id} className="hover:bg-gray-50/50 transition-colors group">
                   {editId === s._id ? (
                     <td colSpan={4} className="p-4">

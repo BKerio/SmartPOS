@@ -23,6 +23,7 @@ export type StkPaymentResult = {
   walletCredited?: boolean;
   posCompleted?: boolean;
   posReceiptNo?: string;
+  posTransactionId?: string;
   purpose?: string;
 };
 

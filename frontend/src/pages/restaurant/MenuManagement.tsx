@@ -50,10 +50,11 @@ interface MenuItem {
   category: string;
   isAvailable: boolean;
   imageUrl?: string;
+  stockLevel?: number | null;
   ingredients?: MenuIngredient[];
 }
 
-const EMPTY_FORM = { name: "", description: "", price: "", category: "", imageUrl: "" };
+const EMPTY_FORM = { name: "", description: "", price: "", category: "", imageUrl: "", stockLevel: "" };
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ size?: number }> }[] = [
   { id: "list", label: "All Items", icon: List },
@@ -276,6 +277,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
       price: String(item.price),
       category: item.category,
       imageUrl: item.imageUrl || "",
+      stockLevel: item.stockLevel == null ? "" : String(item.stockLevel),
     });
   };
 
@@ -311,6 +313,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
         ...addForm,
         price: Number(addForm.price),
         imageUrl: addForm.imageUrl || undefined,
+        stockLevel: addForm.stockLevel === "" ? null : Number(addForm.stockLevel),
       });
       setAddForm({ ...EMPTY_FORM, category: categories[0]?.name ?? "" });
       await fetchItems();
@@ -336,6 +339,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
         price: Number(draft.price),
         category: draft.category,
         imageUrl: draft.imageUrl || null,
+        stockLevel: draft.stockLevel === "" ? null : Number(draft.stockLevel),
       });
       await fetchItems();
       toast.success("Menu item updated");
@@ -550,6 +554,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
                 <th className="px-5 py-4 text-left font-extrabold tracking-wider">Category</th>
                 <th className="px-5 py-4 text-left font-extrabold tracking-wider">Recipe</th>
                 <th className="px-5 py-4 text-right font-extrabold tracking-wider">Price</th>
+                <th className="px-5 py-4 text-center font-extrabold tracking-wider">Stock</th>
                 <th className="px-5 py-4 text-center font-extrabold tracking-wider">Status</th>
                 <th className="px-5 py-4 text-right font-extrabold tracking-wider">Actions</th>
               </tr>
@@ -557,7 +562,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
             <tbody className="divide-y divide-slate-100">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-gray-400">
+                  <td colSpan={7} className="px-5 py-12 text-center text-gray-400">
                     No menu items yet. Use the <strong>Add</strong> tab.
                   </td>
                 </tr>
@@ -609,6 +614,15 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
                     </td>
                     <td className="px-5 py-4 text-right font-black text-[#0A1F44]">
                       KES {item.price.toLocaleString()}
+                    </td>
+                    <td className="px-5 py-4 text-center">
+                      {item.stockLevel == null ? (
+                        <span className="text-xs text-gray-400">—</span>
+                      ) : (
+                        <span className={`text-xs font-bold ${item.stockLevel <= 0 ? "text-red-600" : "text-gray-700"}`}>
+                          {item.stockLevel}
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-4 text-center">
                       <button
@@ -925,6 +939,19 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
             </div>
           </div>
 
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Stock (portions)</label>
+            <input
+              type="number"
+              min="0"
+              placeholder="Leave blank for unlimited"
+              value={addForm.stockLevel}
+              onChange={(e) => setAddForm({ ...addForm, stockLevel: e.target.value })}
+              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200"
+            />
+            <p className="text-[10px] text-gray-400">Decreases by 1 each time this item is sold. Restock here or in Update.</p>
+          </div>
+
           <button
             type="submit"
             disabled={submitting}
@@ -1101,6 +1128,20 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
                 )}
               </select>
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Stock (portions)</label>
+            <input
+              type="number"
+              min="0"
+              placeholder="Leave blank for unlimited"
+              value={draft.stockLevel}
+              onChange={(e) => setDraft({ ...draft, stockLevel: e.target.value })}
+              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200 disabled:opacity-50"
+              disabled={!selectedId}
+            />
+            <p className="text-[10px] text-gray-400">Increase to restock. Stock decreases automatically when orders are placed.</p>
           </div>
 
           <button

@@ -18,7 +18,8 @@ import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
 import { captureFingerprint, checkScannerHealth, prepareScanner } from "@/services/fingerprintScanner";
-import { displayReceiptNo } from "@/lib/receipt";
+import { receiptFromApiResponse, type OrderReceiptData } from "@/lib/orderReceipt";
+import OrderReceiptCard from "@/components/OrderReceiptCard";
 import logo from "@/assets/LOGO.png";
 
 interface MenuItem {
@@ -72,12 +73,8 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
   const searchRef = useRef<HTMLDivElement>(null);
   const [scannerReady, setScannerReady] = useState<boolean | null>(null);
   const [processing, setProcessing] = useState(false);
-  const [lastReceipt, setLastReceipt] = useState<{
-    receiptNo: string;
-    total: number;
-    balance: number;
-    fingerprintEnrolled?: boolean;
-  } | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<OrderReceiptData | null>(null);
+  const [fingerprintEnrolled, setFingerprintEnrolled] = useState(false);
 
   const isKiosk = mode === "kiosk";
 
@@ -329,12 +326,10 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
         ? await API.post("/pos/kiosk-order", { regNo: active.regNo, ...payload }, publicOpts)
         : await API.post("/pos/student-order", payload);
 
-      setLastReceipt({
-        receiptNo: displayReceiptNo(data.receipt),
-        total: data.receipt.totalAmount,
-        balance: data.newBalance,
-        fingerprintEnrolled: Boolean(data.fingerprintEnrolled),
-      });
+      setLastReceipt(
+        receiptFromApiResponse(data.receipt, { name: active.name, regNo: active.regNo }),
+      );
+      setFingerprintEnrolled(Boolean(data.fingerprintEnrolled));
       setCart([]);
       setPin("");
       setCheckoutStep("success");
@@ -423,6 +418,7 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
     setSearchResults([]);
     setShowResults(false);
     setLastReceipt(null);
+    setFingerprintEnrolled(false);
   };
 
   const activeStudent = isKiosk ? studentPreview : studentProfile;
@@ -433,28 +429,23 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
         <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 text-center border border-gray-100">
           <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-[#0A1F44]">Order Complete!</h1>
-          <p className="text-lg font-black tracking-wide text-[#0A1F44] mt-3">{lastReceipt.receiptNo}</p>
-          <p className="text-xs text-gray-400 mt-1">Keep this receipt number for your records</p>
-          <div className="mt-6 bg-gray-50 rounded-2xl p-5 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Paid</span>
-              <span className="font-bold text-emerald-600">KES {lastReceipt.total.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">New balance</span>
-              <span className="font-bold">KES {lastReceipt.balance.toLocaleString()}</span>
-            </div>
-            {lastReceipt.fingerprintEnrolled && (
-              <p className="text-xs text-teal-600 font-semibold pt-2 border-t border-gray-200">
-                Fingerprint enrolled — you can use it on your next order.
-              </p>
-            )}
+          <p className="text-xs text-gray-400 mt-2">Your receipt is ready to print or download</p>
+
+          <div className="mt-6 text-left">
+            <OrderReceiptCard data={lastReceipt} />
           </div>
+
+          {fingerprintEnrolled && (
+            <p className="text-xs text-teal-600 font-semibold mt-4 pt-4 border-t border-gray-100 text-center">
+              Fingerprint enrolled — you can use it on your next order.
+            </p>
+          )}
+
           <button
             type="button"
             onClick={resetOrder}
             style={{ backgroundColor: BRAND }}
-            className="mt-8 w-full py-4 rounded-2xl text-white font-bold"
+            className="mt-6 w-full py-4 rounded-2xl text-white font-bold"
           >
             Order Again
           </button>

@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useState } from "react";
-import { GraduationCap, Plus, Edit, Trash2, X, Eye, Fingerprint } from "lucide-react";
+﻿import React, { useEffect, useMemo, useState } from "react";
+import { GraduationCap, Plus, Edit, Trash2, X, Eye, Fingerprint, Search } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
@@ -55,9 +55,36 @@ const ManageStudents: React.FC = () => {
   const [editId, setEditId] = useState<string | null>(null);
   const [studentForm, setStudentForm] = useState(emptyStudent);
   const [viewItem, setViewItem] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [scannerReady, setScannerReady] = useState<boolean | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [validatingFingerprint, setValidatingFingerprint] = useState(false);
+
+  const filteredStudents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter((s) => {
+      const haystack = [
+        s.name,
+        s.regNo,
+        s.course,
+        s.className,
+        s.category,
+        s.email,
+        s.phone,
+        s.gender,
+        s.parent?.name,
+        s.parent?.phone,
+        s.parent?.email,
+        s.parentRelationship,
+        s.hasFingerprint ? "enrolled fingerprint" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [students, searchQuery]);
 
   const setField = <K extends keyof typeof emptyStudent>(key: K, value: (typeof emptyStudent)[K]) => {
     setStudentForm((f) => ({ ...f, [key]: value }));
@@ -243,11 +270,23 @@ const ManageStudents: React.FC = () => {
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 border-b border-gray-100">
             <h2 className="font-bold text-[#0A1F44]">All Students</h2>
-            <button onClick={() => { closeForm(); setShowForm(true); }} className="flex items-center gap-2 bg-[#0A1F44] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#0A1F44]/90">
-              <Plus size={16} /> Add Student
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3 sm:items-center w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search students, admission no, parent..."
+                  className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#0A1F44] outline-none"
+                />
+              </div>
+              <button onClick={() => { closeForm(); setShowForm(true); }} className="flex items-center justify-center gap-2 bg-[#0A1F44] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#0A1F44]/90">
+                <Plus size={16} /> Add Student
+              </button>
+            </div>
           </div>
 
           {loading ? (
@@ -268,7 +307,9 @@ const ManageStudents: React.FC = () => {
                 <tbody>
                   {students.length === 0 ? (
                     <tr><td colSpan={6} className="p-8 text-center text-gray-400">No students yet</td></tr>
-                  ) : students.map((s) => (
+                  ) : filteredStudents.length === 0 ? (
+                    <tr><td colSpan={6} className="p-8 text-center text-gray-400">No students match your search</td></tr>
+                  ) : filteredStudents.map((s) => (
                     <tr key={s._id || s.id} className="border-t border-gray-50 hover:bg-gray-50/50">
                       <td className="px-4 py-3">
                         <p className="font-semibold text-gray-900">{s.name}</p>
