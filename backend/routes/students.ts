@@ -117,8 +117,25 @@ const resolveParentId = async (
   parentId: string | null | undefined,
   parentInfo: ParentEnrollmentInput | undefined,
   existingParentId?: string | null,
-): Promise<{ parentId: string | null; welcome?: { parent: { name: string; email: string; phone?: string | null; receiveSms?: boolean; receiveEmail?: boolean }; password: string } }> => {
-  if (parentId) return { parentId };
+): Promise<{
+  parentId: string | null;
+  notify?: {
+    parent: { name: string; email: string; phone?: string | null; receiveSms?: boolean; receiveEmail?: boolean };
+    password?: string;
+  };
+}> => {
+  if (parentId) {
+    if (existingParentId && parentId === existingParentId) return { parentId };
+    const existingById = await prisma.parent.findUnique({
+      where: { id: parentId },
+      select: { id: true, name: true, email: true, phone: true, receiveSms: true, receiveEmail: true },
+    });
+    if (!existingById) return { parentId };
+    return {
+      parentId,
+      notify: { parent: existingById },
+    };
+  }
   if (!parentInfo?.name?.trim() || !parentInfo?.phone?.trim()) {
     return { parentId: existingParentId ?? null };
   }
@@ -136,7 +153,7 @@ const resolveParentId = async (
   const existing = await prisma.parent.findUnique({ where: { email } });
   if (existing) {
     await prisma.parent.update({ where: { id: existing.id }, data: parentData });
-    return { parentId: existing.id };
+    return { parentId: existing.id, notify: { parent: parentData } };
   }
 
   const plainPassword = buildDefaultParentPassword(phone);
@@ -144,7 +161,7 @@ const resolveParentId = async (
   const created = await prisma.parent.create({ data: { ...parentData, password: hashed } });
   return {
     parentId: created.id,
-    welcome: { parent: parentData, password: plainPassword },
+    notify: { parent: parentData, password: plainPassword },
   };
 };
 
@@ -308,11 +325,11 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       select: studentDetailSelect,
     });
 
-    if (parentResolved.welcome && finalParentId) {
+    if (parentResolved.notify && finalParentId) {
       try {
         await sendParentWelcomeNotifications({
-          parent: parentResolved.welcome.parent,
-          password: parentResolved.welcome.password,
+          parent: parentResolved.notify.parent,
+          password: parentResolved.notify.password,
           students: [{ name: student.name, regNo: student.regNo }],
         });
       } catch (err: any) {
@@ -511,6 +528,7 @@ router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
     if (!current) return res.status(404).json({ message: 'Student not found' });
 
     const data: any = {};
+    let parentResolvedForNotify: Awaited<ReturnType<typeof resolveParentId>> | null = null;
     if (name !== undefined) data.name = name;
     if (phone !== undefined) data.phone = phone?.trim() || null;
     if (email !== undefined) data.email = email?.trim() || null;
@@ -530,8 +548,8 @@ router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
     }
 
     if (parentId !== undefined || parentInfo) {
-      const parentResolved = await resolveParentId(parentId, parentInfo, current.parentId);
-      data.parentId = typeof parentResolved === 'string' ? parentResolved : parentResolved.parentId;
+      parentResolvedForNotify = await resolveParentId(parentId, parentInfo, current.parentId);
+      data.parentId = parentResolvedForNotify.parentId;
     }
 
     if (fingerprintTemplate !== undefined) {
@@ -561,6 +579,18 @@ router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
       data,
       select: studentDetailSelect,
     });
+
+    if (parentResolvedForNotify?.notify && data.parentId) {
+      try {
+        await sendParentWelcomeNotifications({
+          parent: parentResolvedForNotify.notify.parent,
+          password: parentResolvedForNotify.notify.password,
+          students: [{ name: student.name, regNo: student.regNo }],
+        });
+      } catch (err: any) {
+        console.error('Parent welcome notification error:', err?.message || err);
+      }
+    }
 
     await logAuditEvent({
       eventType: 'student_updated',

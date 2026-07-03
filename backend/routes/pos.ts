@@ -11,6 +11,7 @@ import {
   parseFingerprintTemplate,
 } from '@/services/fingerprint';
 import { displayReceiptNo, generateReceiptNo } from '@/services/receipt';
+import { deductStockForOrder } from '@/services/inventoryDeduction';
 
 const router = Router();
 
@@ -66,6 +67,14 @@ const mapSaleError = (message: string): { status: number; body: { message: strin
   if (message.startsWith('ITEM_UNAVAILABLE')) {
     const name = message.split(':')[1];
     return { status: 422, body: { message: name ? `${name} is currently unavailable` : 'An item is unavailable' } };
+  }
+  if (message.startsWith('INSUFFICIENT_STOCK')) {
+    const name = message.split(':')[1];
+    return { status: 422, body: { message: name ? `Not enough stock for ${name}` : 'Insufficient stock for one or more items' } };
+  }
+  if (message.startsWith('INSUFFICIENT_INGREDIENT')) {
+    const name = message.split(':')[1];
+    return { status: 422, body: { message: name ? `Insufficient ingredient stock: ${name}` : 'Insufficient ingredient stock' } };
   }
   if (message === 'FINGERPRINT_ALREADY_ENROLLED') {
     return { status: 409, body: { message: 'Fingerprint is already enrolled for this student' } };
@@ -197,6 +206,8 @@ export type { CartLine };
 
 type SelfServiceAuth = { pin?: string; fingerprintTemplate?: string };
 
+const POS_TX_OPTIONS = { maxWait: 10_000, timeout: 20_000 } as const;
+
 async function executeSelfServiceOrder(
   student: {
     id: string;
@@ -278,6 +289,8 @@ async function executeSelfServiceOrder(
       ),
     );
 
+    await deductStockForOrder(tx, orderLines, { userId: cashierId, receiptNo });
+
     const posTx = await tx.posTransaction.create({
       data: {
         studentId: student.id,
@@ -306,7 +319,7 @@ async function executeSelfServiceOrder(
     });
 
     return { student: updatedStudent, posTx, totalAmount, fingerprintEnrolled: Boolean(enrollmentTemplate) };
-  });
+  }, POS_TX_OPTIONS);
 }
 
 /** Cash / M-Pesa guest sale at POS (no student wallet). */
@@ -338,6 +351,8 @@ export async function executeGuestMpesaSale(
       ),
     );
 
+    await deductStockForOrder(tx, orderLines, { userId: cashierId, receiptNo });
+
     const posTx = await tx.posTransaction.create({
       data: {
         cashierId,
@@ -350,7 +365,7 @@ export async function executeGuestMpesaSale(
     });
 
     return { posTx, totalAmount };
-  });
+  }, POS_TX_OPTIONS);
 }
 
 function respondSaleError(res: Response, error: unknown, logLabel: string) {
@@ -746,6 +761,40 @@ router.get('/receipts/me', ensureAuthenticated, async (req: Request, res: Respon
       },
     });
     res.json(receipts);
+  } catch {
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── GET /api/pos/receipts/:id ────────────────────────────────────────────────
+router.get('/receipts/:id', ensureAuthenticated, async (req: Request, res: Response): Promise<void> => {
+  const receiptId = req.params.id as string;
+
+  try {
+    const receipt = await prisma.posTransaction.findUnique({
+      where: { id: receiptId },
+      include: {
+        items: { include: { menuItem: { select: { name: true } } } },
+        student: { select: { id: true, name: true, regNo: true } },
+      },
+    });
+
+    if (!receipt) {
+      res.status(404).json({ message: 'Receipt not found' });
+      return;
+    }
+
+    if (req.user!.role === 'student' && receipt.studentId !== req.user!.id) {
+      res.status(403).json({ message: 'Not authorized to view this receipt' });
+      return;
+    }
+
+    if (!['admin', 'restaurant', 'finance', 'student'].includes(req.user!.role)) {
+      res.status(403).json({ message: 'Not authorized' });
+      return;
+    }
+
+    res.json(receipt);
   } catch {
     res.status(500).json({ message: 'Something went wrong' });
   }

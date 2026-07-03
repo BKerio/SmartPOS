@@ -3,7 +3,7 @@ import { isAdvantaSmsConfigured, sendAdvantaSms } from '@/services/sms';
 
 export async function sendParentWelcomeNotifications(params: {
   parent: { name: string; email: string; phone?: string | null; receiveSms?: boolean; receiveEmail?: boolean };
-  password: string;
+  password?: string;
   students: Array<{ name: string; regNo: string }>;
 }) {
   const { parent, password, students } = params;
@@ -24,8 +24,8 @@ export async function sendParentWelcomeNotifications(params: {
   if (parent.receiveSms !== false && parent.phone && isAdvantaSmsConfigured()) {
     const lines = [
       `Welcome ${parent.name}. Your SmartPOS Parent account is ready.`,
-      `Password: ${password}`,
     ];
+    if (password) lines.push(`Password: ${password}`);
     if (students.length) {
       const s = students.map((st) => `${st.name} (${st.regNo})`).join(', ');
       lines.push(`Student(s): ${s}`);

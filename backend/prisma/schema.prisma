@@ -122,6 +122,7 @@ model MenuItem {
   category    String   // matches MenuCategory.name
   imageUrl    String?
   isAvailable Boolean  @default(true)
+  stockLevel  Int?     // null = unlimited; when set, decrements on each sale
   
   receiptItems PosTransactionItem[]
   ingredients  MenuItemIngredient[]

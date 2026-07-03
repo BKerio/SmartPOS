@@ -42,9 +42,13 @@ router.get('/display', async (_req: Request, res: Response): Promise<any> => {
         category: true,
         imageUrl: true,
         isAvailable: true,
+        stockLevel: true,
       },
     });
-    return res.json(items);
+    const visible = items.filter(
+      (item) => item.stockLevel === null || item.stockLevel > 0,
+    );
+    return res.json(visible);
   } catch (error) {
     console.error('GET /menu/display error:', error);
     return res.status(500).json({ message: 'Something went wrong' });
@@ -350,10 +354,15 @@ router.post('/', ensureAuthenticated, async (req: Request, res: Response): Promi
     return res.status(403).json({ message: 'Not authorized' });
   }
 
-  const { name, description, price, category, imageUrl, isAvailable } = req.body;
+  const { name, description, price, category, imageUrl, isAvailable, stockLevel } = req.body;
   if (!name || !price || !category) {
     return res.status(422).json({ message: 'Name, price, and category are required' });
   }
+
+  const parsedStock =
+    stockLevel === undefined || stockLevel === null || stockLevel === ''
+      ? null
+      : Math.max(0, Math.floor(Number(stockLevel)));
 
   try {
     const item = await prisma.menuItem.create({
@@ -364,6 +373,7 @@ router.post('/', ensureAuthenticated, async (req: Request, res: Response): Promi
         category,
         imageUrl,
         isAvailable: isAvailable ?? true,
+        stockLevel: parsedStock,
       },
     });
 
@@ -459,7 +469,7 @@ router.put('/:id', ensureAuthenticated, async (req: Request, res: Response): Pro
     return res.status(403).json({ message: 'Not authorized' });
   }
 
-  const { name, description, price, category, imageUrl, isAvailable } = req.body;
+  const { name, description, price, category, imageUrl, isAvailable, stockLevel } = req.body;
 
   try {
     const data: any = {};
@@ -469,6 +479,15 @@ router.put('/:id', ensureAuthenticated, async (req: Request, res: Response): Pro
     if (category) data.category = category;
     if (imageUrl !== undefined) data.imageUrl = imageUrl;
     if (isAvailable !== undefined) data.isAvailable = isAvailable;
+    if (stockLevel !== undefined) {
+      data.stockLevel =
+        stockLevel === null || stockLevel === ''
+          ? null
+          : Math.max(0, Math.floor(Number(stockLevel)));
+      if (data.stockLevel !== null && data.stockLevel > 0 && isAvailable === undefined) {
+        data.isAvailable = true;
+      }
+    }
 
     const item = await prisma.menuItem.update({
       where: { id: req.params.id as string },

@@ -278,6 +278,7 @@ async function applyPaymentUpdate(
   }
 
   let posReceiptNo: string | undefined;
+  let posTransactionId: string | undefined;
   if (
     isSuccessStatus(parsed.rawStatus) &&
     payment.purpose === 'pos_sale' &&
@@ -288,16 +289,17 @@ async function applyPaymentUpdate(
       parsed.transactionReference || parsed.reference || payment.id,
     );
     posReceiptNo = posResult?.receiptNo;
+    posTransactionId = posResult?.posTransactionId;
   }
 
   const updated = await prisma.kopoPayment.findUnique({ where: { id: payment.id } });
-  return { payment: updated, posReceiptNo };
+  return { payment: updated, posReceiptNo, posTransactionId };
 }
 
 function buildKopoEmitPayload(
   payment: Awaited<ReturnType<typeof prisma.kopoPayment.findUnique>>,
   parsed: Partial<ParsedKopoPayload>,
-  extras?: { posReceiptNo?: string },
+  extras?: { posReceiptNo?: string; posTransactionId?: string },
 ) {
   return {
     paymentId: payment?.id,
@@ -314,6 +316,7 @@ function buildKopoEmitPayload(
     purpose: payment?.purpose,
     posCompleted: payment?.posCompleted ?? false,
     posReceiptNo: extras?.posReceiptNo,
+    posTransactionId: extras?.posTransactionId,
   };
 }
 
@@ -466,11 +469,13 @@ router.get('/status', async (req: Request, res: Response) => {
 
     let payment = await findKopoPayment(parsed, location);
     let posReceiptNo: string | undefined;
+    let posTransactionId: string | undefined;
 
     if (payment && isSuccessStatus(statusData.status)) {
       const result = await applyPaymentUpdate(payment, parsed);
       payment = result.payment;
       posReceiptNo = result.posReceiptNo;
+      posTransactionId = result.posTransactionId;
     } else if (payment) {
       payment = await prisma.kopoPayment.update({
         where: { id: payment.id },
@@ -492,6 +497,7 @@ router.get('/status', async (req: Request, res: Response) => {
       purpose: payment?.purpose,
       posCompleted: payment?.posCompleted ?? false,
       posReceiptNo,
+      posTransactionId,
     });
   } catch (err: any) {
     console.error('[Kopokopo] Status Check Error:', err?.response?.data || err.message);
@@ -523,11 +529,13 @@ router.post('/payment/callback', async (req: Request, res: Response) => {
     const parsed = parseKopoPayload(payload);
     let payment = await findKopoPayment(parsed);
     let posReceiptNo: string | undefined;
+    let posTransactionId: string | undefined;
 
     if (payment) {
       const result = await applyPaymentUpdate(payment, parsed);
       payment = result.payment;
       posReceiptNo = result.posReceiptNo;
+      posTransactionId = result.posTransactionId;
     } else if (parsed.location || parsed.reference) {
       payment = await prisma.kopoPayment.create({
         data: {
@@ -558,7 +566,7 @@ router.post('/payment/callback', async (req: Request, res: Response) => {
       }
     }
 
-    emitKopokopoUpdate(req, buildKopoEmitPayload(payment, parsed, { posReceiptNo }));
+    emitKopokopoUpdate(req, buildKopoEmitPayload(payment, parsed, { posReceiptNo, posTransactionId }));
 
     res.status(200).json({ message: 'Callback processed successfully' });
   } catch (err: any) {
@@ -601,11 +609,13 @@ router.post('/webhooks', async (req: Request, res: Response) => {
 
       let payment = await findKopoPayment(parsed);
       let posReceiptNo: string | undefined;
+      let posTransactionId: string | undefined;
 
       if (payment) {
         const result = await applyPaymentUpdate(payment, parsed);
         payment = result.payment;
         posReceiptNo = result.posReceiptNo;
+        posTransactionId = result.posTransactionId;
       } else {
         payment = await prisma.kopoPayment.create({
           data: {
@@ -634,7 +644,7 @@ router.post('/webhooks', async (req: Request, res: Response) => {
         }
       }
 
-      emitKopokopoUpdate(req, buildKopoEmitPayload(payment, parsed, { posReceiptNo }));
+      emitKopokopoUpdate(req, buildKopoEmitPayload(payment, parsed, { posReceiptNo, posTransactionId }));
     }
 
     res.status(200).json({ message: 'Webhook received' });

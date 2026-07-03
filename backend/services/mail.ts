@@ -66,7 +66,7 @@ export function isMailConfigured(): boolean {
 export async function sendParentWelcomeEmail(params: {
   to: string;
   parentName: string;
-  password: string;
+  password?: string;
   students: Array<{ name: string; regNo: string }>;
 }) {
   const transport = getTransport();
@@ -77,6 +77,15 @@ export async function sendParentWelcomeEmail(params: {
   const studentHtml = (params.students || [])
     .map((s) => `<li><strong>${escapeHtml(s.name)}</strong> (${escapeHtml(s.regNo)})</li>`)
     .join('');
+  const passwordLine = params.password ? [`Password: ${params.password}`, ''] : [];
+  const passwordHtml = params.password
+    ? `
+        <div style="background:#f5f7fb;border:1px solid #e5e9f2;border-radius:12px;padding:16px;margin:16px 0">
+          <div style="font-size:12px;color:#6b7280;margin-bottom:6px">Password</div>
+          <div style="font-size:22px;font-weight:700;letter-spacing:1px;color:#0A1F44">${escapeHtml(params.password)}</div>
+        </div>
+      `
+    : '';
 
   await transport.sendMail({
     from: `"${fromName}" <${fromAddress}>`,
@@ -87,8 +96,7 @@ export async function sendParentWelcomeEmail(params: {
       `Hello ${params.parentName},`,
       '',
       'Your parent portal account has been created.',
-      `Password: ${params.password}`,
-      '',
+      ...passwordLine,
       'Linked student(s):',
       ...(studentLines.length ? studentLines : ['- (none)']),
       '',
@@ -99,10 +107,7 @@ export async function sendParentWelcomeEmail(params: {
         <h2 style="color:#0A1F44;margin:0 0 12px">${fromName}</h2>
         <p>Hello <strong>${escapeHtml(params.parentName)}</strong>,</p>
         <p>Your parent portal account has been created.</p>
-        <div style="background:#f5f7fb;border:1px solid #e5e9f2;border-radius:12px;padding:16px;margin:16px 0">
-          <div style="font-size:12px;color:#6b7280;margin-bottom:6px">Password</div>
-          <div style="font-size:22px;font-weight:700;letter-spacing:1px;color:#0A1F44">${escapeHtml(params.password)}</div>
-        </div>
+        ${passwordHtml}
         <p style="margin:16px 0 6px">Linked student(s):</p>
         <ul style="margin:0;padding-left:18px">${studentHtml || '<li>(none)</li>'}</ul>
         <p style="color:#6b7280;font-size:12px;margin-top:18px">Please keep this password safe.</p>
