@@ -16,7 +16,7 @@ import ManageStudents from "@/pages/admin/ManageStudents";
 import ManageParents from "@/pages/admin/ManageParents";
 import ManageRestaurantStaff from "@/pages/admin/ManageRestaurantStaff";
 import ManageFinanceOfficers from "@/pages/admin/ManageFinanceOfficers";
-import Settingso from "@/pages/settings";
+import Settings from "@/pages/settings";
 import Register from "@/pages/Register";
 import PendingApprovals from "@/pages/PendingApprovals";
 import Login from "@/pages/Login";
