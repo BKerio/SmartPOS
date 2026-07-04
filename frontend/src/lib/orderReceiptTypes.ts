@@ -2,7 +2,7 @@ export type OrderReceiptLine = {
   name: string;
   quantity: number;
   price: number;
-};
+};;
 
 export type OrderReceiptData = {
   receiptNo: string;
