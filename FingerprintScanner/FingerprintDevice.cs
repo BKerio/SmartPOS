@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using libzkfpcsharp;
 
 sealed class FingerprintDevice : IDisposable
 {
@@ -21,33 +22,15 @@ sealed class FingerprintDevice : IDisposable
         {
             if (_initialized) return IsReady;
 
-            int ret;
-            try
+            int ret = zkfp2.Init();
+            if (ret != zkfperrdef.ZKFP_ERR_OK)
             {
-                ret = ZkFingerprintSdk.Init();
-            }
-            catch (DllNotFoundException)
-            {
-                LastError = OperatingSystem.IsWindows()
-                    ? "ZKTeco SDK not found - install drivers from FingerprintScanner/Setup and ensure libzkfp.dll is in libs/"
-                    : "ZKTeco Linux SDK not found - ensure LinuxSDK/lib-x64/*.so files are copied to the build output libs/ folder";
-                return false;
-            }
-
-            if (ret != ZkFingerprintSdk.ErrOk)
-            {
-                LastError = ret switch
-                {
-                    -1 => "Failed to initialize fingerprint algorithm library",
-                    -2 => DescribeCaptureInitFailure(),
-                    -3 => "No fingerprint scanner connected via USB",
-                    _ => $"Failed to initialize fingerprint SDK (error {ret})",
-                };
+                LastError = "Failed to initialize fingerprint SDK";
                 return false;
             }
 
             _initialized = true;
-            DeviceCount = ZkFingerprintSdk.GetDeviceCount();
+            DeviceCount = zkfp2.GetDeviceCount();
 
             if (DeviceCount <= 0)
             {
@@ -55,7 +38,7 @@ sealed class FingerprintDevice : IDisposable
                 return false;
             }
 
-            _device = ZkFingerprintSdk.OpenDevice(0);
+            _device = zkfp2.OpenDevice(0);
             if (_device == IntPtr.Zero)
             {
                 LastError = "Failed to open fingerprint scanner";
@@ -77,7 +60,7 @@ sealed class FingerprintDevice : IDisposable
             if (!_initialized && !Initialize())
                 throw new InvalidOperationException(LastError ?? "Scanner not initialized");
 
-            _dbHandle = ZkFingerprintSdk.DBInit();
+            _dbHandle = zkfp2.DBInit();
             if (_dbHandle == IntPtr.Zero)
                 throw new InvalidOperationException("Failed to initialize fingerprint matcher");
         }
@@ -96,7 +79,7 @@ sealed class FingerprintDevice : IDisposable
             byte[] fpImage = new byte[1024 * 1024];
             byte[] fpTemplate = new byte[2048];
             int size = 2048;
-            ZkFingerprintSdk.AcquireFingerprint(_device, fpImage, fpTemplate, ref size);
+            zkfp2.AcquireFingerprint(_device, fpImage, fpTemplate, ref size);
             LastError = null;
             return true;
         }
@@ -117,8 +100,8 @@ sealed class FingerprintDevice : IDisposable
             while (DateTime.UtcNow < deadline)
             {
                 size = 2048;
-                int result = ZkFingerprintSdk.AcquireFingerprint(_device, fpImage, fpTemplate, ref size);
-                if (result == ZkFingerprintSdk.ErrOk && size > 0)
+                int result = zkfp2.AcquireFingerprint(_device, fpImage, fpTemplate, ref size);
+                if (result == zkfperrdef.ZKFP_ERR_OK && size > 0)
                 {
                     var template = new byte[size];
                     Array.Copy(fpTemplate, template, size);
@@ -148,7 +131,7 @@ sealed class FingerprintDevice : IDisposable
 
             for (int i = 0; i < existing.Count; i++)
             {
-                int score = ZkFingerprintSdk.DBMatch(db, candidate, existing[i]);
+                int score = zkfp2.DBMatch(db, candidate, existing[i]);
                 if (score > 0)
                     return (true, i, score);
             }
@@ -163,41 +146,21 @@ sealed class FingerprintDevice : IDisposable
         {
             if (_dbHandle != IntPtr.Zero)
             {
-                ZkFingerprintSdk.DBFree(_dbHandle);
+                zkfp2.DBFree(_dbHandle);
                 _dbHandle = IntPtr.Zero;
             }
 
             if (_device != IntPtr.Zero)
             {
-                ZkFingerprintSdk.CloseDevice(_device);
+                zkfp2.CloseDevice(_device);
                 _device = IntPtr.Zero;
             }
 
             if (_initialized)
             {
-                ZkFingerprintSdk.Terminate();
+                zkfp2.Terminate();
                 _initialized = false;
             }
         }
-    }
-
-    private static string DescribeCaptureInitFailure()
-    {
-        if (!OperatingSystem.IsLinux())
-            return "Failed to initialize fingerprint capture library";
-
-        var usbDevices = Directory.Exists("/sys/bus/usb/devices")
-            ? Directory.GetFiles("/sys/bus/usb/devices").Length
-            : 0;
-
-        if (usbDevices == 0)
-        {
-            return "Failed to initialize fingerprint capture library - this host has no USB devices. "
-                + "A cloud VM (e.g. GCP) cannot see a scanner plugged into your local PC. "
-                + "Run 'dotnet run' on the machine where the ZK9500 is physically connected via USB.";
-        }
-
-        return "Failed to initialize fingerprint capture library - USB is present but the ZK9500 was not detected. "
-            + "Check the cable, try another USB port, and ensure your user can access /dev/bus/usb (plugdev group / udev rules).";
     }
 }

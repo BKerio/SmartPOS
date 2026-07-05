@@ -2,22 +2,14 @@
 using System.Text;
 using System.Text.Json;
 
-ZkFingerprintSdk.ConfigureNativeLibraries();
-
 var port = int.TryParse(Environment.GetEnvironmentVariable("FINGERPRINT_PORT"), out var p) ? p : 17890;
-var bind = Environment.GetEnvironmentVariable("FINGERPRINT_BIND") ?? "*";
-var listenHost = bind is "0.0.0.0" or "*" ? "*" : bind;
-
-var corsOrigins = (Environment.GetEnvironmentVariable("FINGERPRINT_CORS_ORIGIN")
-    ?? "http://localhost:5173,https://betterfork.millenium.co.ke")
-    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var origin = Environment.GetEnvironmentVariable("FINGERPRINT_CORS_ORIGIN") ?? "http://localhost:5173";
 
 using var device = new FingerprintDevice();
 var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
 Console.WriteLine("SmartPOS Fingerprint Scanner Service");
-Console.WriteLine($"Listening on http://{listenHost}:{port} (all interfaces)");
-Console.WriteLine($"CORS origins: {string.Join(", ", corsOrigins)}");
+Console.WriteLine($"Listening on http://127.0.0.1:{port}");
 Console.WriteLine("Endpoints: GET /health  POST /prepare  POST /capture  POST /check-duplicate");
 Console.WriteLine("Press Ctrl+C to stop.\n");
 
@@ -30,31 +22,36 @@ else
     Console.WriteLine($"Warning: {device.LastError ?? "Scanner not ready"} - service will retry on capture\n");
 }
 
-HttpListener CreateListener(string host, int port)
+using var listener = new HttpListener();
+// Prefer wildcard prefix when reserved (see register-url.ps1). Matches existing ACL on many setups.
+var prefixes = new[] { $"http://+:{port}/", $"http://127.0.0.1:{port}/" };
+HttpListenerException? lastError = null;
+
+foreach (var prefix in prefixes)
 {
-    var l = new HttpListener();
-    l.Prefixes.Add($"http://{host}:{port}/");
-    return l;
+    listener.Prefixes.Clear();
+    listener.Prefixes.Add(prefix);
+    try
+    {
+        listener.Start();
+        Console.WriteLine($"Bound to {prefix}\n");
+        lastError = null;
+        break;
+    }
+    catch (HttpListenerException ex) when (ex.ErrorCode == 5)
+    {
+        lastError = ex;
+    }
 }
 
-HttpListener listener = CreateListener(listenHost, port);
-try
+if (lastError != null)
 {
-    listener.Start();
-}
-catch (HttpListenerException ex) when (OperatingSystem.IsWindows() && ex.ErrorCode == 5 && listenHost == "*")
-{
-    // Windows requires an URLACL reservation to listen on http://*:PORT/
-    Console.WriteLine($"Access denied binding to http://*:{port}/ on Windows.");
-    Console.WriteLine("Run ONE of the following, then retry:");
-    Console.WriteLine(@"  1) Run PowerShell/CMD as Administrator:");
-    Console.WriteLine($@"     netsh http add urlacl url=http://+:{port}/ user=Everyone");
-    Console.WriteLine(@"  2) Or set FINGERPRINT_BIND=localhost to only listen locally.");
-    Console.WriteLine();
-
-    listener.Close();
-    listener = CreateListener("localhost", port);
-    listener.Start();
+    Console.Error.WriteLine("\nFailed to start HTTP listener (Access denied).");
+    Console.Error.WriteLine("Run PowerShell AS ADMINISTRATOR once from the fingerprintScanner folder:");
+    Console.Error.WriteLine("  .\\register-url.ps1");
+    Console.Error.WriteLine("\nOr manually:");
+    Console.Error.WriteLine($"  netsh http add urlacl url=http://+:{port}/ user={Environment.UserName}");
+    return 1;
 }
 
 using var cts = new CancellationTokenSource();
@@ -73,24 +70,25 @@ try
         if (completed != contextTask) break;
 
         var context = await contextTask;
-        _ = Task.Run(() => HandleRequest(context, device, jsonOptions, corsOrigins), cts.Token);
+        _ = Task.Run(() => HandleRequest(context, device, jsonOptions, origin), cts.Token);
     }
 }
 finally
 {
     listener.Stop();
-    listener.Close();
     Console.WriteLine("\nScanner service stopped.");
 }
 
-static void HandleRequest(HttpListenerContext context, FingerprintDevice device, JsonSerializerOptions jsonOptions, string[] corsOrigins)
+return 0;
+
+static void HandleRequest(HttpListenerContext context, FingerprintDevice device, JsonSerializerOptions jsonOptions, string origin)
 {
     var request = context.Request;
     var response = context.Response;
 
     try
     {
-        AddCors(response, corsOrigins, request.Headers["Origin"]);
+        AddCors(response, origin);
 
         if (request.HttpMethod == "OPTIONS")
         {
@@ -215,12 +213,8 @@ static void HandleRequest(HttpListenerContext context, FingerprintDevice device,
     }
 }
 
-static void AddCors(HttpListenerResponse response, string[] allowedOrigins, string? requestOrigin)
+static void AddCors(HttpListenerResponse response, string origin)
 {
-    var origin = requestOrigin != null && allowedOrigins.Contains(requestOrigin)
-        ? requestOrigin
-        : allowedOrigins[0];
-
     response.Headers.Add("Access-Control-Allow-Origin", origin);
     response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     response.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
