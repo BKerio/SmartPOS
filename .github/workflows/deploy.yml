@@ -23,4 +23,13 @@ jobs:
           script_stop: true
           script: |
             cd /home/pceaserver/SmartPOS
+            # First deploy: pull deploy script before it exists on disk
+            if [[ ! -f scripts/deploy.sh ]]; then
+              cp backend/.env /tmp/smartpos-backend.env.bak
+              test -f frontend/.env && cp frontend/.env /tmp/smartpos-frontend.env.bak
+              git fetch origin
+              git reset --hard origin/master
+              cp /tmp/smartpos-backend.env.bak backend/.env
+              test -f /tmp/smartpos-frontend.env.bak && cp /tmp/smartpos-frontend.env.bak frontend/.env
+            fi
             bash scripts/deploy.sh
