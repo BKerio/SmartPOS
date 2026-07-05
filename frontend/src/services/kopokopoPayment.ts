@@ -11,6 +11,7 @@ export type StkPushOptions = {
   purpose?: StkPurpose;
   items?: { menuItemId: string; quantity: number }[];
   useAuth?: boolean;
+  kiosk?: boolean;
 };
 
 export type StkPaymentResult = {
@@ -50,8 +51,10 @@ export async function initiateStkPushAndWait(
   if (opts.studentId) payload.studentId = opts.studentId;
   if (opts.purpose) payload.purpose = opts.purpose;
   if (opts.items) payload.items = opts.items;
+  if (opts.kiosk) payload.kiosk = true;
 
-  const requestConfig = opts.useAuth === false ? { skipAuthRedirect: true as const } : undefined;
+  const requestConfig =
+    opts.useAuth === false ? { skipAuthRedirect: true as const } : undefined;
 
   let pushData: { location?: string; resumed?: boolean; paymentId?: string };
   try {

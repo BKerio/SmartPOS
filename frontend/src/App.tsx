@@ -45,6 +45,7 @@ import MenuRecipesPage from "@/pages/restaurant/MenuRecipesPage";
 import MenuCategoriesPage from "@/pages/restaurant/MenuCategoriesPage";
 import InventoryPage from "@/pages/restaurant/InventoryPage";
 import SuppliersPage from "@/pages/restaurant/SuppliersPage";
+import ProductionPage from "@/pages/restaurant/ProductionPage";
 import FinanceDashboard from "@/pages/finance/FinanceDashboard";
 import ExpensesPage from "@/pages/finance/ExpensesPage";
 import ReceiptsPage from "@/pages/finance/ReceiptsPage";
@@ -164,6 +165,7 @@ function AppShell() {
           <Route path="/menu-management/categories" element={R(["restaurant"], <MenuCategoriesPage />)} />
           <Route path="/inventory" element={R(["admin", "restaurant", "finance"], <InventoryPage />)} />
           <Route path="/suppliers" element={R(["admin", "restaurant", "finance"], <SuppliersPage />)} />
+          <Route path="/production" element={R(["admin", "restaurant", "finance"], <ProductionPage />)} />
           <Route path="/my-attendance" element={R(["restaurant", "finance"], <StaffAttendanceReport />)} />
 
           {/* Finance */}

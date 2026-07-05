@@ -35,7 +35,12 @@ const statusBadge = (status: string) => {
 };
 
 type StatusFilter = "all" | "success" | "pending" | "failed";
-type SourceFilter = "all" | "till" | "guest" | "wallet_topup" | "wallet_usage";
+type SourceFilter = "all" | "till" | "guest" | "cash" | "wallet_topup" | "wallet_usage";
+
+const isGuestPosRow = (row: CollectionRow) =>
+  row.source === "pos_mpesa" ||
+  row.source === "pos_cash" ||
+  (row.source === "kopo" && row.type === "pos_sale");
 
 const statusBucket = (status: string): StatusFilter => {
   const s = (status || "").toLowerCase();
@@ -55,9 +60,8 @@ const matchesSource = (row: CollectionRow, source: SourceFilter): boolean => {
   if (source === "all") return true;
   if (source === "wallet_topup") return isWalletTopUpRow(row);
   if (source === "wallet_usage") return isWalletUsageRow(row);
-  if (source === "guest") {
-    return row.source === "pos_mpesa" || (row.source === "kopo" && row.type === "pos_sale");
-  }
+  if (source === "cash") return row.source === "pos_cash";
+  if (source === "guest") return isGuestPosRow(row);
   if (source === "till") {
     return row.source === "kopo" && row.type !== "wallet_topup";
   }
@@ -274,15 +278,24 @@ const CollectionsPage = () => {
   };
 
   const totals = useMemo(() => {
-    const topUps = filteredRows
-      .filter((r) => isWalletTopUpRow(r) || r.source === "pos_mpesa" || (r.source === "kopo" && r.amount > 0 && r.type !== "wallet_topup"))
-      .reduce((s, r) => s + Math.abs(r.amount), 0);
+    const inflowRow = (r: CollectionRow) =>
+      isWalletTopUpRow(r) ||
+      r.source === "pos_mpesa" ||
+      r.source === "pos_cash" ||
+      (r.source === "kopo" && r.amount > 0 && r.type !== "wallet_topup");
+
+    const topUps = filteredRows.filter(inflowRow).reduce((s, r) => s + Math.abs(r.amount), 0);
     const walletTopUps = filteredRows.filter(isWalletTopUpRow).reduce((s, r) => s + r.amount, 0);
+    const cashSales = filteredRows
+      .filter((r) => r.source === "pos_cash")
+      .reduce((s, r) => s + r.amount, 0);
     const usage = filteredRows
       .filter((r) => r.type === "purchase")
       .reduce((s, r) => s + Math.abs(r.amount), 0);
-    const tillAttempts = filteredRows.filter((r) => r.source === "kopo" || r.source === "pos_mpesa").length;
-    return { topUps, walletTopUps, usage, tillAttempts };
+    const tillAttempts = filteredRows.filter(
+      (r) => r.source === "kopo" || r.source === "pos_mpesa" || r.source === "pos_cash",
+    ).length;
+    return { topUps, walletTopUps, cashSales, usage, tillAttempts };
   }, [filteredRows]);
 
   return (
@@ -293,7 +306,7 @@ const CollectionsPage = () => {
             <Receipt /> Collections Report
           </h2>
           <p className="text-blue-200 text-sm mt-1">
-            Till M-Pesa, wallet top-ups, guest POS STK, and wallet cafeteria usage
+            Till M-Pesa, guest cash & STK POS, wallet top-ups, and wallet cafeteria usage
           </p>
         </div>
         <div className="flex flex-col sm:items-end gap-3">
@@ -307,7 +320,7 @@ const CollectionsPage = () => {
           </button>
           <div className="text-right space-y-1">
             <p className="text-blue-200 text-xs">
-              Till inflows / Wallet top-ups / Usage · Till records
+              Till inflows / Wallet top-ups / Cash POS / Usage · Records
               {hasActiveFilters && filteredRows.length !== rows.length ? (
                 <span className="ml-1">({filteredRows.length} shown)</span>
               ) : null}
@@ -316,6 +329,8 @@ const CollectionsPage = () => {
               <span className="text-emerald-300">{formatKes(totals.topUps)}</span>
               <span className="text-blue-200"> · </span>
               <span className="text-sky-300">{formatKes(totals.walletTopUps)}</span>
+              <span className="text-blue-200"> · </span>
+              <span className="text-amber-300">{formatKes(totals.cashSales)}</span>
               <span className="text-blue-200"> · </span>
               <span className="text-rose-300">{formatKes(totals.usage)}</span>
               <span className="text-blue-200"> · </span>
@@ -361,7 +376,8 @@ const CollectionsPage = () => {
             <option value="till">Till M-Pesa</option>
             <option value="wallet_topup">Wallet top-ups</option>
             <option value="wallet_usage">Wallet usage</option>
-            <option value="guest">Guest POS</option>
+            <option value="guest">Guest POS (M-Pesa & Cash)</option>
+            <option value="cash">Guest Cash only</option>
           </select>
           <select
             value={filters.status}

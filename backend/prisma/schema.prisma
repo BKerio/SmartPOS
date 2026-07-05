@@ -142,14 +142,34 @@ model MenuItem {
   imageUrl    String?
   isAvailable Boolean  @default(true)
   stockLevel  Int?     // null = unlimited; when set, decrements on each sale
-  
-  receiptItems PosTransactionItem[]
-  ingredients  MenuItemIngredient[]
+  batchYield  Int?     @map("batch_yield") // portions produced per recipe batch (e.g. 60 mandazis)
+
+  receiptItems      PosTransactionItem[]
+  ingredients       MenuItemIngredient[]
+  productionBatches ProductionBatch[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@map("menu_items")
+}
+
+model ProductionBatch {
+  id              String   @id @default(cuid())
+  menuItemId      String   @map("menu_item_id")
+  menuItem        MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  yieldQuantity   Int      @map("yield_quantity")
+  unitPrice       Float    @map("unit_price")
+  expectedRevenue Float    @map("expected_revenue")
+  soldQuantity    Int      @default(0) @map("sold_quantity")
+  soldAmount      Float    @default(0) @map("sold_amount")
+  status          String   @default("active") // active | depleted
+  notes           String?
+  userId          String   @map("user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([menuItemId, status, createdAt])
+  @@map("production_batches")
 }
 
 model MenuItemIngredient {
@@ -172,7 +192,7 @@ model PosTransaction {
   cashierId   String   // The User (restaurant staff) who processed it
   totalAmount Float
   status      String   @default("completed") // completed, voided
-  paymentMethod String @default("wallet") @map("payment_method") // wallet | mpesa
+  paymentMethod String @default("wallet") @map("payment_method") // wallet | mpesa | cash
   
   items       PosTransactionItem[]
 

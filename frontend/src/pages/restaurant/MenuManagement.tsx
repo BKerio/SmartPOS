@@ -51,6 +51,7 @@ interface MenuItem {
   isAvailable: boolean;
   imageUrl?: string;
   stockLevel?: number | null;
+  batchYield?: number | null;
   ingredients?: MenuIngredient[];
 }
 
@@ -219,6 +220,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
 
   const [recipeMenuId, setRecipeMenuId] = useState("");
   const [recipeRows, setRecipeRows] = useState<RecipeRow[]>([]);
+  const [batchYield, setBatchYield] = useState("");
   const [savingRecipe, setSavingRecipe] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
@@ -285,8 +287,11 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
     setRecipeMenuId(menuItemId);
     if (!menuItemId) {
       setRecipeRows([]);
+      setBatchYield("");
       return;
     }
+    const item = items.find((i) => i.id === menuItemId);
+    setBatchYield(item?.batchYield ? String(item.batchYield) : "");
     try {
       const { data } = await API.get(`/menu/${menuItemId}/ingredients`);
       setRecipeRows(
@@ -392,6 +397,9 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
     setSavingRecipe(true);
     try {
       await API.put(`/menu/${recipeMenuId}/ingredients`, { ingredients });
+      await API.put(`/menu/${recipeMenuId}`, {
+        batchYield: batchYield === "" ? null : Math.max(1, Math.floor(Number(batchYield))),
+      });
       toast.success("Recipe saved");
       fetchItems();
     } catch (e: any) {
@@ -1018,12 +1026,12 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
                 )}
               </div>
               <button
-                type="button"
-                onClick={() => setTab("update")}
-                className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition duration-200 shadow-sm"
-              >
-                Proceed to Update Details →
-              </button>
+                 type="button"
+                 onClick={() => setTab("update")}
+                 className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs transition duration-200 shadow-sm"
+               >
+                 Proceed to Update Details →
+               </button>
             </div>
           )}
         </div>
@@ -1214,9 +1222,10 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
           className="bg-white rounded-2xl p-6 border border-slate-100 space-y-5 shadow-sm"
         >
           <div>
-            <h3 className="font-extrabold text-[#0A1F44] text-lg">Recipe / Ingredients</h3>
+            <h3 className="font-extrabold text-[#0A1F44] text-lg">Recipe / Batch Production</h3>
             <p className="text-xs text-gray-400 mt-1 leading-normal">
-              Map inventory items to a menu dish. SmartPOS automatically subtracts ingredients from inventory on POS checkouts.
+              Ingredients are used once per cooking batch (not per sale). Set batch yield — e.g. 1 kg flour makes 60 mandazis.
+              Record batches on the Production page; POS sales track progress toward expected revenue.
             </p>
           </div>
 
@@ -1238,7 +1247,34 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
 
           {recipeMenuId && (
             <div className="space-y-3.5 border-t border-slate-100 pt-5">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Recipe Composition</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Batch yield (portions per cook)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 60 mandazis"
+                    value={batchYield}
+                    onChange={(e) => setBatchYield(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold"
+                  />
+                </div>
+                {recipeMenu && batchYield && Number(batchYield) > 0 && (
+                  <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 flex flex-col justify-center">
+                    <p className="text-[10px] text-emerald-700 font-bold uppercase">Expected per batch</p>
+                    <p className="text-lg font-black text-emerald-900">
+                      KES {(Number(batchYield) * recipeMenu.price).toLocaleString()}
+                    </p>
+                    <p className="text-[10px] text-emerald-600">
+                      {batchYield} × KES {recipeMenu.price}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Ingredients per batch</label>
               <div className="space-y-3">
                 {recipeRows.map((row, idx) => (
                   <div
@@ -1266,12 +1302,12 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
                       </select>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider block">Quantity needed</label>
+                      <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider block">Qty per batch</label>
                       <input
                         type="number"
                         step="any"
                         min="0.001"
-                        placeholder="Qty / serving"
+                        placeholder="e.g. 1 kg"
                         value={row.quantity}
                         onChange={(e) => {
                           const next = [...recipeRows];

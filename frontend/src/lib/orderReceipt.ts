@@ -32,8 +32,24 @@ export function receiptFromPosTransaction(
     })),
     total: receipt.totalAmount,
     paidAt: receipt.createdAt,
-    paymentMethod: receipt.paymentMethod === "mpesa" ? "M-Pesa" : "Wallet",
+    paymentMethod:
+      receipt.paymentMethod === "mpesa"
+        ? "M-Pesa"
+        : receipt.paymentMethod === "cash"
+          ? "Cash"
+          : "Wallet",
   };
+}
+
+export function receiptFromGuestCash(receipt: {
+  id: string;
+  receiptNo?: string | null;
+  totalAmount: number;
+  createdAt: string;
+  paymentMethod?: string;
+  items: { quantity: number; price: number; menuItem: { name: string } }[];
+}): OrderReceiptData {
+  return receiptFromPosTransaction(receipt, { name: "Guest", regNo: "Walk-in · Cash" });
 }
 
 export function receiptFromApiResponse(

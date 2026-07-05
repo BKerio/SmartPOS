@@ -18,6 +18,7 @@ import {
   Download,
   Printer,
   CheckCircle2,
+  Banknote,
 } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
@@ -28,6 +29,7 @@ import {
   downloadOrderReceipt,
   printOrderReceipt,
   receiptFromPosTransaction,
+  receiptFromGuestCash,
   type OrderReceiptData,
 } from "@/lib/orderReceipt";
 import OrderReceiptCard from "@/components/OrderReceiptCard";
@@ -35,7 +37,16 @@ import logo from "@/assets/LOGO.png";
 import { initiateStkPushAndWait } from "@/services/kopokopoPayment";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
-interface MenuItem { id: string; name: string; price: number; category: string; isAvailable: boolean; imageUrl?: string; stockLevel?: number | null; }
+interface MenuItem {
+  id: string; name: string; price: number; category: string; isAvailable: boolean;
+  imageUrl?: string; stockLevel?: number | null; batchYield?: number;
+  kitchenStats?: {
+    portionsReady: number;
+    activeRemaining: number;
+    activeSold: number;
+    expectedPerBatch: number;
+  };
+}
 interface CartItem { menuItemId: string; name: string; price: number; quantity: number; }
 interface StudentInfo {
   name: string;
@@ -127,6 +138,7 @@ const PosTerminal = () => {
   const [showMpesa, setShowMpesa] = useState(false);
   const [mpesaPhone, setMpesaPhone] = useState("");
   const [mpesaLoading, setMpesaLoading] = useState(false);
+  const [cashLoading, setCashLoading] = useState(false);
 
   const fetchSalesData = useCallback(async (date: string) => {
     setSalesLoading(true);
@@ -386,6 +398,36 @@ const PosTerminal = () => {
     }
   };
 
+  const payGuestWithCash = async () => {
+    if (cart.length === 0) return toast.warning("Cart is empty");
+    if (student) return toast.warning("Clear student first", "Cash is for guest walk-in sales");
+
+    const confirmed = await toast.confirm("Confirm cash received?", {
+      description: `Complete guest cash sale for KES ${total.toLocaleString()}`,
+      confirmLabel: "Complete sale",
+    });
+    if (!confirmed) return;
+
+    setCashLoading(true);
+    try {
+      const { data } = await API.post("/pos/cash-sale", {
+        items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
+      });
+      setLastReceipt(receiptFromGuestCash(data.receipt));
+      setShowReceipt(true);
+      setCart([]);
+      fetchMenu();
+      if (view === "sales" || salesDate === todayDateString()) {
+        fetchSalesData(salesDate);
+      }
+      toast.success("Cash sale complete", `${displayReceiptNo(data.receipt)} · KES ${total.toLocaleString()}`);
+    } catch (e: any) {
+      toast.error("Cash sale failed", e.response?.data?.message);
+    } finally {
+      setCashLoading(false);
+    }
+  };
+
   const payGuestWithMpesa = async () => {
     if (cart.length === 0) return toast.warning("Cart is empty");
     if (!/^(01|07)\d{8}$/.test(mpesaPhone.trim())) {
@@ -624,7 +666,7 @@ const PosTerminal = () => {
                                   <span className="text-gray-400 font-normal">({r.student.regNo})</span>
                                 </>
                               ) : (
-                                <span>Guest <span className="text-gray-400 font-normal">(M-Pesa)</span></span>
+                                <span>Guest <span className="text-gray-400 font-normal">({r.paymentMethod === "cash" ? "Cash" : "M-Pesa"})</span></span>
                               )}
                             </p>
                             <p className="text-xs text-gray-400 mt-0.5">
@@ -765,9 +807,18 @@ const PosTerminal = () => {
                       <p className="font-extrabold text-[#0A1F44] text-xs leading-tight line-clamp-2">{item.name}</p>
                       <p className="text-[9px] text-gray-400 uppercase tracking-wider font-bold">{item.category}</p>
                       <p className="text-emerald-600 font-black text-sm mt-1">KES {item.price.toLocaleString()}</p>
-                      {item.stockLevel != null && (
+                      {item.kitchenStats ? (
+                        <div className="mt-1 space-y-0.5">
+                          <p className="text-[9px] font-bold text-indigo-600">{item.kitchenStats.portionsReady} ready to sell</p>
+                          {item.kitchenStats.activeRemaining > 0 && (
+                            <p className="text-[8px] text-amber-700 font-semibold">
+                              KES {item.kitchenStats.activeRemaining.toLocaleString()} still expected
+                            </p>
+                          )}
+                        </div>
+                      ) : item.stockLevel != null ? (
                         <p className="text-[9px] text-gray-400 font-semibold">{item.stockLevel} left</p>
-                      )}
+                      ) : null}
                     </div>
                   </button>
                 );
@@ -982,15 +1033,25 @@ const PosTerminal = () => {
             <button
               type="button"
               onClick={() => setShowMpesa(true)}
-              disabled={mpesaLoading || cart.length === 0 || !!student}
+              disabled={mpesaLoading || cashLoading || cart.length === 0 || !!student}
               className="w-full py-3 bg-[#15A84F] text-white rounded-xl font-extrabold hover:bg-[#108c40] disabled:opacity-40 disabled:cursor-not-allowed transition duration-200 flex items-center justify-center gap-2 shadow-sm"
             >
               <Smartphone size={16} />
               <span>M-Pesa STK (Guest)</span>
             </button>
+
+            <button
+              type="button"
+              onClick={payGuestWithCash}
+              disabled={cashLoading || mpesaLoading || cart.length === 0 || !!student}
+              className="w-full py-3 bg-amber-500 text-white rounded-xl font-extrabold hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition duration-200 flex items-center justify-center gap-2 shadow-sm"
+            >
+              <Banknote size={16} />
+              <span>{cashLoading ? "Processing..." : "Cash (Guest)"}</span>
+            </button>
             {student && cart.length > 0 && (
               <p className="text-[10px] text-gray-400 text-center">
-                Clear the student to accept a guest M-Pesa payment instead of wallet.
+                Clear the student to accept guest cash or M-Pesa payment.
               </p>
             )}
           </div>

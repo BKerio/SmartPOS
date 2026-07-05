@@ -168,7 +168,7 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
       }),
       prisma.posTransaction.findMany({
         where: {
-          paymentMethod: 'mpesa',
+          paymentMethod: { in: ['mpesa', 'cash'] },
           studentId: null,
           status: 'completed',
           ...(createdAt ? { createdAt } : {}),
@@ -265,13 +265,19 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
     const guestPosRows = guestPosSales
       .filter((tx) => !linkedPosIds.has(tx.id))
       .map((tx) => {
+        const isCash = tx.paymentMethod === 'cash';
+        const source = isCash ? 'pos_cash' : 'pos_mpesa';
+        const channel = tx.cashierId === 'kiosk' ? 'Kiosk' : 'POS';
+
         const payload = {
-          source: 'pos_mpesa',
+          source,
           guest: true,
           posTransactionId: tx.id,
           receiptNo: tx.receiptNo,
           totalAmount: tx.totalAmount,
           paymentMethod: tx.paymentMethod,
+          cashierId: tx.cashierId,
+          channel,
           items: tx.items.map((line) => ({
             name: line.menuItem.name,
             quantity: line.quantity,
@@ -282,17 +288,17 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
 
         return {
           id: tx.id,
-          source: 'pos_mpesa',
+          source,
           mpesaNumber: '',
           date: tx.createdAt,
           name: 'Guest',
           admNo: tx.receiptNo || 'GUEST',
-          method: 'M-Pesa Till (Guest POS)',
+          method: isCash ? `Cash (${channel})` : 'M-Pesa Till (Guest POS)',
           amount: tx.totalAmount,
           attemptedAmount: tx.totalAmount,
           status: 'completed',
           type: 'pos_sale',
-          metadata: `Guest · POS receipt ${tx.receiptNo || tx.id}`,
+          metadata: `Guest · ${isCash ? 'Cash' : 'M-Pesa'} · ${channel} · receipt ${tx.receiptNo || tx.id}`,
           transactionRef: tx.receiptNo || tx.id,
           payload,
         };

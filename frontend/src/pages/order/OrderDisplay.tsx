@@ -13,12 +13,15 @@ import {
   Search,
   Fingerprint,
   X,
+  Banknote,
+  Smartphone,
 } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
 import { captureFingerprint, checkScannerHealth, prepareScanner } from "@/services/fingerprintScanner";
-import { receiptFromApiResponse, type OrderReceiptData } from "@/lib/orderReceipt";
+import { receiptFromApiResponse, receiptFromGuestCash, type OrderReceiptData } from "@/lib/orderReceipt";
+import { initiateStkPushAndWait } from "@/services/kopokopoPayment";
 import OrderReceiptCard from "@/components/OrderReceiptCard";
 import logo from "@/assets/LOGO.png";
 
@@ -29,6 +32,9 @@ interface MenuItem {
   category: string;
   description?: string;
   imageUrl?: string;
+  stockLevel?: number | null;
+  batchYield?: number | null;
+  isAvailable?: boolean;
 }
 
 interface CartItem {
@@ -75,15 +81,25 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
   const [processing, setProcessing] = useState(false);
   const [lastReceipt, setLastReceipt] = useState<OrderReceiptData | null>(null);
   const [fingerprintEnrolled, setFingerprintEnrolled] = useState(false);
+  const [showMpesa, setShowMpesa] = useState(false);
+  const [mpesaPhone, setMpesaPhone] = useState("");
+  const [mpesaLoading, setMpesaLoading] = useState(false);
 
   const isKiosk = mode === "kiosk";
 
-  useEffect(() => {
+  const fetchMenu = useCallback(() => {
     API.get<MenuItem[]>("/menu/display", isKiosk ? publicOpts : undefined)
       .then((r) => setMenu(r.data))
       .catch(() => toast.error("Could not load menu"))
       .finally(() => setLoadingMenu(false));
   }, [isKiosk]);
+
+  useEffect(() => {
+    fetchMenu();
+    if (!isKiosk) return;
+    const timer = window.setInterval(fetchMenu, 30_000);
+    return () => window.clearInterval(timer);
+  }, [fetchMenu, isKiosk]);
 
   useEffect(() => {
     if (!isKiosk) {
@@ -207,9 +223,29 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
     setHighlightIndex(-1);
   };
 
+  const isItemAvailable = (item: MenuItem) => {
+    if (item.isAvailable === false) return false;
+    if (item.batchYield) return (item.stockLevel ?? 0) > 0;
+    return item.stockLevel == null || item.stockLevel > 0;
+  };
+
+  const maxQtyForItem = (menuItemId: string) => {
+    const item = menu.find((m) => m.id === menuItemId);
+    if (!item || item.stockLevel == null) return Infinity;
+    return item.stockLevel;
+  };
+
   const addToCart = (item: MenuItem) => {
+    if (!isItemAvailable(item)) {
+      return toast.warning("Out of stock", `${item.name} is not available right now`);
+    }
     setCart((prev) => {
       const existing = prev.find((c) => c.menuItemId === item.id);
+      const maxQty = maxQtyForItem(item.id);
+      if (existing && existing.quantity >= maxQty) {
+        toast.warning("Stock limit", `Only ${maxQty} available`);
+        return prev;
+      }
       if (existing) {
         return prev.map((c) =>
           c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c,
@@ -222,7 +258,16 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
   const updateQty = (id: string, delta: number) => {
     setCart((prev) =>
       prev
-        .map((c) => (c.menuItemId === id ? { ...c, quantity: c.quantity + delta } : c))
+        .map((c) => {
+          if (c.menuItemId !== id) return c;
+          const maxQty = maxQtyForItem(id);
+          const next = c.quantity + delta;
+          if (next > maxQty) {
+            toast.warning("Stock limit", `Only ${maxQty} available`);
+            return { ...c, quantity: maxQty };
+          }
+          return { ...c, quantity: next };
+        })
         .filter((c) => c.quantity > 0),
     );
   };
@@ -345,6 +390,8 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
         setStudentPreview({ ...studentPreview, ...profilePatch });
       }
 
+      fetchMenu();
+
       if (data.fingerprintEnrolled) {
         toast.success("Fingerprint enrolled", "Your fingerprint is saved for future orders");
       }
@@ -352,6 +399,92 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
       toast.error("Order failed", e.response?.data?.message || "Could not complete order");
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const payWithCashGuest = async () => {
+    if (cart.length === 0) return toast.warning("Cart is empty");
+    const confirmed = await toast.confirm("Confirm cash payment?", {
+      description: `Collect KES ${total.toLocaleString()} at the counter, then complete this sale.`,
+      confirmLabel: "Payment received",
+    });
+    if (!confirmed) return;
+
+    setProcessing(true);
+    try {
+      const payload = {
+        items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
+      };
+      const { data } = await API.post("/pos/kiosk-cash-order", payload, publicOpts);
+      setLastReceipt(receiptFromGuestCash(data.receipt));
+      setCart([]);
+      setCheckoutStep("success");
+      fetchMenu();
+      toast.success("Cash sale complete", `Receipt ${data.receipt.receiptNo || ""}`);
+    } catch (e: any) {
+      toast.error("Cash payment failed", e.response?.data?.message || "Could not complete order");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const payWithMpesaGuest = async () => {
+    if (cart.length === 0) return toast.warning("Cart is empty");
+    if (!/^(01|07)\d{8}$/.test(mpesaPhone.trim())) {
+      return toast.error("Invalid phone", "Enter a valid 10-digit M-Pesa number");
+    }
+
+    setMpesaLoading(true);
+    try {
+      const result = await initiateStkPushAndWait(
+        {
+          phone: mpesaPhone.trim(),
+          amount: total,
+          description: "SmartPOS Kiosk Cafeteria Sale",
+          purpose: "pos_sale",
+          items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
+          useAuth: false,
+          kiosk: true,
+        },
+        () => toast.info("STK sent", "Enter M-Pesa PIN on your phone"),
+      );
+
+      const status = (result.status || "").toLowerCase();
+      if (status === "success" || status === "received" || status === "complete") {
+        const cartSnapshot = [...cart];
+        const saleTotal = total;
+        const phone = mpesaPhone.trim();
+
+        let receiptData: OrderReceiptData = {
+          receiptNo: result.posReceiptNo || `ORDER-${Date.now()}`,
+          studentName: "Guest",
+          regNo: phone,
+          items: cartSnapshot.map((c) => ({
+            name: c.name,
+            quantity: c.quantity,
+            price: c.price,
+          })),
+          total: saleTotal,
+          paidAt: new Date().toISOString(),
+          paymentMethod: "M-Pesa",
+        };
+
+        setLastReceipt(receiptData);
+        setCart([]);
+        setShowMpesa(false);
+        setMpesaPhone("");
+        setCheckoutStep("success");
+        fetchMenu();
+        toast.success("M-Pesa payment complete", `${receiptData.receiptNo} · KES ${saleTotal.toLocaleString()}`);
+      } else if (status === "failed" || status === "error") {
+        toast.error("Payment failed", "M-Pesa payment was not completed");
+      } else {
+        toast.warning("Payment status", result.status || "Unknown");
+      }
+    } catch (e: any) {
+      toast.error("M-Pesa failed", e.message || "Could not complete STK push");
+    } finally {
+      setMpesaLoading(false);
     }
   };
 
@@ -419,6 +552,8 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
     setShowResults(false);
     setLastReceipt(null);
     setFingerprintEnrolled(false);
+    setShowMpesa(false);
+    setMpesaPhone("");
   };
 
   const activeStudent = isKiosk ? studentPreview : studentProfile;
@@ -509,13 +644,25 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
             <Loader size="sm" title="Loading menu..." className="py-16" />
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 overflow-y-auto pb-4">
-              {filtered.map((item) => (
+              {filtered.map((item) => {
+                const available = isItemAvailable(item);
+                return (
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => addToCart(item)}
-                  className="bg-white rounded-2xl border border-gray-100 p-4 text-left shadow-sm hover:shadow-md hover:border-[#0A1F44]/20 transition active:scale-[0.98]"
+                  onClick={() => available && addToCart(item)}
+                  disabled={!available}
+                  className={`bg-white rounded-2xl border p-4 text-left shadow-sm transition active:scale-[0.98] relative ${
+                    available
+                      ? "border-gray-100 hover:shadow-md hover:border-[#0A1F44]/20"
+                      : "border-gray-200 opacity-60 cursor-not-allowed"
+                  }`}
                 >
+                  {!available && (
+                    <span className="absolute top-2 right-2 px-1.5 py-0.5 text-[8px] font-black uppercase bg-red-600 text-white rounded">
+                      Out
+                    </span>
+                  )}
                   {item.imageUrl ? (
                     <img
                       src={item.imageUrl}
@@ -530,8 +677,12 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
                   <p className="font-bold text-[#0A1F44] text-sm leading-tight">{item.name}</p>
                   <p className="text-xs text-gray-400 mt-1 line-clamp-2">{item.description}</p>
                   <p className="text-emerald-600 font-extrabold mt-2">KES {item.price}</p>
+                  {item.stockLevel != null && (
+                    <p className="text-[10px] text-indigo-600 font-bold mt-1">{item.stockLevel} available</p>
+                  )}
                 </button>
-              ))}
+              );
+              })}
             </div>
           )}
         </main>
@@ -587,8 +738,30 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
                   style={{ backgroundColor: BRAND }}
                   className="w-full py-4 rounded-2xl text-white font-bold disabled:opacity-40"
                 >
-                  Checkout
+                  {isKiosk ? "Pay with Wallet" : "Checkout"}
                 </button>
+                {isKiosk && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={mpesaLoading || processing || cart.length === 0}
+                      onClick={() => setShowMpesa(true)}
+                      className="w-full py-4 rounded-2xl bg-[#15A84F] hover:bg-[#108c40] text-white font-bold disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      <Smartphone size={18} />
+                      Pay M-Pesa STK · KES {total.toLocaleString()}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={processing || mpesaLoading || cart.length === 0}
+                      onClick={payWithCashGuest}
+                      className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-bold disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      <Banknote size={18} />
+                      {processing ? "Processing..." : `Pay Cash · KES ${total.toLocaleString()}`}
+                    </button>
+                  </>
+                )}
               </div>
             </>
           )}
@@ -899,6 +1072,52 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
           )}
         </aside>
       </div>
+
+      {isKiosk && showMpesa && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden">
+            <div className="px-6 py-5 bg-[#15A84F] text-white flex items-center justify-between">
+              <div>
+                <p className="text-sm font-black uppercase tracking-wider">M-Pesa STK Payment</p>
+                <p className="text-xs text-green-100 mt-0.5">KES {total.toLocaleString()}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => !mpesaLoading && setShowMpesa(false)}
+                className="p-1.5 rounded-lg hover:bg-white/10"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                Enter your M-Pesa number. You will receive an STK prompt on your phone to complete payment.
+              </p>
+              <div className="relative flex items-center bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+                <Smartphone className="w-5 h-5 text-gray-400 mr-3 shrink-0" />
+                <input
+                  type="tel"
+                  value={mpesaPhone}
+                  onChange={(e) => setMpesaPhone(e.target.value)}
+                  placeholder="0712345678"
+                  className="w-full bg-transparent outline-none text-lg font-semibold"
+                  disabled={mpesaLoading}
+                  autoFocus
+                />
+              </div>
+              <button
+                type="button"
+                onClick={payWithMpesaGuest}
+                disabled={mpesaLoading}
+                className="w-full py-4 bg-[#15A84F] text-white rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {mpesaLoading ? <Loader2 className="animate-spin" size={18} /> : <Smartphone size={18} />}
+                {mpesaLoading ? "Awaiting M-Pesa PIN..." : `Send STK · KES ${total.toLocaleString()}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -322,11 +322,11 @@ async function executeSelfServiceOrder(
   }, POS_TX_OPTIONS);
 }
 
-/** Cash / M-Pesa guest sale at POS (no student wallet). */
-export async function executeGuestMpesaSale(
+/** Guest walk-in sale (cash or M-Pesa) — no student wallet. */
+export async function executeGuestSale(
   cashierId: string,
   items: CartLine[],
-  _mpesaReference: string,
+  paymentMethod: 'cash' | 'mpesa',
 ) {
   return prisma.$transaction(async (tx) => {
     const itemIds = items.map((i) => i.menuItemId);
@@ -358,7 +358,7 @@ export async function executeGuestMpesaSale(
         cashierId,
         totalAmount,
         receiptNo,
-        paymentMethod: 'mpesa',
+        paymentMethod,
         items: { create: orderLines },
       },
       include: { items: { include: { menuItem: { select: { name: true } } } } },
@@ -366,6 +366,15 @@ export async function executeGuestMpesaSale(
 
     return { posTx, totalAmount };
   }, POS_TX_OPTIONS);
+}
+
+/** @deprecated use executeGuestSale */
+export async function executeGuestMpesaSale(
+  cashierId: string,
+  items: CartLine[],
+  _mpesaReference: string,
+) {
+  return executeGuestSale(cashierId, items, 'mpesa');
 }
 
 function respondSaleError(res: Response, error: unknown, logLabel: string) {
@@ -422,6 +431,45 @@ router.post('/sale', ensureAuthenticated, async (req: Request, res: Response): P
     });
   } catch (error: unknown) {
     respondSaleError(res, error, 'POS Sale Error');
+  }
+});
+
+// ─── POST /api/pos/cash-sale ──────────────────────────────────────────────────
+router.post('/cash-sale', ensureAuthenticated, async (req: Request, res: Response): Promise<void> => {
+  if (!['admin', 'restaurant'].includes(req.user!.role)) {
+    res.status(403).json({ message: 'Only restaurant staff can process sales' });
+    return;
+  }
+
+  const { items } = req.body as { items?: CartLine[] };
+  if (!Array.isArray(items) || items.length === 0) {
+    res.status(422).json({ message: 'Cart items are required' });
+    return;
+  }
+
+  const cashierId = req.user!.id;
+
+  try {
+    const result = await executeGuestSale(cashierId, items, 'cash');
+
+    await logAuditEvent({
+      eventType: 'pos_cash_sale',
+      userType: req.user!.role,
+      userId: req.user!.id,
+      userName: req.user!.name,
+      action: 'Cash Sale',
+      description: `Cash sale of KES ${result.totalAmount}`,
+      metadata: { receiptId: result.posTx.id },
+      ipAddress: req.ip,
+    });
+
+    res.status(201).json({
+      message: 'Cash sale completed',
+      receipt: result.posTx,
+      totalAmount: result.totalAmount,
+    });
+  } catch (error: unknown) {
+    respondSaleError(res, error, 'POS cash sale error');
   }
 });
 
@@ -615,6 +663,39 @@ router.post('/kiosk-order', async (req: Request, res: Response): Promise<void> =
     });
   } catch (error: unknown) {
     respondSaleError(res, error, 'Kiosk order error');
+  }
+});
+
+// ─── POST /api/pos/kiosk-cash-order ───────────────────────────────────────────
+router.post('/kiosk-cash-order', async (req: Request, res: Response): Promise<void> => {
+  const { items } = req.body as { items?: CartLine[] };
+
+  if (!Array.isArray(items) || items.length === 0) {
+    res.status(422).json({ message: 'Cart items are required' });
+    return;
+  }
+
+  try {
+    const result = await executeGuestSale('kiosk', items, 'cash');
+
+    await logAuditEvent({
+      eventType: 'kiosk_cash_order',
+      userType: 'guest',
+      userId: 'kiosk',
+      userName: 'Kiosk Guest',
+      action: 'Kiosk Cash Order',
+      description: `Kiosk cash sale of KES ${result.totalAmount}`,
+      metadata: { receiptId: result.posTx.id },
+      ipAddress: req.ip,
+    });
+
+    res.status(201).json({
+      message: 'Cash order completed',
+      receipt: result.posTx,
+      totalAmount: result.totalAmount,
+    });
+  } catch (error: unknown) {
+    respondSaleError(res, error, 'Kiosk cash order error');
   }
 });
 

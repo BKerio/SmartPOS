@@ -5,6 +5,8 @@ import prisma from '@/services/prisma';
 import supabase, { getSupabaseConfigError, isSupabaseConfigured } from '@/services/supabase';
 import { ensureAuthenticated } from '@/middlewares/auth';
 import { logAuditEvent } from '@/services/audit';
+import { recordProduction } from '@/services/production';
+import { ensureBatchStockTracking, getKitchenBoard } from '@/services/kitchenBoard';
 
 function devErrorDetail(error: unknown): string | undefined {
   if (process.env.NODE_ENV === 'production') return undefined;
@@ -28,11 +30,20 @@ const upload = multer({
 });
 
 // ─── GET /api/menu/display ────────────────────────────────────────────────────
-// Public cafeteria menu for student kiosks (no stock or recipe data)
+// Public cafeteria menu for kiosks — same stock rules as staff POS
+function isMenuItemVisible(item: {
+  isAvailable: boolean;
+  stockLevel: number | null;
+  batchYield: number | null;
+}): boolean {
+  if (!item.isAvailable) return false;
+  if (item.batchYield) return (item.stockLevel ?? 0) > 0;
+  return item.stockLevel === null || item.stockLevel > 0;
+}
+
 router.get('/display', async (_req: Request, res: Response): Promise<any> => {
   try {
     const items = await prisma.menuItem.findMany({
-      where: { isAvailable: true },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
       select: {
         id: true,
@@ -43,11 +54,10 @@ router.get('/display', async (_req: Request, res: Response): Promise<any> => {
         imageUrl: true,
         isAvailable: true,
         stockLevel: true,
+        batchYield: true,
       },
     });
-    const visible = items.filter(
-      (item) => item.stockLevel === null || item.stockLevel > 0,
-    );
+    const visible = items.filter(isMenuItemVisible);
     return res.json(visible);
   } catch (error) {
     console.error('GET /menu/display error:', error);
@@ -308,14 +318,151 @@ router.post(
   },
 );
 
+// ─── GET /api/menu/kitchen-board ──────────────────────────────────────────────
+router.get('/kitchen-board', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (!['admin', 'restaurant', 'finance'].includes(req.user!.role)) {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
+
+  try {
+    const board = await getKitchenBoard();
+    return res.json(board);
+  } catch (error) {
+    console.error('GET /menu/kitchen-board error:', error);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── GET /api/menu/production-batches ───────────────────────────────────────
+router.get('/production-batches', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (!['admin', 'restaurant', 'finance'].includes(req.user!.role)) {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
+
+  const { menuItemId, status, limit } = req.query;
+  const take = Math.min(Number(limit) || 100, 500);
+
+  try {
+    const batches = await prisma.productionBatch.findMany({
+      where: {
+        ...(menuItemId ? { menuItemId: String(menuItemId) } : {}),
+        ...(status ? { status: String(status) } : {}),
+      },
+      include: {
+        menuItem: { select: { id: true, name: true, price: true, batchYield: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take,
+    });
+
+    const enriched = batches.map((b) => ({
+      ...b,
+      remainingQuantity: Math.max(0, b.yieldQuantity - b.soldQuantity),
+      remainingExpected: Math.max(0, b.expectedRevenue - b.soldAmount),
+    }));
+
+    return res.json(enriched);
+  } catch (error) {
+    console.error('GET /menu/production-batches error:', error);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── POST /api/menu/:id/produce ─────────────────────────────────────────────
+router.post('/:id/produce', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (!canManageMenu(req.user!.role)) {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
+
+  const menuItemId = req.params.id as string;
+  const batchCount = Math.max(1, Math.floor(Number(req.body.batchCount) || 1));
+  const notes = typeof req.body.notes === 'string' ? req.body.notes.trim() : undefined;
+
+  try {
+    const result = await prisma.$transaction(async (tx) =>
+      recordProduction(tx, menuItemId, batchCount, req.user!.id, notes),
+    );
+
+    await logAuditEvent({
+      eventType: 'production_batch',
+      userType: req.user!.role,
+      userId: req.user!.id,
+      userName: req.user!.name,
+      action: 'Record production',
+      description: `Produced ${result.yieldTotal} ${result.menuItem.name} (expected KES ${result.expectedRevenue.toLocaleString()})`,
+      metadata: { batchId: result.batch.id, menuItemId },
+      ipAddress: req.ip,
+    });
+
+    return res.status(201).json({
+      batch: result.batch,
+      yieldTotal: result.yieldTotal,
+      expectedRevenue: result.expectedRevenue,
+      menuItemName: result.menuItem.name,
+      unitPrice: result.menuItem.price,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === 'MENU_ITEM_NOT_FOUND') {
+      return res.status(404).json({ message: 'Menu item not found' });
+    }
+    if (message === 'BATCH_YIELD_REQUIRED') {
+      return res.status(422).json({
+        message: 'Set batch yield on the recipe first (e.g. 60 mandazis per batch)',
+      });
+    }
+    if (message === 'RECIPE_REQUIRED') {
+      return res.status(422).json({ message: 'Add recipe ingredients before recording production' });
+    }
+    if (message.startsWith('INSUFFICIENT_INGREDIENT')) {
+      const name = message.split(':')[1];
+      return res.status(422).json({
+        message: name ? `Not enough ${name} in stock to cook this batch` : 'Insufficient ingredients',
+      });
+    }
+    console.error('POST /menu/:id/produce error:', error);
+    return res.status(500).json({ message: 'Failed to record production' });
+  }
+});
+
 // ─── GET /api/menu ────────────────────────────────────────────────────────────
-router.get('/', ensureAuthenticated, async (_req: Request, res: Response): Promise<any> => {
+router.get('/', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
   try {
     const items = await prisma.menuItem.findMany({
-      where: { isAvailable: true },
       orderBy: { category: 'asc' },
     });
-    return res.json(items);
+
+    const visibleItems = items.filter((item) => {
+      if (!item.isAvailable) return false;
+      if (item.batchYield) return (item.stockLevel ?? 0) > 0;
+      return item.stockLevel === null || item.stockLevel > 0;
+    });
+
+    if (!['admin', 'restaurant', 'finance'].includes(req.user?.role ?? '')) {
+      return res.json(visibleItems);
+    }
+
+    const board = await getKitchenBoard();
+    const boardById = new Map(board.map((d) => [d.id, d]));
+
+    const enriched = visibleItems.map((item) => {
+      const kitchen = boardById.get(item.id);
+      if (!kitchen) return item;
+      return {
+        ...item,
+        batchYield: kitchen.batchYield,
+        kitchenStats: {
+          portionsReady: kitchen.portionsReady,
+          canCookBatches: kitchen.canCookBatches,
+          expectedPerBatch: kitchen.expectedPerBatch,
+          activeSold: kitchen.totals.activeSold,
+          activeRemaining: kitchen.totals.activeRemaining,
+          activeExpected: kitchen.totals.activeExpected,
+        },
+      };
+    });
+
+    return res.json(enriched);
   } catch (error) {
     return res.status(500).json({ message: 'Something went wrong' });
   }
@@ -354,7 +501,7 @@ router.post('/', ensureAuthenticated, async (req: Request, res: Response): Promi
     return res.status(403).json({ message: 'Not authorized' });
   }
 
-  const { name, description, price, category, imageUrl, isAvailable, stockLevel } = req.body;
+  const { name, description, price, category, imageUrl, isAvailable, stockLevel, batchYield } = req.body;
   if (!name || !price || !category) {
     return res.status(422).json({ message: 'Name, price, and category are required' });
   }
@@ -363,6 +510,11 @@ router.post('/', ensureAuthenticated, async (req: Request, res: Response): Promi
     stockLevel === undefined || stockLevel === null || stockLevel === ''
       ? null
       : Math.max(0, Math.floor(Number(stockLevel)));
+
+  const parsedBatchYield =
+    batchYield === undefined || batchYield === null || batchYield === ''
+      ? null
+      : Math.max(1, Math.floor(Number(batchYield)));
 
   try {
     const item = await prisma.menuItem.create({
@@ -374,6 +526,7 @@ router.post('/', ensureAuthenticated, async (req: Request, res: Response): Promi
         imageUrl,
         isAvailable: isAvailable ?? true,
         stockLevel: parsedStock,
+        batchYield: parsedBatchYield,
       },
     });
 
@@ -450,6 +603,14 @@ router.put('/:id/ingredients', ensureAuthenticated, async (req: Request, res: Re
         : []),
     ]);
 
+    const menuWithYield = await prisma.menuItem.findUnique({
+      where: { id: menuItemId },
+      select: { batchYield: true },
+    });
+    if (menuWithYield?.batchYield) {
+      await ensureBatchStockTracking(menuItemId, menuWithYield.batchYield);
+    }
+
     const rows = await prisma.menuItemIngredient.findMany({
       where: { menuItemId },
       include: {
@@ -469,7 +630,7 @@ router.put('/:id', ensureAuthenticated, async (req: Request, res: Response): Pro
     return res.status(403).json({ message: 'Not authorized' });
   }
 
-  const { name, description, price, category, imageUrl, isAvailable, stockLevel } = req.body;
+  const { name, description, price, category, imageUrl, isAvailable, stockLevel, batchYield } = req.body;
 
   try {
     const data: any = {};
@@ -488,11 +649,21 @@ router.put('/:id', ensureAuthenticated, async (req: Request, res: Response): Pro
         data.isAvailable = true;
       }
     }
+    if (batchYield !== undefined) {
+      data.batchYield =
+        batchYield === null || batchYield === ''
+          ? null
+          : Math.max(1, Math.floor(Number(batchYield)));
+    }
 
     const item = await prisma.menuItem.update({
       where: { id: req.params.id as string },
       data,
     });
+
+    if (data.batchYield) {
+      await ensureBatchStockTracking(item.id, data.batchYield);
+    }
 
     return res.json(item);
   } catch (error: any) {

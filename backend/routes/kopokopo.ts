@@ -483,6 +483,7 @@ router.post('/stkpush', async (req: Request, res: Response) => {
     studentId,
     purpose: rawPurpose,
     items,
+    kiosk: kioskFlag,
   } = req.body as {
     phone: string;
     amount: number;
@@ -490,6 +491,7 @@ router.post('/stkpush', async (req: Request, res: Response) => {
     studentId?: string;
     purpose?: KopoPurpose;
     items?: PosCartLine[];
+    kiosk?: boolean;
   };
 
   if (!phone || !amount) {
@@ -518,7 +520,8 @@ router.post('/stkpush', async (req: Request, res: Response) => {
     }
     linkedStudent = student;
   } else if (purpose === 'pos_sale') {
-    if (!user || !['admin', 'restaurant'].includes(user.role)) {
+    const isKiosk = Boolean(kioskFlag);
+    if (!isKiosk && (!user || !['admin', 'restaurant'].includes(user.role))) {
       res.status(403).json({ error: 'Only restaurant staff can initiate POS M-Pesa sales' });
       return;
     }
@@ -535,7 +538,18 @@ router.post('/stkpush', async (req: Request, res: Response) => {
   }
 
   try {
-    console.log('[Kopokopo] Initiating STK Push →', { phone, amount: numericAmount, studentId, purpose, user: user?.role });
+    const isKioskPos = purpose === 'pos_sale' && Boolean(kioskFlag);
+    const payerId = user?.id || (isKioskPos ? 'kiosk' : null);
+    const payerRole = user?.role || (isKioskPos ? 'kiosk' : null);
+
+    console.log('[Kopokopo] Initiating STK Push →', {
+      phone,
+      amount: numericAmount,
+      studentId,
+      purpose,
+      user: user?.role,
+      kiosk: isKioskPos,
+    });
 
     const existingPending = await resolvePhonePendingBlock(phone);
     if (existingPending) {
@@ -544,7 +558,8 @@ router.post('/stkpush', async (req: Request, res: Response) => {
           where: { id: existingPending.id },
           data: {
             posCart: items,
-            payerUserId: user?.id || existingPending.payerUserId,
+            payerUserId: payerId || existingPending.payerUserId,
+            payerRole: payerRole || existingPending.payerRole,
           },
         });
       }
@@ -559,8 +574,8 @@ router.post('/stkpush', async (req: Request, res: Response) => {
         amount: numericAmount,
         phone,
         studentId: studentId || null,
-        payerUserId: user?.id || null,
-        payerRole: user?.role || null,
+        payerUserId: payerId,
+        payerRole: payerRole,
         purpose,
         posCart: purpose === 'pos_sale' ? items : undefined,
         description:
@@ -568,7 +583,9 @@ router.post('/stkpush', async (req: Request, res: Response) => {
           (linkedStudent
             ? `Wallet top-up for ${linkedStudent.name} · ${linkedStudent.regNo}`
             : purpose === 'pos_sale'
-              ? 'SmartPOS Cafeteria Sale'
+              ? isKioskPos
+                ? 'SmartPOS Kiosk Cafeteria Sale'
+                : 'SmartPOS Cafeteria Sale'
               : purpose === 'wallet_topup'
                 ? 'SmartPOS Wallet Top-up'
                 : 'SmartPOS Payment'),

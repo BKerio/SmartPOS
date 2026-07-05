@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
+import { allocateSalesToBatches } from '@/services/production';
 
-type OrderLine = { menuItemId: string; quantity: number };
+type OrderLine = { menuItemId: string; quantity: number; price?: number };
 
 type DeductOptions = {
   userId: string;
@@ -27,18 +28,26 @@ export async function deductStockForOrder(
 
   const menuItems = await tx.menuItem.findMany({
     where: { id: { in: menuItemIds } },
-    select: { id: true, name: true, stockLevel: true },
+    select: { id: true, name: true, stockLevel: true, batchYield: true },
   });
   const menuById = new Map(menuItems.map((m) => [m.id, m]));
 
   const unavailableMenuIds: string[] = [];
   for (const [menuItemId, qty] of menuQtyById) {
     const menuItem = menuById.get(menuItemId);
-    if (!menuItem || menuItem.stockLevel === null) continue;
-    if (menuItem.stockLevel < qty) {
-      throw new Error(`INSUFFICIENT_STOCK:${menuItem.name}`);
+    if (!menuItem) continue;
+
+    const trackedStock = menuItem.batchYield ? (menuItem.stockLevel ?? 0) : menuItem.stockLevel;
+    if (trackedStock === null) continue;
+
+    if (trackedStock < qty) {
+      throw new Error(
+        menuItem.batchYield
+          ? `INSUFFICIENT_STOCK:${menuItem.name} — cook a batch first`
+          : `INSUFFICIENT_STOCK:${menuItem.name}`,
+      );
     }
-    if (menuItem.stockLevel - qty <= 0) {
+    if (trackedStock - qty <= 0) {
       unavailableMenuIds.push(menuItemId);
     }
   }
@@ -47,7 +56,9 @@ export async function deductStockForOrder(
     [...menuQtyById.entries()]
       .filter(([menuItemId]) => {
         const menuItem = menuById.get(menuItemId);
-        return menuItem && menuItem.stockLevel !== null;
+        if (!menuItem) return false;
+        if (menuItem.batchYield) return true;
+        return menuItem.stockLevel !== null;
       })
       .map(([menuItemId, qty]) =>
         tx.menuItem.update({
@@ -64,8 +75,20 @@ export async function deductStockForOrder(
     });
   }
 
+  await allocateSalesToBatches(tx, orderLines);
+
+  const batchMenuIds = menuItemIds.filter((id) => {
+    const menuItem = menuById.get(id);
+    return menuItem?.batchYield;
+  });
+
+  if (batchMenuIds.length === menuItemIds.length) return;
+
+  const legacyMenuIds = menuItemIds.filter((id) => !menuById.get(id)?.batchYield);
+  if (legacyMenuIds.length === 0) return;
+
   const recipes = await tx.menuItemIngredient.findMany({
-    where: { menuItemId: { in: menuItemIds } },
+    where: { menuItemId: { in: legacyMenuIds } },
     include: { inventoryItem: { select: { id: true, name: true, stockLevel: true } } },
   });
 
@@ -80,6 +103,7 @@ export async function deductStockForOrder(
 
   const ingredientTotals = new Map<string, { qty: number; name: string }>();
   for (const [menuItemId, lineQty] of menuQtyById) {
+    if (menuById.get(menuItemId)?.batchYield) continue;
     for (const recipe of recipesByMenuId.get(menuItemId) || []) {
       const needed = recipe.quantity * lineQty;
       const existing = ingredientTotals.get(recipe.inventoryItemId);

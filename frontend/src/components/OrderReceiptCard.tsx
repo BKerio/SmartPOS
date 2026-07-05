@@ -44,6 +44,7 @@ const OrderReceiptCard = ({ data, compact = false }: Props) => {
           </p>
           <p className="text-[10px] text-gray-400 font-sans">
             {new Date(data.paidAt).toLocaleString()}
+            {data.paymentMethod ? ` · ${data.paymentMethod}` : ""}
           </p>
         </div>
 
