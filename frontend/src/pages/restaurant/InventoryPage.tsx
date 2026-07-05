@@ -8,10 +8,24 @@ interface InventoryItem {
   stockLevel: number; reorderLevel: number; unitCost: number;
 }
 
+interface SupplierOption {
+  id: string;
+  name: string;
+}
+
 const InventoryPage = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [newItem, setNewItem] = useState({ name: "", category: "Grains", unit: "kg", reorderLevel: "10", unitCost: "0" });
-  const [movement, setMovement] = useState({ inventoryItemId: "", type: "IN", quantity: "", reason: "purchase", notes: "" });
+  const [movement, setMovement] = useState({
+    inventoryItemId: "",
+    type: "IN",
+    quantity: "",
+    reason: "purchase",
+    notes: "",
+    supplierId: "",
+    reference: "",
+  });
 
   const fetchItems = async () => {
     try {
@@ -22,7 +36,19 @@ const InventoryPage = () => {
     }
   };
 
-  useEffect(() => { fetchItems(); }, []);
+  const fetchSuppliers = async () => {
+    try {
+      const { data } = await API.get<SupplierOption[]>("/inventory/suppliers");
+      setSuppliers(data);
+    } catch {
+      // Non-blocking — movements still work without supplier list
+    }
+  };
+
+  useEffect(() => {
+    fetchItems();
+    fetchSuppliers();
+  }, []);
 
   const addItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,18 +68,38 @@ const InventoryPage = () => {
 
   const recordMovement = async (e: React.FormEvent) => {
     e.preventDefault();
+    const isPurchaseIn = movement.type === "IN" && movement.reason === "purchase";
+    if (isPurchaseIn && !movement.supplierId) {
+      toast.error("Select a supplier for purchase deliveries");
+      return;
+    }
     try {
       await API.post("/inventory/movements", {
-        ...movement,
+        inventoryItemId: movement.inventoryItemId,
+        type: movement.type,
         quantity: Number(movement.quantity),
+        reason: movement.reason,
+        notes: movement.notes || undefined,
+        supplierId: isPurchaseIn ? movement.supplierId : undefined,
+        reference: movement.reference.trim() || undefined,
       });
-      setMovement({ inventoryItemId: "", type: "IN", quantity: "", reason: "purchase", notes: "" });
+      setMovement({
+        inventoryItemId: "",
+        type: "IN",
+        quantity: "",
+        reason: "purchase",
+        notes: "",
+        supplierId: "",
+        reference: "",
+      });
       fetchItems();
       toast.success("Movement recorded");
     } catch (e: any) {
       toast.error("Error", e.response?.data?.message);
     }
   };
+
+  const showSupplierFields = movement.type === "IN" && movement.reason === "purchase";
 
   const lowStock = items.filter((i) => i.stockLevel <= i.reorderLevel);
   const totalValue = items.reduce((sum, item) => sum + item.stockLevel * item.unitCost, 0);
@@ -239,7 +285,7 @@ const InventoryPage = () => {
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Reason</label>
               <select 
                 value={movement.reason} 
-                onChange={(e) => setMovement({ ...movement, reason: e.target.value })} 
+                onChange={(e) => setMovement({ ...movement, reason: e.target.value, supplierId: "" })} 
                 className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44] focus:bg-white transition-all duration-200 font-semibold"
               >
                 {["purchase", "usage", "spoilage", "adjustment"].map((r) => <option key={r}>{r}</option>)}
@@ -255,6 +301,37 @@ const InventoryPage = () => {
               />
             </div>
           </div>
+
+          {showSupplierFields && (
+            <div className="grid grid-cols-2 gap-4 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
+              <div className="space-y-1 col-span-2 sm:col-span-1">
+                <label className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Supplier *</label>
+                <select
+                  value={movement.supplierId}
+                  onChange={(e) => setMovement({ ...movement, supplierId: e.target.value })}
+                  className="w-full px-3 py-2.5 bg-white border border-indigo-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+                  required
+                >
+                  <option value="">Select supplier</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+                {suppliers.length === 0 && (
+                  <p className="text-[10px] text-indigo-600 mt-1">Add suppliers first under Suppliers menu.</p>
+                )}
+              </div>
+              <div className="space-y-1 col-span-2 sm:col-span-1">
+                <label className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Invoice / LPO #</label>
+                <input
+                  placeholder="e.g. INV-2026-042"
+                  value={movement.reference}
+                  onChange={(e) => setMovement({ ...movement, reference: e.target.value })}
+                  className="w-full px-3 py-2.5 bg-white border border-indigo-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+          )}
 
           <button 
             type="submit" 

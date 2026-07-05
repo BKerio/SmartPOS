@@ -13,6 +13,7 @@ import {
   Sliders,
   Fingerprint,
   UserCircle2,
+  Truck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -35,6 +36,7 @@ const menuSections: { title?: string; items: MenuItem[] }[] = [
       { name: "Students", icon: GraduationCap, path: "/students" },
       { name: "Parents", icon: Heart, path: "/parents" },
       { name: "Staff", icon: Users, path: "/staffs" },
+      { name: "Suppliers", icon: Truck, path: "/suppliers" },
       { name: "Pending Approvals", icon: ShieldCheck, path: "/pending-approvals" },
     ],
   },

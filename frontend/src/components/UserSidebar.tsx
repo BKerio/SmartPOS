@@ -4,7 +4,7 @@ import {
     LayoutDashboard, User, Boxes, BarChart3, Store, BookOpen,
     PlusCircle, Edit3, RefreshCw, Trash2, ChefHat, FileText, Tags,
     ChevronLeft, ChevronRight, LogOut, Coins, CreditCard, Clock, 
-    Receipt, Scale, Monitor, Fingerprint,
+    Receipt, Scale, Monitor, Fingerprint, Truck,
 } from "lucide-react";
 import { toast } from "@/services/toast";
 import { useAuth } from "@/context/AuthContext";
@@ -38,6 +38,7 @@ const ROLE_CONFIG: Record<string, {
             { name: "Delete Menu Item", icon: Trash2, path: "/menu-management/delete" },
             { name: "Menu Recipes", icon: ChefHat, path: "/menu-management/recipes" },
             { name: "Inventory", icon: Boxes, path: "/inventory" },
+            { name: "Suppliers", icon: Truck, path: "/suppliers" },
             { name: "My Attendance", icon: Fingerprint, path: "/my-attendance" },
             { name: "Profile", icon: User, path: "/user-profile" },
         ]
@@ -50,6 +51,7 @@ const ROLE_CONFIG: Record<string, {
             { name: "Collections", icon: Receipt, path: "/collections" },
             { name: "Expenses", icon: Receipt, path: "/expenses" },
             { name: "Inventory Value", icon: Scale, path: "/inventory" },
+            { name: "Suppliers", icon: Truck, path: "/suppliers" },
             { name: "Receipts", icon: FileText, path: "/receipts" },
             { name: "My Attendance", icon: Fingerprint, path: "/my-attendance" },
             { name: "Profile", icon: User, path: "/user-profile" },
