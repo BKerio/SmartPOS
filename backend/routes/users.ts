@@ -3,10 +3,35 @@ import bcrypt from 'bcrypt';
 import prisma from '@/services/prisma';
 import { signToken, ensureAdmin, ensureAuthenticated } from '@/middlewares/auth';
 import { logAuditEvent } from '@/services/audit';
+import {
+  FingerprintDuplicateError,
+  assertFingerprintUnique,
+  checkFingerprintUnique,
+  fingerprintEnrollmentData,
+  parseFingerprintTemplate,
+} from '@/services/fingerprint';
 
 const router = Router();
 
-const fmt = (u: any) => ({ ...u, _id: u.id });
+const fmt = (u: any) => ({
+  ...u,
+  _id: u.id,
+  hasFingerprint: Boolean(u.fingerprintTemplate || u.fingerprintEnrolledAt),
+  fingerprintTemplate: undefined,
+});
+
+const userListSelect = {
+  id: true,
+  name: true,
+  email: true,
+  phone: true,
+  role: true,
+  status: true,
+  rejectionReason: true,
+  fingerprintEnrolledAt: true,
+  fingerprintTemplate: true,
+  createdAt: true,
+} as const;
 
 // ─── POST /api/users (admin create) ───────────────────────────────────────────
 router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
@@ -150,14 +175,115 @@ router.get('/', ensureAdmin, async (_req: Request, res: Response): Promise<any> 
   try {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
-      select: {
-        id: true, name: true, email: true, phone: true,
-        role: true, status: true,
-        rejectionReason: true, createdAt: true,
-      },
+      select: userListSelect,
     });
     return res.json(users.map(fmt));
   } catch (error) {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── POST /api/users/check-fingerprint ────────────────────────────────────────
+router.post('/check-fingerprint', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  const { fingerprintTemplate, excludeUserId, biometric } = req.body;
+  try {
+    const template = parseFingerprintTemplate(fingerprintTemplate);
+    if (!template) {
+      return res.status(422).json({ message: 'fingerprintTemplate is required' });
+    }
+
+    const result = await checkFingerprintUnique(template, { userId: excludeUserId }, {
+      biometric: biometric !== false,
+    });
+
+    if (!result.unique) {
+      return res.status(409).json({
+        unique: false,
+        message: result.message,
+        matchedStudent: result.matchedStudent,
+        matchedUser: result.matchedUser,
+      });
+    }
+
+    return res.json({ unique: true });
+  } catch (err: any) {
+    if (err instanceof FingerprintDuplicateError) {
+      return res.status(409).json({
+        unique: false,
+        message: err.message,
+        matchedStudent: err.matchedStudent,
+        matchedUser: err.matchedUser,
+      });
+    }
+    if (err?.message === 'INVALID_FINGERPRINT') {
+      return res.status(422).json({ message: 'Invalid fingerprint template' });
+    }
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── PUT /api/users/:id/fingerprint ───────────────────────────────────────────
+router.put('/:id/fingerprint', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  const { fingerprintTemplate } = req.body;
+  try {
+    const parsed = parseFingerprintTemplate(fingerprintTemplate);
+    if (!parsed) {
+      return res.status(422).json({ message: 'fingerprintTemplate is required' });
+    }
+
+    await assertFingerprintUnique(parsed, { userId: req.params.id as string });
+
+    const user = await prisma.user.update({
+      where: { id: req.params.id as string },
+      data: fingerprintEnrollmentData(parsed),
+      select: userListSelect,
+    });
+
+    await logAuditEvent({
+      eventType: 'fingerprint_enrolled',
+      userType: 'admin',
+      userId: req.user?.id,
+      userName: req.user?.name || 'Admin',
+      action: 'Staff Fingerprint Enrolled',
+      description: `Enrolled fingerprint for staff ${user.name} (${user.email})`,
+      ipAddress: req.ip,
+    });
+
+    return res.json(fmt(user));
+  } catch (err: any) {
+    if (err instanceof FingerprintDuplicateError) {
+      return res.status(409).json({ message: err.message, matchedUser: err.matchedUser, matchedStudent: err.matchedStudent });
+    }
+    if (err?.message === 'INVALID_FINGERPRINT') {
+      return res.status(422).json({ message: 'Invalid fingerprint template' });
+    }
+    if (err.code === 'P2025') return res.status(404).json({ message: 'User not found' });
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── DELETE /api/users/:id/fingerprint ────────────────────────────────────────
+router.delete('/:id/fingerprint', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  try {
+    const user = await prisma.user.update({
+      where: { id: req.params.id as string },
+      data: fingerprintEnrollmentData(null),
+      select: userListSelect,
+    });
+
+    await logAuditEvent({
+      eventType: 'fingerprint_removed',
+      userType: 'admin',
+      userId: req.user?.id,
+      userName: req.user?.name || 'Admin',
+      action: 'Staff Fingerprint Removed',
+      description: `Removed fingerprint for staff ${user.name} (${user.email})`,
+      ipAddress: req.ip,
+    });
+
+    return res.json(fmt(user));
+  } catch (err: any) {
+    if (err.code === 'P2025') return res.status(404).json({ message: 'User not found' });
     return res.status(500).json({ message: 'Something went wrong' });
   }
 });

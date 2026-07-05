@@ -7,14 +7,32 @@ export const getScannerUrl = (): string =>
 const SCANNER_URL = getScannerUrl();
 const SCANNER_TIMEOUT_MS = 8_000;
 
+type FingerprintOwner = { id: string; name: string; label: string };
+
 export class FingerprintDuplicateError extends Error {
   matchedStudent?: { id: string; name: string; regNo: string };
+  matchedUser?: { id: string; name: string; email: string };
 
-  constructor(message: string, matchedStudent?: { id: string; name: string; regNo: string }) {
+  constructor(
+    message: string,
+    matched?: { student?: { id: string; name: string; regNo: string }; user?: { id: string; name: string; email: string } },
+  ) {
     super(message);
     this.name = 'FingerprintDuplicateError';
-    this.matchedStudent = matchedStudent;
+    this.matchedStudent = matched?.student;
+    this.matchedUser = matched?.user;
   }
+}
+
+export type FingerprintExclude = {
+  studentId?: string;
+  userId?: string;
+};
+
+function normalizeExclude(exclude?: string | FingerprintExclude): FingerprintExclude {
+  if (!exclude) return {};
+  if (typeof exclude === 'string') return { studentId: exclude };
+  return exclude;
 }
 
 export const hashFingerprintTemplate = (templateBase64: string): string =>
@@ -48,8 +66,8 @@ export const fingerprintEnrollmentData = (template: string | null) => {
 
 const findBiometricDuplicate = async (
   template: string,
-  others: { id: string; name: string; regNo: string; fingerprintTemplate: string }[],
-): Promise<{ id: string; name: string; regNo: string } | null> => {
+  others: { id: string; name: string; label: string; fingerprintTemplate: string }[],
+): Promise<FingerprintOwner | null> => {
   if (others.length === 0) return null;
 
   try {
@@ -71,7 +89,7 @@ const findBiometricDuplicate = async (
 
     if (data.isDuplicate && typeof data.matchedIndex === 'number') {
       const matched = others[data.matchedIndex];
-      if (matched) return { id: matched.id, name: matched.name, regNo: matched.regNo };
+      if (matched) return matched;
     }
   } catch (err) {
     console.warn('Fingerprint scanner unavailable for biometric duplicate check:', err);
@@ -83,94 +101,194 @@ const findBiometricDuplicate = async (
 /** Hash + exact DB match only (fast). */
 export const checkFingerprintFast = async (
   template: string,
-  excludeStudentId?: string,
-): Promise<{ unique: true } | { unique: false; message: string; matchedStudent?: { id: string; name: string; regNo: string } }> => {
+  exclude?: string | FingerprintExclude,
+): Promise<{ unique: true } | { unique: false; message: string; matchedStudent?: { id: string; name: string; regNo: string }; matchedUser?: { id: string; name: string; email: string } }> => {
   try {
-    await assertFingerprintUnique(template, excludeStudentId, { biometric: false });
+    await assertFingerprintUnique(template, exclude, { biometric: false });
     return { unique: true };
   } catch (err) {
     if (err instanceof FingerprintDuplicateError) {
-      return { unique: false, message: err.message, matchedStudent: err.matchedStudent };
+      return {
+        unique: false,
+        message: err.message,
+        matchedStudent: err.matchedStudent,
+        matchedUser: err.matchedUser,
+      };
     }
     throw err;
   }
 };
 
-/** Ensures template is not already assigned to another student (exact + biometric). */
+/** Ensures template is not assigned to another student or staff member. */
 export const assertFingerprintUnique = async (
   template: string,
-  excludeStudentId?: string,
+  exclude?: string | FingerprintExclude,
   options?: { biometric?: boolean },
 ): Promise<void> => {
   const runBiometric = options?.biometric !== false;
+  const { studentId: excludeStudentId, userId: excludeUserId } = normalizeExclude(exclude);
   const hash = hashFingerprintTemplate(template);
-  const exclude = excludeStudentId ? { id: { not: excludeStudentId } } : {};
+  const studentExclude = excludeStudentId ? { id: { not: excludeStudentId } } : {};
+  const userExclude = excludeUserId ? { id: { not: excludeUserId } } : {};
 
-  const [exactTemplateMatch, exactMatch] = await Promise.all([
+  const [exactStudentTemplate, exactStudentHash, exactUserTemplate, exactUserHash] = await Promise.all([
     prisma.student.findFirst({
-      where: { fingerprintTemplate: template, ...exclude },
+      where: { fingerprintTemplate: template, ...studentExclude },
       select: { id: true, name: true, regNo: true },
     }),
     prisma.student.findFirst({
-      where: { fingerprintTemplateHash: hash, ...exclude },
+      where: { fingerprintTemplateHash: hash, ...studentExclude },
       select: { id: true, name: true, regNo: true },
+    }),
+    prisma.user.findFirst({
+      where: { fingerprintTemplate: template, ...userExclude },
+      select: { id: true, name: true, email: true },
+    }),
+    prisma.user.findFirst({
+      where: { fingerprintTemplateHash: hash, ...userExclude },
+      select: { id: true, name: true, email: true },
     }),
   ]);
 
-  if (exactTemplateMatch) {
+  const studentMatch = exactStudentTemplate || exactStudentHash;
+  if (studentMatch) {
     throw new FingerprintDuplicateError(
-      `This fingerprint is already enrolled for ${exactTemplateMatch.name} (${exactTemplateMatch.regNo})`,
-      exactTemplateMatch,
+      `This fingerprint is already enrolled for student ${studentMatch.name} (${studentMatch.regNo})`,
+      { student: studentMatch },
     );
   }
 
-  if (exactMatch) {
+  const userMatch = exactUserTemplate || exactUserHash;
+  if (userMatch) {
     throw new FingerprintDuplicateError(
-      `This fingerprint is already enrolled for ${exactMatch.name} (${exactMatch.regNo})`,
-      exactMatch,
+      `This fingerprint is already enrolled for staff ${userMatch.name} (${userMatch.email})`,
+      { user: userMatch },
     );
   }
 
   if (!runBiometric) return;
 
-  const others = await prisma.student.findMany({
-    where: {
-      fingerprintTemplate: { not: null },
-      ...exclude,
-    },
-    select: {
-      id: true,
-      name: true,
-      regNo: true,
-      fingerprintTemplate: true,
-    },
-  });
+  const [studentOthers, userOthers] = await Promise.all([
+    prisma.student.findMany({
+      where: { fingerprintTemplate: { not: null }, ...studentExclude },
+      select: { id: true, name: true, regNo: true, fingerprintTemplate: true },
+    }),
+    prisma.user.findMany({
+      where: { fingerprintTemplate: { not: null }, ...userExclude },
+      select: { id: true, name: true, email: true, fingerprintTemplate: true },
+    }),
+  ]);
 
-  const biometricMatch = await findBiometricDuplicate(
-    template,
-    others as { id: string; name: string; regNo: string; fingerprintTemplate: string }[],
-  );
+  const candidates = [
+    ...studentOthers.map((s) => ({
+      id: s.id,
+      name: s.name,
+      label: s.regNo,
+      fingerprintTemplate: s.fingerprintTemplate as string,
+    })),
+    ...userOthers.map((u) => ({
+      id: u.id,
+      name: u.name,
+      label: u.email,
+      fingerprintTemplate: u.fingerprintTemplate as string,
+    })),
+  ];
 
+  const biometricMatch = await findBiometricDuplicate(template, candidates);
   if (biometricMatch) {
+    const isStudent = studentOthers.some((s) => s.id === biometricMatch.id);
+    if (isStudent) {
+      const s = studentOthers.find((x) => x.id === biometricMatch.id)!;
+      throw new FingerprintDuplicateError(
+        `This fingerprint matches student ${s.name} (${s.regNo})`,
+        { student: s },
+      );
+    }
+    const u = userOthers.find((x) => x.id === biometricMatch.id)!;
     throw new FingerprintDuplicateError(
-      `This fingerprint matches an existing enrollment for ${biometricMatch.name} (${biometricMatch.regNo})`,
-      biometricMatch,
+      `This fingerprint matches staff ${u.name} (${u.email})`,
+      { user: u },
     );
   }
 };
 
 export const checkFingerprintUnique = async (
   template: string,
-  excludeStudentId?: string,
+  exclude?: string | FingerprintExclude,
   options?: { biometric?: boolean },
-): Promise<{ unique: true } | { unique: false; message: string; matchedStudent?: { id: string; name: string; regNo: string } }> => {
+): Promise<{ unique: true } | { unique: false; message: string; matchedStudent?: { id: string; name: string; regNo: string }; matchedUser?: { id: string; name: string; email: string } }> => {
   try {
-    await assertFingerprintUnique(template, excludeStudentId, options);
+    await assertFingerprintUnique(template, exclude, options);
     return { unique: true };
   } catch (err) {
     if (err instanceof FingerprintDuplicateError) {
-      return { unique: false, message: err.message, matchedStudent: err.matchedStudent };
+      return {
+        unique: false,
+        message: err.message,
+        matchedStudent: err.matchedStudent,
+        matchedUser: err.matchedUser,
+      };
     }
     throw err;
   }
 };
+
+export async function findStaffByFingerprint(template: string) {
+  const hash = hashFingerprintTemplate(template);
+
+  const exact = await prisma.user.findFirst({
+    where: {
+      status: 'approved',
+      OR: [{ fingerprintTemplateHash: hash }, { fingerprintTemplate: template }],
+    },
+    select: { id: true, name: true, email: true, role: true, fingerprintTemplate: true },
+  });
+  if (exact) return exact;
+
+  const staff = await prisma.user.findMany({
+    where: { status: 'approved', fingerprintTemplate: { not: null } },
+    select: { id: true, name: true, email: true, role: true, fingerprintTemplate: true },
+  });
+
+  if (staff.length === 0) return null;
+
+  const match = await findBiometricDuplicate(
+    template,
+    staff.map((u) => ({
+      id: u.id,
+      name: u.name,
+      label: u.email,
+      fingerprintTemplate: u.fingerprintTemplate as string,
+    })),
+  );
+
+  if (!match) return null;
+  return staff.find((u) => u.id === match.id) ?? null;
+}
+
+/** Verify a scan matches a specific staff member's enrolled template. */
+export async function verifyStaffFingerprint(
+  userId: string,
+  candidateTemplate: string,
+): Promise<boolean> {
+  const user = await prisma.user.findFirst({
+    where: { id: userId, status: 'approved', fingerprintTemplate: { not: null } },
+    select: { fingerprintTemplate: true, fingerprintTemplateHash: true },
+  });
+  if (!user?.fingerprintTemplate) return false;
+
+  const hash = hashFingerprintTemplate(candidateTemplate);
+  if (user.fingerprintTemplateHash === hash || user.fingerprintTemplate === candidateTemplate) {
+    return true;
+  }
+
+  const match = await findBiometricDuplicate(candidateTemplate, [
+    {
+      id: userId,
+      name: '',
+      label: '',
+      fingerprintTemplate: user.fingerprintTemplate,
+    },
+  ]);
+  return match?.id === userId;
+}

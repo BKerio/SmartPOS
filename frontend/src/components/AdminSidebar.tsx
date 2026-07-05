@@ -5,13 +5,13 @@ import {
   LogOut,
   Compass,
   Heart,
-  ChefHat,
-  Coins,
+  Users,
   Receipt,
   ShieldCheck,
   TrendingUp,
   Activity,
   Sliders,
+  Fingerprint,
   UserCircle2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -34,8 +34,7 @@ const menuSections: { title?: string; items: MenuItem[] }[] = [
     items: [
       { name: "Students", icon: GraduationCap, path: "/students" },
       { name: "Parents", icon: Heart, path: "/parents" },
-      { name: "Restaurant Staff", icon: ChefHat, path: "/restaurant-staff" },
-      { name: "Finance Officers", icon: Coins, path: "/finance-officers" },
+      { name: "Staff", icon: Users, path: "/staffs" },
       { name: "Pending Approvals", icon: ShieldCheck, path: "/pending-approvals" },
     ],
   },
@@ -43,6 +42,7 @@ const menuSections: { title?: string; items: MenuItem[] }[] = [
     title: "System",
     items: [
       { name: "System Reports", icon: TrendingUp, path: "/reports" },
+      { name: "Staff Attendance", icon: Fingerprint, path: "/staff-attendance" },
       { name: "Collections", icon: Receipt, path: "/collections" },
       { name: "Audit Logs", icon: Activity, path: "/audit-logs" },
       { name: "Settings", icon: Sliders, path: "/settings" },

@@ -1,6 +1,6 @@
-import { LogOut, Shield } from "lucide-react";
+import { LogOut, Shield, Users } from "lucide-react";
 import { toast } from "@/services/toast";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { motion } from "framer-motion";
 
@@ -41,6 +41,17 @@ const AdminNavbar = () => {
             </h1>
             <p className="text-sm text-gray-500">Welcome, {adminName}</p>
           </div>
+        </div>
+
+        {/* Center: quick links */}
+        <div className="hidden md:flex items-center gap-2">
+          <Link
+            to="/staffs"
+            className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-[#0A1F44] px-3 py-1.5 rounded-lg hover:bg-gray-50 transition"
+          >
+            <Users size={16} />
+            Staff
+          </Link>
         </div>
 
         {/* Right: Logout Button */}

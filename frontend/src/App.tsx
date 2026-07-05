@@ -14,8 +14,7 @@ import UserNavbar from "@/components/UserNavbar";
 import Dashboard from "@/pages/Dashboard";
 import ManageStudents from "@/pages/admin/ManageStudents";
 import ManageParents from "@/pages/admin/ManageParents";
-import ManageRestaurantStaff from "@/pages/admin/ManageRestaurantStaff";
-import ManageFinanceOfficers from "@/pages/admin/ManageFinanceOfficers";
+import Staffs from "@/pages/admin/Staffs";
 import Settings from "@/pages/settings";
 import Register from "@/pages/Register";
 import PendingApprovals from "@/pages/PendingApprovals";
@@ -49,6 +48,8 @@ import FinanceDashboard from "@/pages/finance/FinanceDashboard";
 import ExpensesPage from "@/pages/finance/ExpensesPage";
 import ReceiptsPage from "@/pages/finance/ReceiptsPage";
 import CollectionsPage from "@/pages/finance/CollectionsPage";
+import StaffAttendanceTerminal from "@/pages/attendance/StaffAttendanceTerminal";
+import StaffAttendanceReport from "@/pages/attendance/StaffAttendanceReport";
 
 const USER_ROLES: UserRole[] = ["parent", "finance", "restaurant"];
 
@@ -59,10 +60,11 @@ const R = (roles: UserRole[], element: JSX.Element) => (
 function AppShell() {
   const location = useLocation();
   const { status, user } = useAuth();
-  const publicPages = ["/login", "/register", "/forgot-password", "/kiosk"];
+  const publicPages = ["/login", "/register", "/forgot-password", "/kiosk", "/attendance"];
   const isAuthPage = publicPages.includes(location.pathname);
   const isKioskPage = location.pathname === "/kiosk";
-  const showShell = status === "authenticated" && !!user && !isAuthPage && !isKioskPage;
+  const isAttendancePage = location.pathname === "/attendance";
+  const showShell = status === "authenticated" && !!user && !isAuthPage && !isKioskPage && !isAttendancePage;
   const role = user?.role;
 
   let SidebarComponent: React.FC = AdminSidebar;
@@ -99,6 +101,14 @@ function AppShell() {
     );
   }
 
+  if (isAttendancePage) {
+    return (
+      <Routes>
+        <Route path="/attendance" element={<StaffAttendanceTerminal />} />
+      </Routes>
+    );
+  }
+
   return (
     <div className="flex">
       {showShell && <SidebarComponent />}
@@ -113,13 +123,15 @@ function AppShell() {
           <Route path="/" element={R(["admin"], <Dashboard />)} />
           <Route path="/students" element={R(["admin"], <ManageStudents />)} />
           <Route path="/parents" element={R(["admin"], <ManageParents />)} />
-          <Route path="/restaurant-staff" element={R(["admin"], <ManageRestaurantStaff />)} />
-          <Route path="/finance-officers" element={R(["admin"], <ManageFinanceOfficers />)} />
+          <Route path="/staffs" element={R(["admin"], <Staffs />)} />
+          <Route path="/restaurant-staff" element={<Navigate to="/staffs" replace />} />
+          <Route path="/finance-officers" element={<Navigate to="/staffs" replace />} />
           <Route path="/manage-users" element={R(["admin"], <Navigate to="/students" replace />)} />
           <Route path="/add-student" element={R(["admin"], <Navigate to="/students" replace />)} />
           <Route path="/reports" element={R(["admin"], <Reports />)} />
           <Route path="/audit-logs" element={R(["admin"], <AuditLogs />)} />
           <Route path="/pending-approvals" element={R(["admin"], <PendingApprovals />)} />
+          <Route path="/staff-attendance" element={R(["admin", "finance"], <StaffAttendanceReport />)} />
           <Route path="/admin-profile" element={R(["admin"], <AdminProfile />)} />
           <Route path="/settings" element={R(["admin", "parent", "finance", "restaurant"], <Settings />)} />
 
@@ -150,6 +162,7 @@ function AppShell() {
           <Route path="/menu-management/recipes" element={R(["restaurant"], <MenuRecipesPage />)} />
           <Route path="/menu-management/categories" element={R(["restaurant"], <MenuCategoriesPage />)} />
           <Route path="/inventory" element={R(["restaurant", "finance"], <InventoryPage />)} />
+          <Route path="/my-attendance" element={R(["restaurant", "finance"], <StaffAttendanceReport />)} />
 
           {/* Finance */}
           <Route path="/finance" element={R(["finance"], <FinanceDashboard />)} />

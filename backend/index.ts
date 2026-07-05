@@ -22,6 +22,7 @@ import financeRoutes    from '@/routes/finance';
 import parentRoutes     from '@/routes/parents';
 import kopokopoRoutes  from '@/routes/kopokopo';
 import fingerprintScannerRoutes from '@/routes/fingerprintScanner';
+import attendanceRoutes from '@/routes/attendance';
 import { getSupabaseConfigError, isSupabaseConfigured } from '@/services/supabase';
 import { checkDatabase, connectDatabase } from '@/services/prisma';
 
@@ -117,6 +118,7 @@ app.use('/api/finance',     financeRoutes);
 app.use('/api/parents',     parentRoutes);
 app.use('/api/kopokopo',    kopokopoRoutes);
 app.use('/api/fingerprint-scanner', fingerprintScannerRoutes);
+app.use('/api/attendance', attendanceRoutes);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Route not found' });

@@ -43,6 +43,31 @@ export async function captureFingerprint(): Promise<string> {
   return data.template as string;
 }
 
+export async function checkStaffFingerprintDuplicate(
+  template: string,
+  excludeUserId?: string,
+  options?: { biometric?: boolean },
+): Promise<{ unique: boolean; message?: string; matchedUser?: { name: string; email: string }; matchedStudent?: { name: string; regNo: string } }> {
+  try {
+    const { data } = await API.post("/users/check-fingerprint", {
+      fingerprintTemplate: template,
+      excludeUserId,
+      biometric: options?.biometric !== false,
+    });
+    return data;
+  } catch (e: any) {
+    if (e.response?.status === 409) {
+      return {
+        unique: false,
+        message: e.response.data?.message,
+        matchedUser: e.response.data?.matchedUser,
+        matchedStudent: e.response.data?.matchedStudent,
+      };
+    }
+    throw e;
+  }
+}
+
 export async function checkFingerprintDuplicate(
   template: string,
   excludeStudentId?: string,
