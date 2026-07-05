@@ -52,7 +52,29 @@ export async function initiateStkPushAndWait(
   if (opts.items) payload.items = opts.items;
 
   const requestConfig = opts.useAuth === false ? { skipAuthRedirect: true as const } : undefined;
-  const { data: pushData } = await API.post("/kopokopo/stkpush", payload, requestConfig);
+
+  let pushData: { location?: string; resumed?: boolean; paymentId?: string };
+  try {
+    ({ data: pushData } = await API.post("/kopokopo/stkpush", payload, requestConfig));
+  } catch (err: any) {
+    const data = err?.response?.data;
+    if (err?.response?.status === 409 && data?.code === "PENDING_STK" && data?.location) {
+      pushData = {
+        location: data.location,
+        paymentId: data.paymentId,
+        resumed: true,
+      };
+    } else {
+      const msg =
+        data?.error ||
+        data?.error_message ||
+        data?.message ||
+        err?.message ||
+        "Could not start M-Pesa payment";
+      throw new Error(msg);
+    }
+  }
+
   const paymentLocation = pushData?.location as string | undefined;
   if (!paymentLocation) throw new Error("No payment location returned");
 

@@ -7,6 +7,8 @@ const router = Router();
 
 type DateFilter = { gte?: Date; lte?: Date };
 
+const KOPO_SUCCESS = new Set(['success', 'received', 'complete', 'completed', 'paid']);
+
 function parseDateFilter(startDate?: string, endDate?: string): DateFilter | null {
   const filter: DateFilter = {};
   if (startDate) {
@@ -22,6 +24,67 @@ function parseDateFilter(startDate?: string, endDate?: string): DateFilter | nul
     filter.lte = d;
   }
   return filter;
+}
+
+function kopoMetadataFromRaw(rawPayload: unknown): Record<string, string> {
+  if (!rawPayload || typeof rawPayload !== 'object') return {};
+  const data = (rawPayload as any)?.data ?? rawPayload;
+  const attrs = (data as any)?.attributes ?? {};
+  const meta = attrs?.metadata ?? {};
+  const event = attrs?.event ?? {};
+  return {
+    description: String(meta.description ?? ''),
+    student_reg_no: String(meta.student_reg_no ?? meta.studentRegNo ?? meta.reg_no ?? ''),
+    student_name: String(meta.student_name ?? meta.studentName ?? ''),
+    purpose: String(meta.purpose ?? ''),
+    payer_type: String(meta.payer_type ?? meta.payerType ?? ''),
+    status: String(attrs.status ?? ''),
+    error: String(event.errors ?? event.error ?? ''),
+  };
+}
+
+function isGuestTillPayment(purpose: string, studentId: string | null | undefined, meta: Record<string, string>): boolean {
+  if (purpose === 'pos_sale' && !studentId) return true;
+  return meta.payer_type === 'guest' || meta.student_name?.toLowerCase() === 'guest';
+}
+
+function tillPaymentReceived(status: string, amount: number): boolean {
+  return KOPO_SUCCESS.has((status || '').toLowerCase()) && amount > 0;
+}
+
+function kopoSettlementNote(
+  purpose: string,
+  success: boolean,
+  walletCredited: boolean,
+  posCompleted: boolean,
+): string {
+  if (!success) return 'not received';
+  if (purpose === 'wallet_topup') return walletCredited ? 'wallet credited' : 'till received · wallet pending';
+  if (purpose === 'pos_sale') return posCompleted ? 'pos sale completed' : 'till received · pos pending';
+  return 'till received';
+}
+
+function formatKopoMetadata(
+  description: string,
+  meta: Record<string, string>,
+  extras?: { guest?: boolean; purpose?: string },
+): string {
+  const parts: string[] = [];
+  if (extras?.guest) parts.push('Guest');
+  if (meta.description) parts.push(meta.description);
+  if (meta.student_reg_no && meta.student_reg_no !== 'GUEST') parts.push(`Adm: ${meta.student_reg_no}`);
+  const purpose = extras?.purpose || meta.purpose;
+  if (purpose) parts.push(`Purpose: ${purpose}`);
+  if (meta.error) parts.push(meta.error);
+  if (meta.status && meta.status.toLowerCase() !== 'success') parts.push(`Status: ${meta.status}`);
+  if (parts.length > 0) return parts.join(' · ');
+  return description || '-';
+}
+
+function kopoMethod(purpose: string, guest = false): string {
+  if (purpose === 'pos_sale') return guest ? 'M-Pesa Till (Guest POS)' : 'M-Pesa Till (POS)';
+  if (purpose === 'wallet_topup') return 'M-Pesa Till (Wallet Top-up)';
+  return 'M-Pesa Till';
 }
 
 // ─── GET /api/finance/summary ─────────────────────────────────────────────────
@@ -60,7 +123,7 @@ router.get('/summary', ensureAuthenticated, async (req: Request, res: Response):
 });
 
 // ─── GET /api/finance/collections ─────────────────────────────────────────────
-// Wallet movements report: deposits (+) and purchases (-)
+// Till M-Pesa payments (all statuses) + wallet top-ups/deposits + wallet usage
 router.get('/collections', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
   if (!['admin', 'finance'].includes(req.user!.role)) {
     return res.status(403).json({ message: 'Not authorized' });
@@ -70,67 +133,238 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
   const dateFilter = parseDateFilter(startDate, endDate);
   if (dateFilter === null) return res.status(422).json({ message: 'Invalid date range' });
 
-  const where =
-    dateFilter && Object.keys(dateFilter).length > 0
-      ? { createdAt: dateFilter }
-      : undefined;
+  const createdAt =
+    dateFilter && Object.keys(dateFilter).length > 0 ? dateFilter : undefined;
 
   try {
-    const txs = await prisma.walletTransaction.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: 2000,
-      include: {
-        student: { select: { name: true, regNo: true } },
-      },
-    });
+    const [kopos, purchases, deposits, guestPosSales] = await Promise.all([
+      prisma.kopoPayment.findMany({
+        where: createdAt ? { createdAt } : undefined,
+        orderBy: { createdAt: 'desc' },
+        take: 2000,
+      }),
+      prisma.walletTransaction.findMany({
+        where: {
+          ...(createdAt ? { createdAt } : {}),
+          type: { in: ['purchase', 'refund'] },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 2000,
+        include: {
+          student: { select: { name: true, regNo: true } },
+        },
+      }),
+      prisma.walletTransaction.findMany({
+        where: {
+          ...(createdAt ? { createdAt } : {}),
+          type: 'deposit',
+          NOT: { description: { contains: 'KopoKopo', mode: 'insensitive' } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 2000,
+        include: {
+          student: { select: { name: true, regNo: true } },
+        },
+      }),
+      prisma.posTransaction.findMany({
+        where: {
+          paymentMethod: 'mpesa',
+          studentId: null,
+          status: 'completed',
+          ...(createdAt ? { createdAt } : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 2000,
+        include: {
+          items: { include: { menuItem: { select: { name: true } } } },
+        },
+      }),
+    ]);
 
-    // Map deposit reference -> mpesa phone (from KopoPayment)
-    const refs = Array.from(
-      new Set(
-        txs
-          .filter((t) => t.type === 'deposit' && t.reference)
-          .map((t) => String(t.reference)),
-      ),
+    const linkedPosIds = new Set(
+      kopos.map((k) => k.posTransactionId).filter(Boolean) as string[],
     );
 
-    const kopoByRef = new Map<string, { phone: string }>();
-    if (refs.length > 0) {
-      const kopos = await prisma.kopoPayment.findMany({
-        where: {
-          OR: [{ transactionReference: { in: refs } }, { reference: { in: refs } }],
-        },
-        select: { transactionReference: true, reference: true, phone: true },
-        take: refs.length,
-      });
-      for (const k of kopos) {
-        if (k.transactionReference) kopoByRef.set(k.transactionReference, { phone: k.phone });
-        if (k.reference) kopoByRef.set(k.reference, { phone: k.phone });
-      }
-    }
+    const studentIds = [
+      ...new Set(kopos.map((k) => k.studentId).filter(Boolean) as string[]),
+    ];
+    const students =
+      studentIds.length > 0
+        ? await prisma.student.findMany({
+            where: { id: { in: studentIds } },
+            select: { id: true, name: true, regNo: true },
+          })
+        : [];
+    const studentById = new Map(students.map((s) => [s.id, s]));
 
-    const rows = txs.map((t) => {
-      const ref = t.reference ? String(t.reference) : '';
-      const mpesa = t.type === 'deposit' ? (kopoByRef.get(ref)?.phone || '') : '';
-      const method =
-        t.type === 'deposit'
-          ? 'M-Pesa via KopoKopo'
-          : t.type === 'purchase'
-            ? 'Wallet'
-            : t.type === 'refund'
-              ? 'Refund'
-              : t.type || 'Wallet';
+    const kopoRows = kopos.map((k) => {
+      const student = k.studentId ? studentById.get(k.studentId) : undefined;
+      const meta = kopoMetadataFromRaw(k.rawPayload);
+      const purpose = k.purpose || meta.purpose || 'general';
+      const guest = isGuestTillPayment(purpose, k.studentId, meta);
+      const success = KOPO_SUCCESS.has((k.status || '').toLowerCase());
+      const receivedOnTill = tillPaymentReceived(k.status, k.amount);
+
+      const payload = {
+        source: 'kopo',
+        paymentId: k.id,
+        status: k.status,
+        purpose,
+        guest,
+        amount: k.amount,
+        currency: k.currency,
+        phone: k.phone,
+        description: k.description,
+        tillNumber: k.tillNumber,
+        transactionReference: k.transactionReference,
+        reference: k.reference,
+        location: k.location,
+        studentId: k.studentId,
+        studentName: guest ? 'Guest' : student?.name || meta.student_name || null,
+        studentRegNo: guest ? k.phone || 'GUEST' : student?.regNo || meta.student_reg_no || null,
+        walletCredited: k.walletCredited,
+        posCompleted: k.posCompleted,
+        posTransactionId: k.posTransactionId,
+        posCart: k.posCart,
+        payerUserId: k.payerUserId,
+        payerRole: k.payerRole,
+        tillReceived: receivedOnTill,
+        settlement: kopoSettlementNote(purpose, success, k.walletCredited, k.posCompleted),
+        createdAt: k.createdAt,
+        originationTime: k.originationTime,
+        metadata: {
+          description: meta.description || k.description,
+          student_id: k.studentId || '',
+          student_reg_no: guest ? 'GUEST' : student?.regNo || meta.student_reg_no || '',
+          student_name: guest ? 'Guest' : student?.name || meta.student_name || '',
+          purpose,
+          payer_type: guest ? 'guest' : meta.payer_type || 'student',
+          ...(meta.error ? { error: meta.error } : {}),
+        },
+        kopokopo: k.rawPayload ?? null,
+      };
 
       return {
-        mpesaNumber: mpesa,
+        id: k.id,
+        source: 'kopo',
+        mpesaNumber: k.phone || '',
+        date: k.originationTime || k.createdAt,
+        name: guest ? 'Guest' : student?.name || meta.student_name || '',
+        admNo: guest ? k.phone || 'GUEST' : student?.regNo || meta.student_reg_no || '',
+        method: kopoMethod(purpose, guest),
+        amount: receivedOnTill ? k.amount : 0,
+        attemptedAmount: k.amount,
+        status: k.status,
+        type: purpose,
+        metadata: formatKopoMetadata(k.description, meta, { guest, purpose }),
+        transactionRef: k.transactionReference || k.reference || '',
+        payload,
+      };
+    });
+
+    const guestPosRows = guestPosSales
+      .filter((tx) => !linkedPosIds.has(tx.id))
+      .map((tx) => {
+        const payload = {
+          source: 'pos_mpesa',
+          guest: true,
+          posTransactionId: tx.id,
+          receiptNo: tx.receiptNo,
+          totalAmount: tx.totalAmount,
+          paymentMethod: tx.paymentMethod,
+          items: tx.items.map((line) => ({
+            name: line.menuItem.name,
+            quantity: line.quantity,
+            price: line.price,
+          })),
+          createdAt: tx.createdAt,
+        };
+
+        return {
+          id: tx.id,
+          source: 'pos_mpesa',
+          mpesaNumber: '',
+          date: tx.createdAt,
+          name: 'Guest',
+          admNo: tx.receiptNo || 'GUEST',
+          method: 'M-Pesa Till (Guest POS)',
+          amount: tx.totalAmount,
+          attemptedAmount: tx.totalAmount,
+          status: 'completed',
+          type: 'pos_sale',
+          metadata: `Guest · POS receipt ${tx.receiptNo || tx.id}`,
+          transactionRef: tx.receiptNo || tx.id,
+          payload,
+        };
+      });
+
+    const purchaseRows = purchases.map((t) => {
+      const payload = {
+        source: 'wallet',
+        transactionId: t.id,
+        type: t.type,
+        amount: t.amount,
+        reference: t.reference,
+        description: t.description,
+        studentId: t.studentId,
+        studentName: t.student?.name || null,
+        studentRegNo: t.student?.regNo || null,
+        createdAt: t.createdAt,
+      };
+
+      return {
+        id: t.id,
+        source: 'wallet',
+        mpesaNumber: '',
         date: t.createdAt,
         name: t.student?.name || '',
         admNo: t.student?.regNo || '',
-        method,
-        amount: t.amount, // + topup, - usage
+        method: t.type === 'refund' ? 'Wallet Refund' : 'Wallet Purchase',
+        amount: t.amount,
+        attemptedAmount: Math.abs(t.amount),
+        status: 'completed',
         type: t.type,
+        metadata: t.description || '',
+        transactionRef: t.reference || '',
+        payload,
       };
     });
+
+    const depositRows = deposits.map((t) => {
+      const payload = {
+        source: 'wallet',
+        transactionId: t.id,
+        type: 'deposit',
+        amount: t.amount,
+        reference: t.reference,
+        description: t.description,
+        studentId: t.studentId,
+        studentName: t.student?.name || null,
+        studentRegNo: t.student?.regNo || null,
+        createdAt: t.createdAt,
+      };
+
+      return {
+        id: t.id,
+        source: 'wallet',
+        mpesaNumber: '',
+        date: t.createdAt,
+        name: t.student?.name || '',
+        admNo: t.student?.regNo || '',
+        method: 'Wallet Top-up (Manual)',
+        amount: t.amount,
+        attemptedAmount: t.amount,
+        status: 'completed',
+        type: 'deposit',
+        metadata: t.description || 'Wallet top-up',
+        transactionRef: t.reference || '',
+        payload,
+      };
+    });
+
+    const rows = [...kopoRows, ...guestPosRows, ...depositRows, ...purchaseRows].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
 
     return res.json(rows);
   } catch {

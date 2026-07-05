@@ -62,6 +62,8 @@ export interface StkPushOptions {
   description?: string;
   callbackUrl?: string;
   studentId?: string;
+  studentRegNo?: string;
+  studentName?: string;
   purpose?: string;
   paymentId?: string;
 }
@@ -70,9 +72,46 @@ export interface StkPushResult {
   location: string;
 }
 
+/** Kopokopo allows at most 5 metadata keys — keep only what callbacks need. */
+function buildStkMetadata(opts: StkPushOptions): Record<string, string> {
+  const purpose = opts.purpose || (opts.studentId ? 'wallet_topup' : 'general');
+  const meta: Record<string, string> = {};
+
+  if (opts.paymentId) meta.payment_id = opts.paymentId;
+  meta.purpose = purpose;
+
+  if (opts.studentId) meta.student_id = opts.studentId;
+
+  if (opts.studentRegNo) {
+    meta.student_reg_no = opts.studentRegNo;
+  } else if (purpose === 'pos_sale' && !opts.studentId) {
+    meta.student_reg_no = 'GUEST';
+  }
+
+  if (Object.keys(meta).length < 5) {
+    if (purpose === 'pos_sale' && !opts.studentId) {
+      meta.student_name = opts.studentName || 'Guest';
+    } else if (opts.studentName && opts.studentId) {
+      meta.student_name = opts.studentName;
+    }
+  }
+
+  if (purpose === 'general' && opts.description && Object.keys(meta).length < 5) {
+    meta.description = opts.description.slice(0, 100);
+  }
+
+  const keys = Object.keys(meta);
+  if (keys.length > 5) {
+    throw new Error(`Kopokopo metadata exceeds 5 keys (${keys.length})`);
+  }
+
+  return meta;
+}
+
 export const initiateSTKPush = async (opts: StkPushOptions): Promise<StkPushResult> => {
   const accessToken = await getAccessToken();
   const phone = formatKopoPhone(opts.phone);
+  const metadata = buildStkMetadata(opts);
 
   const payload = {
     payment_channel: 'M-PESA STK Push',
@@ -84,12 +123,7 @@ export const initiateSTKPush = async (opts: StkPushOptions): Promise<StkPushResu
       currency: 'KES',
       value: opts.amount,
     },
-    metadata: {
-      description: opts.description || 'SmartPOS Payment',
-      student_id: opts.studentId || '',
-      payment_id: opts.paymentId || '',
-      purpose: opts.purpose || (opts.studentId ? 'wallet_topup' : 'general'),
-    },
+    metadata,
     _links: {
       callback_url: opts.callbackUrl || KOPOKOPO_CALLBACK_URL,
     },
