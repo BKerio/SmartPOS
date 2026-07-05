@@ -43,7 +43,7 @@ const menuSections: { title?: string; items: MenuItem[] }[] = [
     items: [
       { name: "System Reports", icon: TrendingUp, path: "/reports" },
       { name: "Staff Attendance", icon: Fingerprint, path: "/staff-attendance" },
-      { name: "Collections", icon: Receipt, path: "/collections" },
+      { name: "Collections & Reconciliations", icon: Receipt, path: "/collections" },
       { name: "Audit Logs", icon: Activity, path: "/audit-logs" },
       { name: "Settings", icon: Sliders, path: "/settings" },
     ],
