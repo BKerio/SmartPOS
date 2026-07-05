@@ -354,7 +354,7 @@ const SuppliersPage = () => {
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
             <h3 className="font-extrabold text-[#0A1F44]">
-              Purchase history — {historySupplier?.name}
+              Purchase history - {historySupplier?.name}
             </h3>
             <button
               onClick={() => {
