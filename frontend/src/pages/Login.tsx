@@ -126,7 +126,7 @@ const Login: React.FC = () => {
                 alt="SmartPOS"
                 className="w-28 h-auto object-contain mb-3"
               />
-              <h2 className="text-xl font-bold text-[#0A1F44]">Welcome Back</h2>
+              <h2 className="text-xl font-bold text-[#0A1F44]">Welcome Back, please login</h2>
               <p className="text-slate-500 text-xs mt-1">{currentRole.label} Portal</p>
             </div>
 
