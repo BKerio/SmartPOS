@@ -38,6 +38,16 @@ function normalizeExclude(exclude?: string | FingerprintExclude): FingerprintExc
 export const hashFingerprintTemplate = (templateBase64: string): string =>
   crypto.createHash('sha256').update(Buffer.from(templateBase64, 'base64')).digest('hex');
 
+/** Parse ZKTeco match score from API body (number or numeric string). */
+export const parseFingerprintMatchScore = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return undefined;
+};
+
 export const parseFingerprintTemplate = (value: unknown): string | null | undefined => {
   if (value === undefined) return undefined;
   if (value === null || value === '') return null;
@@ -278,6 +288,12 @@ export async function verifyStaffFingerprint(
   });
   if (!user?.fingerprintTemplate) return false;
 
+  const matchScore = parseFingerprintMatchScore(options?.matchScore);
+  // Local PC verified via ZKTeco SDK (cloud server has no USB scanner).
+  if (matchScore !== undefined) {
+    return true;
+  }
+
   const hash = hashFingerprintTemplate(candidateTemplate);
   if (user.fingerprintTemplateHash === hash || user.fingerprintTemplate === candidateTemplate) {
     return true;
@@ -292,11 +308,6 @@ export async function verifyStaffFingerprint(
     },
   ]);
   if (match?.id === userId) return true;
-
-  // Cloud server has no USB scanner — accept ZKTeco match score from the local PC.
-  if (options?.matchScore !== undefined && options.matchScore > 0) {
-    return true;
-  }
 
   return false;
 }

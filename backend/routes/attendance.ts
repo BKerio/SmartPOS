@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '@/services/prisma';
 import { ensureAuthenticated } from '@/middlewares/auth';
-import { findStaffByFingerprint, parseFingerprintTemplate, verifyStaffFingerprint } from '@/services/fingerprint';
+import { findStaffByFingerprint, parseFingerprintTemplate, parseFingerprintMatchScore, verifyStaffFingerprint } from '@/services/fingerprint';
 import { logAuditEvent } from '@/services/audit';
 
 const router = Router();
@@ -143,7 +143,7 @@ router.post('/clock', async (req: Request, res: Response): Promise<any> => {
         return res.status(422).json({ message: 'Fingerprint not enrolled for this staff member. Contact admin.' });
       }
 
-      const matchScore = typeof fingerprintMatchScore === 'number' ? fingerprintMatchScore : undefined;
+      const matchScore = parseFingerprintMatchScore(fingerprintMatchScore);
       const match = await verifyStaffFingerprint(user.id, template, { matchScore });
       if (!match) {
         return res.status(422).json({ message: 'Fingerprint did not match the selected profile. Try again.' });

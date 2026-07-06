@@ -5,7 +5,7 @@ const SCANNER_URL =
   import.meta.env.VITE_FINGERPRINT_SCANNER_URL ||
   (apiBase ? `${apiBase}/api/fingerprint-scanner` : "http://127.0.0.1:17890");
 
-const CAPTURE_TIMEOUT_SEC = 15;
+const CAPTURE_TIMEOUT_SEC = 25;
 
 export interface ScannerHealth {
   ok: boolean;
@@ -63,9 +63,10 @@ export async function matchFingerprint(
   }
 
   const matched = Boolean(data.isDuplicate && typeof data.matchedIndex === "number");
+  const score = matched ? Math.max(Number(data.score ?? 1), 1) : 0;
   return {
     matched,
-    score: matched ? Number(data.score ?? 1) : 0,
+    score,
     matchedIndex: matched ? data.matchedIndex : null,
   };
 }

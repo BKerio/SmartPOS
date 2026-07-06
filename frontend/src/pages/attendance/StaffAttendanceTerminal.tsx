@@ -111,13 +111,18 @@ const StaffAttendanceTerminal = () => {
       const template = await captureFingerprint();
       const { matched, score } = await matchFingerprint(template, [enrolled.fingerprintTemplate]);
       if (!matched) {
-        toast.error("Fingerprint did not match", "Use the same finger you enrolled, or contact admin");
+        toast.error("Fingerprint did not match", "Use the same finger you enrolled, or ask admin to re-enroll");
         return;
       }
 
       const { data } = await API.post(
         "/attendance/clock",
-        { userId: selected.id, fingerprintTemplate: template, fingerprintMatchScore: score },
+        {
+          userId: selected.id,
+          fingerprintTemplate: template,
+          fingerprintMatchScore: score,
+          localFingerprintVerified: true,
+        },
         { skipAuthRedirect: true },
       );
 
@@ -133,7 +138,12 @@ const StaffAttendanceTerminal = () => {
       );
       setTimeout(() => backToList(), 3500);
     } catch (e: any) {
-      toast.error("Scan failed", e.response?.data?.message || e.message);
+      const msg = e.response?.data?.message || e.message || "Scan failed";
+      if (msg.toLowerCase().includes("timed out") || msg.toLowerCase().includes("capture")) {
+        toast.error("Place your finger on the scanner", "Hold still for 2–3 seconds, then try again");
+      } else {
+        toast.error("Scan failed", msg);
+      }
     } finally {
       setScanning(false);
       prepareScanner().catch(() => {});
