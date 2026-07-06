@@ -43,6 +43,33 @@ export async function captureFingerprint(): Promise<string> {
   return data.template as string;
 }
 
+/** Compare a live scan against enrolled template(s) using the local ZKTeco SDK. */
+export async function matchFingerprint(
+  candidate: string,
+  enrolledTemplates: string[],
+): Promise<{ matched: boolean; score: number; matchedIndex: number | null }> {
+  if (enrolledTemplates.length === 0) {
+    return { matched: false, score: 0, matchedIndex: null };
+  }
+
+  const res = await fetch(`${SCANNER_URL}/check-duplicate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ template: candidate, candidates: enrolledTemplates }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    throw new Error(data.message || "Fingerprint matcher unavailable on this PC");
+  }
+
+  const matched = Boolean(data.isDuplicate && typeof data.matchedIndex === "number");
+  return {
+    matched,
+    score: matched ? Number(data.score ?? 1) : 0,
+    matchedIndex: matched ? data.matchedIndex : null,
+  };
+}
+
 export async function checkStaffFingerprintDuplicate(
   template: string,
   excludeUserId?: string,

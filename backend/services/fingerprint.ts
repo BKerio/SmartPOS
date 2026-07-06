@@ -270,6 +270,7 @@ export async function findStaffByFingerprint(template: string) {
 export async function verifyStaffFingerprint(
   userId: string,
   candidateTemplate: string,
+  options?: { matchScore?: number },
 ): Promise<boolean> {
   const user = await prisma.user.findFirst({
     where: { id: userId, status: 'approved', fingerprintTemplate: { not: null } },
@@ -290,5 +291,12 @@ export async function verifyStaffFingerprint(
       fingerprintTemplate: user.fingerprintTemplate,
     },
   ]);
-  return match?.id === userId;
+  if (match?.id === userId) return true;
+
+  // Cloud server has no USB scanner — accept ZKTeco match score from the local PC.
+  if (options?.matchScore !== undefined && options.matchScore > 0) {
+    return true;
+  }
+
+  return false;
 }

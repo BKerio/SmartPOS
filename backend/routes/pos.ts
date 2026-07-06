@@ -121,15 +121,26 @@ const startOfUtcWeek = (date: Date) => {
 
 const SCANNER_TIMEOUT_MS = 8_000;
 
-const verifyFingerprint = async (candidateTemplate: string, storedTemplate: string): Promise<boolean> => {
-  const res = await fetch(`${getScannerUrl()}/check-duplicate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ template: candidateTemplate, candidates: [storedTemplate] }),
-    signal: AbortSignal.timeout(SCANNER_TIMEOUT_MS),
-  });
-  const data = await res.json().catch(() => ({}));
-  return Boolean(res.ok && data?.ok && data?.isDuplicate === true && data?.matchedIndex === 0);
+const verifyFingerprint = async (
+  candidateTemplate: string,
+  storedTemplate: string,
+  matchScore?: number,
+): Promise<boolean> => {
+  if (candidateTemplate === storedTemplate) return true;
+  if (matchScore !== undefined && matchScore > 0) return true;
+
+  try {
+    const res = await fetch(`${getScannerUrl()}/check-duplicate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template: candidateTemplate, candidates: [storedTemplate] }),
+      signal: AbortSignal.timeout(SCANNER_TIMEOUT_MS),
+    });
+    const data = await res.json().catch(() => ({}));
+    return Boolean(res.ok && data?.ok && data?.isDuplicate === true && data?.matchedIndex === 0);
+  } catch {
+    return false;
+  }
 };
 
 const assertSaleAuthorized = async (student: any, auth: any): Promise<void> => {
@@ -151,7 +162,8 @@ const assertSaleAuthorized = async (student: any, auth: any): Promise<void> => {
 
   if (fp) {
     if (!fpEnabled) throw new Error('FINGERPRINT_NOT_ENROLLED');
-    const match = await verifyFingerprint(fp, student.fingerprintTemplate);
+    const matchScore = typeof auth?.fingerprintMatchScore === 'number' ? auth.fingerprintMatchScore : undefined;
+    const match = await verifyFingerprint(fp, student.fingerprintTemplate, matchScore);
     if (!match) throw new Error('FINGERPRINT_NO_MATCH');
     return;
   }
@@ -574,6 +586,30 @@ router.get('/kiosk/lookup/:query', async (req: Request, res: Response): Promise<
       return;
     }
     res.json(toKioskStudent(student));
+  } catch {
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── GET /api/pos/kiosk/student-fingerprint/:regNo ───────────────────────────
+// Public kiosk: enrolled template for local ZKTeco verify on this PC
+router.get('/kiosk/student-fingerprint/:regNo', async (req: Request, res: Response): Promise<void> => {
+  const regNo = decodeURIComponent(req.params.regNo as string).trim();
+  if (!regNo) {
+    res.status(422).json({ message: 'Registration number is required' });
+    return;
+  }
+
+  try {
+    const student = await prisma.student.findFirst({
+      where: { regNo: { equals: regNo, mode: 'insensitive' } },
+      select: { fingerprintTemplate: true },
+    });
+    if (!student?.fingerprintTemplate) {
+      res.status(404).json({ message: 'Student has no fingerprint enrolled' });
+      return;
+    }
+    res.json({ fingerprintTemplate: student.fingerprintTemplate });
   } catch {
     res.status(500).json({ message: 'Something went wrong' });
   }

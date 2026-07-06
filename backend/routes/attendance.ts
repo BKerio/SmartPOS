@@ -102,9 +102,25 @@ router.get('/staff', async (_req: Request, res: Response): Promise<any> => {
   }
 });
 
+// GET /api/attendance/staff/:userId/enrolled-fingerprint — terminal local verify
+router.get('/staff/:userId/enrolled-fingerprint', async (req: Request, res: Response): Promise<any> => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: { id: req.params.userId as string, status: 'approved' },
+      select: { id: true, fingerprintTemplate: true },
+    });
+    if (!user?.fingerprintTemplate) {
+      return res.status(404).json({ message: 'Fingerprint not enrolled for this staff member' });
+    }
+    return res.json({ fingerprintTemplate: user.fingerprintTemplate });
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
 // POST /api/attendance/clock — public terminal (select profile + fingerprint scan)
 router.post('/clock', async (req: Request, res: Response): Promise<any> => {
-  const { fingerprintTemplate, userId } = req.body;
+  const { fingerprintTemplate, userId, fingerprintMatchScore } = req.body;
 
   try {
     const template = parseFingerprintTemplate(fingerprintTemplate);
@@ -127,7 +143,8 @@ router.post('/clock', async (req: Request, res: Response): Promise<any> => {
         return res.status(422).json({ message: 'Fingerprint not enrolled for this staff member. Contact admin.' });
       }
 
-      const match = await verifyStaffFingerprint(user.id, template);
+      const matchScore = typeof fingerprintMatchScore === 'number' ? fingerprintMatchScore : undefined;
+      const match = await verifyStaffFingerprint(user.id, template, { matchScore });
       if (!match) {
         return res.status(422).json({ message: 'Fingerprint did not match the selected profile. Try again.' });
       }

@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
-import { captureFingerprint, checkScannerHealth, prepareScanner } from "@/services/fingerprintScanner";
+import { captureFingerprint, checkScannerHealth, matchFingerprint, prepareScanner } from "@/services/fingerprintScanner";
 import logo from "@/assets/LOGO.png";
 
 type StaffOption = {
@@ -104,10 +104,20 @@ const StaffAttendanceTerminal = () => {
     setScanning(true);
     try {
       await prepareScanner();
+      const { data: enrolled } = await API.get<{ fingerprintTemplate: string }>(
+        `/attendance/staff/${selected.id}/enrolled-fingerprint`,
+        { skipAuthRedirect: true },
+      );
       const template = await captureFingerprint();
+      const { matched, score } = await matchFingerprint(template, [enrolled.fingerprintTemplate]);
+      if (!matched) {
+        toast.error("Fingerprint did not match", "Use the same finger you enrolled, or contact admin");
+        return;
+      }
+
       const { data } = await API.post(
         "/attendance/clock",
-        { userId: selected.id, fingerprintTemplate: template },
+        { userId: selected.id, fingerprintTemplate: template, fingerprintMatchScore: score },
         { skipAuthRedirect: true },
       );
 

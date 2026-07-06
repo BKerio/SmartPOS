@@ -3,7 +3,9 @@ using System.Text;
 using System.Text.Json;
 
 var port = int.TryParse(Environment.GetEnvironmentVariable("FINGERPRINT_PORT"), out var p) ? p : 17890;
-var origin = Environment.GetEnvironmentVariable("FINGERPRINT_CORS_ORIGIN") ?? "http://localhost:5173";
+var corsOrigins = ParseCorsOrigins(
+    Environment.GetEnvironmentVariable("FINGERPRINT_CORS_ORIGIN"),
+    "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,https://betterfork.millenium.co.ke");
 
 using var device = new FingerprintDevice();
 var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -11,7 +13,7 @@ var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingP
 Console.WriteLine("SmartPOS Fingerprint Scanner Service");
 Console.WriteLine($"Listening on http://127.0.0.1:{port}");
 Console.WriteLine("Endpoints: GET /health  POST /prepare  POST /capture  POST /check-duplicate");
-Console.WriteLine("Press Ctrl+C to stop.\n");
+Console.WriteLine($"CORS origins: {string.Join(", ", corsOrigins)}\n");
 
 if (device.Initialize())
 {
@@ -70,7 +72,7 @@ try
         if (completed != contextTask) break;
 
         var context = await contextTask;
-        _ = Task.Run(() => HandleRequest(context, device, jsonOptions, origin), cts.Token);
+        _ = Task.Run(() => HandleRequest(context, device, jsonOptions, corsOrigins), cts.Token);
     }
 }
 finally
@@ -81,14 +83,14 @@ finally
 
 return 0;
 
-static void HandleRequest(HttpListenerContext context, FingerprintDevice device, JsonSerializerOptions jsonOptions, string origin)
+static void HandleRequest(HttpListenerContext context, FingerprintDevice device, JsonSerializerOptions jsonOptions, HashSet<string> corsOrigins)
 {
     var request = context.Request;
     var response = context.Response;
 
     try
     {
-        AddCors(response, origin);
+        AddCors(request, response, corsOrigins);
 
         if (request.HttpMethod == "OPTIONS")
         {
@@ -213,11 +215,25 @@ static void HandleRequest(HttpListenerContext context, FingerprintDevice device,
     }
 }
 
-static void AddCors(HttpListenerResponse response, string origin)
+static HashSet<string> ParseCorsOrigins(string? configured, string defaults)
 {
-    response.Headers.Add("Access-Control-Allow-Origin", origin);
+    var raw = string.IsNullOrWhiteSpace(configured) ? defaults : configured;
+    return raw
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+}
+
+static void AddCors(HttpListenerRequest request, HttpListenerResponse response, HashSet<string> allowedOrigins)
+{
+    var requestOrigin = request.Headers["Origin"];
+    var allowOrigin = !string.IsNullOrWhiteSpace(requestOrigin) && allowedOrigins.Contains(requestOrigin)
+        ? requestOrigin
+        : allowedOrigins.FirstOrDefault() ?? "http://localhost:5173";
+
+    response.Headers.Add("Access-Control-Allow-Origin", allowOrigin);
     response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     response.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
+    response.Headers.Add("Vary", "Origin");
 }
 
 static void WriteJson(HttpListenerResponse response, int statusCode, object payload, JsonSerializerOptions options)

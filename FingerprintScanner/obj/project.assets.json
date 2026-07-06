@@ -8,16 +8,16 @@
     "net8.0": []
   },
   "packageFolders": {
-    "C:\\Users\\brian\\AppData\\Local\\Temp\\cursor-sandbox-cache\\5cc563685e07631d35b7fe32872d891c\\nuget": {}
+    "C:\\Users\\brian\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\brian\\PROJECTS\\SmartPOS\\FingerprintScanner\\FingerprintScanner.csproj",
+      "projectUniqueName": "C:\\Users\\brian\\PROJECTS\\SmartPOS\\fingerprintScanner\\FingerprintScanner.csproj",
       "projectName": "FingerprintScanner",
-      "projectPath": "C:\\Users\\brian\\PROJECTS\\SmartPOS\\FingerprintScanner\\FingerprintScanner.csproj",
-      "packagesPath": "C:\\Users\\brian\\AppData\\Local\\Temp\\cursor-sandbox-cache\\5cc563685e07631d35b7fe32872d891c\\nuget",
-      "outputPath": "C:\\Users\\brian\\PROJECTS\\SmartPOS\\FingerprintScanner\\obj\\",
+      "projectPath": "C:\\Users\\brian\\PROJECTS\\SmartPOS\\fingerprintScanner\\FingerprintScanner.csproj",
+      "packagesPath": "C:\\Users\\brian\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\brian\\PROJECTS\\SmartPOS\\fingerprintScanner\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\brian\\AppData\\Roaming\\NuGet\\NuGet.Config"

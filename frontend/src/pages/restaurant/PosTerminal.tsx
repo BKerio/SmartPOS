@@ -23,7 +23,7 @@ import {
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
-import { captureFingerprint, checkScannerHealth, prepareScanner } from "@/services/fingerprintScanner";
+import { captureFingerprint, checkScannerHealth, matchFingerprint, prepareScanner } from "@/services/fingerprintScanner";
 import { displayReceiptNo } from "@/lib/receipt";
 import {
   downloadOrderReceipt,
@@ -49,6 +49,8 @@ interface MenuItem {
 }
 interface CartItem { menuItemId: string; name: string; price: number; quantity: number; }
 interface StudentInfo {
+  id?: string;
+  _id?: string;
   name: string;
   regNo: string;
   walletBalance: number;
@@ -335,7 +337,11 @@ const PosTerminal = () => {
     }
   };
 
-  const processSale = async (auth: { pin?: string; fingerprintTemplate?: string }) => {
+  const processSale = async (auth: {
+    pin?: string;
+    fingerprintTemplate?: string;
+    fingerprintMatchScore?: number;
+  }) => {
     if (!student) return;
 
     setLoading(true);
@@ -384,15 +390,26 @@ const PosTerminal = () => {
     if (!student) return;
     if (!authOptions.fingerprint) return toast.error("Fingerprint not enrolled", "Enroll fingerprint first");
     if (scannerReady === false) return toast.error("Scanner offline", "Start the fingerprint scanner service");
+    const studentId = student.id || student._id;
+    if (!studentId) return toast.error("Student record incomplete", "Look up the student again");
+
     setAuthLoading(true);
     try {
       await prepareScanner();
+      const { data: enrolled } = await API.get<{ fingerprintTemplate: string }>(
+        `/students/${studentId}/enrolled-fingerprint`,
+      );
       const tpl = await captureFingerprint();
-      await processSale({ fingerprintTemplate: tpl });
+      const { matched, score } = await matchFingerprint(tpl, [enrolled.fingerprintTemplate]);
+      if (!matched) {
+        toast.error("Fingerprint did not match", "Use the same finger that was enrolled");
+        return;
+      }
+      await processSale({ fingerprintTemplate: tpl, fingerprintMatchScore: score });
       setShowAuth(false);
       setPin("");
     } catch (e: any) {
-      toast.error("Fingerprint failed", e.message);
+      toast.error("Fingerprint failed", e.response?.data?.message || e.message);
     } finally {
       setAuthLoading(false);
     }

@@ -19,7 +19,7 @@ import {
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
-import { captureFingerprint, checkScannerHealth, prepareScanner } from "@/services/fingerprintScanner";
+import { captureFingerprint, checkScannerHealth, matchFingerprint, prepareScanner } from "@/services/fingerprintScanner";
 import { receiptFromApiResponse, receiptFromGuestCash, type OrderReceiptData } from "@/lib/orderReceipt";
 import { initiateStkPushAndWait } from "@/services/kopokopoPayment";
 import OrderReceiptCard from "@/components/OrderReceiptCard";
@@ -349,7 +349,7 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
   };
 
   const submitOrder = async (
-    auth: { pin?: string; fingerprintTemplate?: string },
+    auth: { pin?: string; fingerprintTemplate?: string; fingerprintMatchScore?: number },
     options?: { enrollFingerprint?: boolean },
   ) => {
     const active = isKiosk ? studentPreview : studentProfile;
@@ -495,6 +495,8 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
   };
 
   const placeOrderWithFingerprint = async () => {
+    const active = isKiosk ? studentPreview : studentProfile;
+    if (!active) return;
     if (!authOptions.fingerprint) {
       return toast.error("Fingerprint not enrolled", "Enroll your fingerprint first");
     }
@@ -504,10 +506,20 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
     setProcessing(true);
     try {
       await prepareScanner();
+      const { data: enrolled } = await API.get<{ fingerprintTemplate: string }>(
+        `/pos/kiosk/student-fingerprint/${encodeURIComponent(active.regNo)}`,
+        isKiosk ? publicOpts : undefined,
+      );
       const tpl = await captureFingerprint();
-      await submitOrder({ fingerprintTemplate: tpl });
+      const { matched, score } = await matchFingerprint(tpl, [enrolled.fingerprintTemplate]);
+      if (!matched) {
+        toast.error("Fingerprint did not match", "Use the same finger that was enrolled");
+        setProcessing(false);
+        return;
+      }
+      await submitOrder({ fingerprintTemplate: tpl, fingerprintMatchScore: score });
     } catch (e: any) {
-      toast.error("Fingerprint failed", e.message || "Could not verify fingerprint");
+      toast.error("Fingerprint failed", e.response?.data?.message || e.message || "Could not verify fingerprint");
       setProcessing(false);
     }
   };

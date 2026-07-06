@@ -428,6 +428,25 @@ router.get('/lookup/:regNo', ensureAuthenticated, async (req: Request, res: Resp
   }
 });
 
+// ─── GET /api/students/:id/enrolled-fingerprint — POS local verify (staff only)
+router.get('/:id/enrolled-fingerprint', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
+  if (!['admin', 'restaurant', 'finance'].includes(req.user!.role)) {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
+  try {
+    const student = await prisma.student.findUnique({
+      where: { id: req.params.id as string },
+      select: { id: true, fingerprintTemplate: true },
+    });
+    if (!student?.fingerprintTemplate) {
+      return res.status(404).json({ message: 'Student has no fingerprint enrolled' });
+    }
+    return res.json({ fingerprintTemplate: student.fingerprintTemplate });
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
 // ─── PUT /api/students/:id/fingerprint ────────────────────────────────────────
 router.put('/:id/fingerprint', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
   const { fingerprintTemplate } = req.body;
