@@ -1,4 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import ws from 'ws';
+
+// Node.js < 22 has no native WebSocket; Supabase client requires one at init.
+if (typeof globalThis.WebSocket === 'undefined') {
+  globalThis.WebSocket = ws as unknown as typeof WebSocket;
+}
 
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
 const supabaseServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
