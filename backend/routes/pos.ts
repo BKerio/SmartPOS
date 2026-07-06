@@ -8,6 +8,7 @@ import {
   fingerprintEnrollmentData,
   FingerprintDuplicateError,
   getScannerUrl,
+  parseFingerprintMatchScore,
   parseFingerprintTemplate,
 } from '@/services/fingerprint';
 import { displayReceiptNo, generateReceiptNo } from '@/services/receipt';
@@ -127,7 +128,8 @@ const verifyFingerprint = async (
   matchScore?: number,
 ): Promise<boolean> => {
   if (candidateTemplate === storedTemplate) return true;
-  if (matchScore !== undefined && matchScore > 0) return true;
+  const parsedScore = parseFingerprintMatchScore(matchScore);
+  if (parsedScore !== undefined) return true;
 
   try {
     const res = await fetch(`${getScannerUrl()}/check-duplicate`, {
@@ -162,7 +164,9 @@ const assertSaleAuthorized = async (student: any, auth: any): Promise<void> => {
 
   if (fp) {
     if (!fpEnabled) throw new Error('FINGERPRINT_NOT_ENROLLED');
-    const matchScore = typeof auth?.fingerprintMatchScore === 'number' ? auth.fingerprintMatchScore : undefined;
+    const matchScore = typeof auth?.fingerprintMatchScore === 'number'
+      ? auth.fingerprintMatchScore
+      : parseFingerprintMatchScore(auth?.fingerprintMatchScore);
     const match = await verifyFingerprint(fp, student.fingerprintTemplate, matchScore);
     if (!match) throw new Error('FINGERPRINT_NO_MATCH');
     return;
