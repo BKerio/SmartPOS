@@ -10,6 +10,8 @@ import {
 import { executeGuestMpesaSale } from '@/routes/pos';
 import { displayReceiptNo } from '@/services/receipt';
 import type { AuthPayload } from '@/middlewares/auth';
+import { ensureAuthenticated } from '@/middlewares/auth';
+import { logAuditEvent } from '@/services/audit';
 import 'dotenv/config';
 
 const router = express.Router();
@@ -976,6 +978,242 @@ router.post('/reconcile', async (_req: Request, res: Response) => {
     res.json({ reconciled: results.length, results });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+function isAllocatablePayment(payment: {
+  status: string;
+  walletCredited: boolean;
+  purpose: string;
+  posCompleted: boolean;
+  amount: number;
+}): boolean {
+  if (!isSuccessStatus(payment.status)) return false;
+  if (payment.walletCredited) return false;
+  if (payment.purpose === 'pos_sale') return false;
+  if (payment.posCompleted) return false;
+  if (payment.amount <= 0) return false;
+  return true;
+}
+
+async function supersedeDuplicatePayments(allocated: {
+  id: string;
+  transactionReference: string;
+  phone: string;
+  amount: number;
+}) {
+  const orFilters: Array<Record<string, unknown>> = [];
+
+  if (allocated.transactionReference) {
+    orFilters.push({ transactionReference: allocated.transactionReference });
+  }
+
+  const pk = phoneKey(allocated.phone);
+  if (pk) {
+    orFilters.push({
+      phone: { endsWith: pk },
+      amount: allocated.amount,
+      status: 'pending',
+    });
+  }
+
+  if (orFilters.length === 0) return 0;
+
+  const result = await prisma.kopoPayment.updateMany({
+    where: {
+      id: { not: allocated.id },
+      walletCredited: false,
+      status: { in: ['pending', 'success'] },
+      OR: orFilters,
+    },
+    data: {
+      status: 'superseded',
+      description: 'Superseded by manual wallet allocation',
+    },
+  });
+
+  return result.count;
+}
+
+function ensureFinanceOrAdmin(req: Request, res: Response): boolean {
+  if (!req.user || !['admin', 'finance'].includes(req.user.role)) {
+    res.status(403).json({ error: 'Admin or finance access required' });
+    return false;
+  }
+  return true;
+}
+
+// GET /api/kopokopo/search?q= — find unallocated till payments by M-Pesa code, phone, or ref
+router.get('/search', ensureAuthenticated, async (req: Request, res: Response) => {
+  if (!ensureFinanceOrAdmin(req, res)) return;
+
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) {
+    res.json([]);
+    return;
+  }
+
+  try {
+    const payments = await prisma.kopoPayment.findMany({
+      where: {
+        walletCredited: false,
+        purpose: { not: 'pos_sale' },
+        posCompleted: false,
+        status: { in: ['success', 'received', 'complete', 'completed', 'paid'] },
+        amount: { gt: 0 },
+        OR: [
+          { transactionReference: { contains: q, mode: 'insensitive' } },
+          { reference: { contains: q, mode: 'insensitive' } },
+          { phone: { contains: q } },
+          { id: q },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    const studentIds = [...new Set(payments.map((p) => p.studentId).filter(Boolean) as string[])];
+    const students =
+      studentIds.length > 0
+        ? await prisma.student.findMany({
+            where: { id: { in: studentIds } },
+            select: { id: true, name: true, regNo: true },
+          })
+        : [];
+    const studentById = new Map(students.map((s) => [s.id, s]));
+
+    res.json(
+      payments.map((p) => {
+        const student = p.studentId ? studentById.get(p.studentId) : undefined;
+        return {
+          id: p.id,
+          amount: p.amount,
+          phone: p.phone,
+          status: p.status,
+          purpose: p.purpose,
+          transactionReference: p.transactionReference || p.reference || '',
+          date: p.originationTime || p.createdAt,
+          studentId: p.studentId,
+          studentName: student?.name || null,
+          studentRegNo: student?.regNo || null,
+          allocatable: isAllocatablePayment(p),
+        };
+      }),
+    );
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Search failed' });
+  }
+});
+
+// POST /api/kopokopo/:id/allocate — assign till payment to a student and credit wallet
+router.post('/:id/allocate', ensureAuthenticated, async (req: Request, res: Response) => {
+  if (!ensureFinanceOrAdmin(req, res)) return;
+
+  const { studentId } = req.body as { studentId?: string };
+  if (!studentId) {
+    res.status(422).json({ error: 'studentId is required' });
+    return;
+  }
+
+  const paymentId = String(req.params.id);
+  if (!paymentId) {
+    res.status(422).json({ error: 'Payment id is required' });
+    return;
+  }
+
+  try {
+    const payment = await prisma.kopoPayment.findUnique({ where: { id: paymentId } });
+    if (!payment) {
+      res.status(404).json({ error: 'Payment not found' });
+      return;
+    }
+
+    if (!isAllocatablePayment(payment)) {
+      res.status(422).json({
+        error: 'Payment cannot be allocated — it may already be credited, failed, or is a POS sale',
+      });
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      select: { id: true, name: true, regNo: true, walletFrozen: true, walletBalance: true },
+    });
+    if (!student) {
+      res.status(404).json({ error: 'Student not found' });
+      return;
+    }
+    if (student.walletFrozen) {
+      res.status(422).json({ error: 'Student wallet is frozen' });
+      return;
+    }
+
+    await prisma.kopoPayment.update({
+      where: { id: payment.id },
+      data: {
+        studentId,
+        purpose: 'wallet_topup',
+        allocatedBy: req.user!.id,
+        allocatedAt: new Date(),
+        description: `Wallet top-up for ${student.name} · ${student.regNo} (manual allocation)`,
+      },
+    });
+
+    const credited = await creditStudentWallet(
+      payment.id,
+      studentId,
+      payment.amount,
+      payment.phone,
+      payment.transactionReference || payment.reference || payment.id,
+    );
+
+    if (!credited) {
+      res.status(409).json({ error: 'Wallet credit failed — payment may already be allocated' });
+      return;
+    }
+
+    const superseded = await supersedeDuplicatePayments({
+      id: payment.id,
+      transactionReference: payment.transactionReference,
+      phone: payment.phone,
+      amount: payment.amount,
+    });
+
+    const updatedStudent = await prisma.student.findUnique({
+      where: { id: studentId },
+      select: { walletBalance: true },
+    });
+
+    await logAuditEvent({
+      eventType: 'wallet_allocation',
+      userType: req.user!.role,
+      userId: req.user!.id,
+      userName: req.user!.name,
+      action: 'Manual Wallet Allocation',
+      description: `Allocated KES ${payment.amount} (${payment.transactionReference || payment.id}) to ${student.regNo}`,
+      metadata: {
+        paymentId: payment.id,
+        studentId,
+        amount: payment.amount,
+        transactionReference: payment.transactionReference,
+        supersededCount: superseded,
+      },
+      ipAddress: req.ip,
+    });
+
+    res.json({
+      message: 'Wallet topped up successfully',
+      paymentId: payment.id,
+      studentId,
+      studentName: student.name,
+      studentRegNo: student.regNo,
+      amount: payment.amount,
+      newBalance: updatedStudent?.walletBalance ?? student.walletBalance + payment.amount,
+      supersededCount: superseded,
+    });
+  } catch (err: any) {
+    console.error('[Kopokopo] Allocate error:', err?.message || err);
+    res.status(500).json({ error: err.message || 'Allocation failed' });
   }
 });
 

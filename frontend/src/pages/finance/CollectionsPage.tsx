@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Receipt, FileJson, X, Copy, Check, Search, Filter } from "lucide-react";
+import { Receipt, FileJson, X, Copy, Check, Search, Filter, Wallet, UserPlus } from "lucide-react";
 import API from "@/services/api";
 import Loader from "@/components/ui/loader";
 import { toast } from "@/services/toast";
@@ -18,7 +18,29 @@ type CollectionRow = {
   type: string;
   metadata: string;
   transactionRef?: string;
+  walletCredited?: boolean;
+  allocatable?: boolean;
   payload?: Record<string, unknown>;
+};
+
+type StudentOption = {
+  id: string;
+  name: string;
+  regNo: string;
+  walletBalance?: number;
+};
+
+type KopoSearchResult = {
+  id: string;
+  amount: number;
+  phone: string;
+  status: string;
+  purpose: string;
+  transactionReference: string;
+  date: string;
+  studentName: string | null;
+  studentRegNo: string | null;
+  allocatable: boolean;
 };
 
 const formatKes = (n: number) => `KES ${Number(n || 0).toLocaleString()}`;
@@ -28,7 +50,7 @@ const statusBadge = (status: string) => {
   if (["success", "received", "complete", "completed", "paid"].includes(s)) {
     return "bg-emerald-100 text-emerald-700";
   }
-  if (["failed", "error", "reversed", "cancelled"].includes(s)) {
+  if (["failed", "error", "reversed", "cancelled", "superseded"].includes(s)) {
     return "bg-rose-100 text-rose-700";
   }
   return "bg-amber-100 text-amber-800";
@@ -45,7 +67,7 @@ const isGuestPosRow = (row: CollectionRow) =>
 const statusBucket = (status: string): StatusFilter => {
   const s = (status || "").toLowerCase();
   if (["success", "received", "complete", "completed", "paid"].includes(s)) return "success";
-  if (["failed", "error", "reversed", "cancelled"].includes(s)) return "failed";
+  if (["failed", "error", "reversed", "cancelled", "superseded"].includes(s)) return "failed";
   return "pending";
 };
 
@@ -198,11 +220,395 @@ const PayloadModal = ({
   );
 };
 
+  );
+};
+
+const StudentPicker = ({
+  selected,
+  onSelect,
+  onClear,
+}: {
+  selected: StudentOption | null;
+  onSelect: (student: StudentOption) => void;
+  onClear: () => void;
+}) => {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<StudentOption[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (selected) return;
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const { data } = await API.get<StudentOption[]>("/students/search", { params: { q } });
+        setResults(data);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [query, selected]);
+
+  if (selected) {
+    return (
+      <div className="flex items-center justify-between gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+        <div>
+          <p className="font-semibold text-[#0A1F44]">{selected.name}</p>
+          <p className="text-xs text-gray-600">
+            {selected.regNo}
+            {selected.walletBalance != null && ` · Balance: ${formatKes(selected.walletBalance)}`}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-xs font-semibold text-gray-500 hover:text-rose-600"
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search student by name, adm no, or phone..."
+          className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A1F44] outline-none"
+        />
+      </div>
+      {searching && <p className="text-xs text-gray-400">Searching...</p>}
+      {results.length > 0 && (
+        <div className="border border-gray-100 rounded-lg max-h-40 overflow-y-auto">
+          {results.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onSelect(s)}
+              className="w-full text-left px-3 py-2.5 hover:bg-gray-50 border-b border-gray-50 last:border-0"
+            >
+              <p className="font-semibold text-sm text-[#0A1F44]">{s.name}</p>
+              <p className="text-xs text-gray-500">{s.regNo}</p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AllocateModal = ({
+  payment,
+  onClose,
+  onSuccess,
+}: {
+  payment: { id: string; amount: number; transactionRef?: string; mpesaNumber?: string; date?: string };
+  onClose: () => void;
+  onSuccess: () => void;
+}) => {
+  const [student, setStudent] = useState<StudentOption | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleAllocate = async () => {
+    if (!student) {
+      toast.warning("Select a student", "Search and pick the student to top up");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { data } = await API.post(`/kopokopo/${payment.id}/allocate`, { studentId: student.id });
+      toast.success(
+        "Wallet topped up",
+        `${data.studentName} (${data.studentRegNo}) · ${formatKes(data.amount)} · New balance ${formatKes(data.newBalance)}`,
+      );
+      onSuccess();
+      onClose();
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        "Allocation failed";
+      toast.error("Could not allocate", msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-bold text-[#0A1F44] flex items-center gap-2">
+              <UserPlus size={18} /> Allocate to student
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">Credit this till payment to a student wallet</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="p-3 bg-slate-50 rounded-xl text-sm space-y-1">
+            <p className="font-bold text-emerald-600 text-lg">{formatKes(payment.amount)}</p>
+            {payment.transactionRef && (
+              <p className="text-xs font-mono text-gray-600">M-Pesa: {payment.transactionRef}</p>
+            )}
+            {payment.mpesaNumber && <p className="text-xs text-gray-500">Phone: {payment.mpesaNumber}</p>}
+            {payment.date && (
+              <p className="text-xs text-gray-500">{new Date(payment.date).toLocaleString()}</p>
+            )}
+          </div>
+
+          <StudentPicker selected={student} onSelect={setStudent} onClear={() => setStudent(null)} />
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 text-sm font-semibold border border-gray-200 rounded-xl hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleAllocate}
+              disabled={!student || submitting}
+              className="flex-1 py-2.5 text-sm font-semibold bg-[#0A1F44] text-white rounded-xl hover:bg-[#0A1F44]/90 disabled:opacity-50"
+            >
+              {submitting ? "Topping up..." : "Top up wallet"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const FindPaymentModal = ({
+  onClose,
+  onAllocate,
+}: {
+  onClose: () => void;
+  onAllocate: (payment: KopoSearchResult) => void;
+}) => {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<KopoSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const { data } = await API.get<KopoSearchResult[]>("/kopokopo/search", { params: { q } });
+        setResults(data);
+      } catch {
+        setResults([]);
+        toast.error("Search failed", "Could not search payments");
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-bold text-[#0A1F44] flex items-center gap-2">
+              <Search size={18} /> Find M-Pesa payment
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">Search by M-Pesa code, phone, or reference</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="e.g. QGH7XABCD or 2547..."
+              autoFocus
+              className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A1F44] outline-none"
+            />
+          </div>
+
+          {searching && <p className="text-xs text-gray-400">Searching...</p>}
+
+          <div className="max-h-64 overflow-y-auto space-y-2">
+            {query.trim().length >= 2 && !searching && results.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-4">No unallocated payments found</p>
+            )}
+            {results.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                disabled={!r.allocatable}
+                onClick={() => onAllocate(r)}
+                className="w-full text-left p-3 border border-gray-100 rounded-xl hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <p className="font-semibold text-[#0A1F44]">{formatKes(r.amount)}</p>
+                    <p className="text-xs font-mono text-gray-500">{r.transactionReference || r.id}</p>
+                    <p className="text-xs text-gray-400">{r.phone || "—"} · {new Date(r.date).toLocaleString()}</p>
+                  </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold capitalize ${statusBadge(r.status)}`}>
+                    {r.allocatable ? "unallocated" : r.status}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CashDepositModal = ({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) => {
+  const [student, setStudent] = useState<StudentOption | null>(null);
+  const [amount, setAmount] = useState("");
+  const [reference, setReference] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleDeposit = async () => {
+    const depositAmount = Number(amount);
+    if (!student) {
+      toast.warning("Select a student", "Search and pick the student to top up");
+      return;
+    }
+    if (!Number.isFinite(depositAmount) || depositAmount <= 0) {
+      toast.warning("Invalid amount", "Enter a positive amount");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { data } = await API.post("/wallet/deposit", {
+        studentId: student.id,
+        amount: depositAmount,
+        reference: reference.trim() || undefined,
+        description: "Cash top-up at till",
+      });
+      toast.success("Cash deposited", `New balance: ${formatKes(data.newBalance)}`);
+      onSuccess();
+      onClose();
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        "Deposit failed";
+      toast.error("Could not deposit", msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-bold text-[#0A1F44] flex items-center gap-2">
+              <Wallet size={18} /> Cash top-up
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">For parents who pay cash at the till</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <StudentPicker selected={student} onSelect={setStudent} onClear={() => setStudent(null)} />
+
+          <div>
+            <label className="text-xs font-semibold text-gray-600">Amount (KES)</label>
+            <input
+              type="number"
+              min={1}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="e.g. 1000"
+              className="mt-1 w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A1F44] outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-600">Reference (optional)</label>
+            <input
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              placeholder="Receipt or note"
+              className="mt-1 w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A1F44] outline-none"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 text-sm font-semibold border border-gray-200 rounded-xl hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDeposit}
+              disabled={!student || submitting}
+              className="flex-1 py-2.5 text-sm font-semibold bg-[#0A1F44] text-white rounded-xl hover:bg-[#0A1F44]/90 disabled:opacity-50"
+            >
+              {submitting ? "Depositing..." : "Top up wallet"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const CollectionsPage = () => {
   const [rows, setRows] = useState<CollectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [payloadOpen, setPayloadOpen] = useState(false);
   const [selectedPayloadId, setSelectedPayloadId] = useState<string | null>(null);
+  const [allocatePayment, setAllocatePayment] = useState<{
+    id: string;
+    amount: number;
+    transactionRef?: string;
+    mpesaNumber?: string;
+    date?: string;
+  } | null>(null);
+  const [findPaymentOpen, setFindPaymentOpen] = useState(false);
+  const [cashDepositOpen, setCashDepositOpen] = useState(false);
   const [filters, setFilters] = useState({
     search: "",
     source: "all" as SourceFilter,
@@ -272,6 +678,28 @@ const CollectionsPage = () => {
     });
   };
 
+  const openAllocate = (row: CollectionRow) => {
+    if (!row.id || !row.allocatable) return;
+    setAllocatePayment({
+      id: row.id,
+      amount: row.amount || row.attemptedAmount || 0,
+      transactionRef: row.transactionRef,
+      mpesaNumber: row.mpesaNumber,
+      date: row.date,
+    });
+  };
+
+  const handleFindPaymentAllocate = (payment: KopoSearchResult) => {
+    setFindPaymentOpen(false);
+    setAllocatePayment({
+      id: payment.id,
+      amount: payment.amount,
+      transactionRef: payment.transactionReference,
+      mpesaNumber: payment.phone,
+      date: payment.date,
+    });
+  };
+
   const openPayloads = (rowId?: string) => {
     setSelectedPayloadId(rowId ?? filteredRows.find((r) => r.id)?.id ?? null);
     setPayloadOpen(true);
@@ -310,14 +738,30 @@ const CollectionsPage = () => {
           </p>
         </div>
         <div className="flex flex-col sm:items-end gap-3">
-          <button
-            type="button"
-            onClick={() => openPayloads()}
-            disabled={filteredRows.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-semibold disabled:opacity-40"
-          >
-            <FileJson size={16} /> View all payloads
-          </button>
+          <div className="flex flex-wrap gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => setFindPaymentOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-500/90 hover:bg-emerald-500 rounded-xl text-sm font-semibold"
+            >
+              <Search size={16} /> Find M-Pesa payment
+            </button>
+            <button
+              type="button"
+              onClick={() => setCashDepositOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-semibold"
+            >
+              <Wallet size={16} /> Cash top-up
+            </button>
+            <button
+              type="button"
+              onClick={() => openPayloads()}
+              disabled={filteredRows.length === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-semibold disabled:opacity-40"
+            >
+              <FileJson size={16} /> View all payloads
+            </button>
+          </div>
           <div className="text-right space-y-1">
             <p className="text-blue-200 text-xs">
               Till inflows / Wallet top-ups / Cash POS / Usage · Records
@@ -439,6 +883,7 @@ const CollectionsPage = () => {
                 <th className="text-left py-3 px-4">Status</th>
                 <th className="text-left py-3 px-4">Metadata</th>
                 <th className="text-right py-3 px-4">Amount</th>
+                <th className="text-center py-3 px-4">Actions</th>
                 <th className="text-center py-3 px-4">Payload</th>
               </tr>
             </thead>
@@ -488,6 +933,22 @@ const CollectionsPage = () => {
                       )}
                     </td>
                     <td className="py-3 px-4 text-center">
+                      {r.allocatable ? (
+                        <button
+                          type="button"
+                          onClick={() => openAllocate(r)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
+                        >
+                          <UserPlus size={14} />
+                          Allocate
+                        </button>
+                      ) : r.walletCredited && isWalletTopUpRow(r) ? (
+                        <span className="text-[10px] text-emerald-600 font-semibold">Credited</span>
+                      ) : (
+                        <span className="text-[10px] text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-center">
                       <button
                         type="button"
                         onClick={() => r.id && openPayloads(r.id)}
@@ -512,6 +973,28 @@ const CollectionsPage = () => {
           selectedId={selectedPayloadId}
           onClose={() => setPayloadOpen(false)}
           onSelect={setSelectedPayloadId}
+        />
+      )}
+
+      {allocatePayment && (
+        <AllocateModal
+          payment={allocatePayment}
+          onClose={() => setAllocatePayment(null)}
+          onSuccess={fetchRows}
+        />
+      )}
+
+      {findPaymentOpen && (
+        <FindPaymentModal
+          onClose={() => setFindPaymentOpen(false)}
+          onAllocate={handleFindPaymentAllocate}
+        />
+      )}
+
+      {cashDepositOpen && (
+        <CashDepositModal
+          onClose={() => setCashDepositOpen(false)}
+          onSuccess={fetchRows}
         />
       )}
     </div>

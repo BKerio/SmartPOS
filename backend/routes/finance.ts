@@ -258,6 +258,8 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
         type: purpose,
         metadata: formatKopoMetadata(k.description, meta, { guest, purpose }),
         transactionRef: k.transactionReference || k.reference || '',
+        walletCredited: k.walletCredited,
+        allocatable: success && !k.walletCredited && purpose !== 'pos_sale' && !k.posCompleted && k.amount > 0,
         payload,
       };
     });

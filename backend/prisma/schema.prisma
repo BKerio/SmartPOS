@@ -318,6 +318,8 @@ model KopoPayment {
   posCompleted         Boolean  @default(false) @map("pos_completed")
   posTransactionId     String?  @unique @map("pos_transaction_id")
   walletCredited       Boolean  @default(false) @map("wallet_credited")
+  allocatedBy          String?  @map("allocated_by")
+  allocatedAt          DateTime? @map("allocated_at")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
