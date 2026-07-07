@@ -739,6 +739,14 @@ const CollectionsPage = () => {
           <div className="flex flex-wrap gap-2 justify-end">
             <button
               type="button"
+              onClick={fetchRows}
+              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-semibold"
+              title="Refresh collections"
+            >
+              Refresh
+            </button>
+            <button
+              type="button"
               onClick={() => setFindPaymentOpen(true)}
               className="flex items-center gap-2 px-4 py-2 bg-emerald-500/90 hover:bg-emerald-500 rounded-xl text-sm font-semibold"
             >

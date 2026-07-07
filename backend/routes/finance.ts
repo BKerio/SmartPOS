@@ -248,7 +248,7 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
         id: k.id,
         source: 'kopo',
         mpesaNumber: k.phone || '',
-        date: k.originationTime || k.createdAt,
+        date: k.createdAt,
         name: guest ? 'Guest' : student?.name || meta.student_name || '',
         admNo: guest ? k.phone || 'GUEST' : student?.regNo || meta.student_reg_no || '',
         method: kopoMethod(purpose, guest),
