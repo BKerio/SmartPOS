@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Receipt, FileJson, X, Copy, Check, Search, Filter, Wallet, UserPlus } from "lucide-react";
+import { Receipt, FileJson, X, Copy, Check, Search, Filter, Wallet, UserPlus, AlertTriangle, ClipboardPlus } from "lucide-react";
 import API from "@/services/api";
 import Loader from "@/components/ui/loader";
 import { toast } from "@/services/toast";
@@ -398,9 +398,11 @@ const AllocateModal = ({
 const FindPaymentModal = ({
   onClose,
   onAllocate,
+  onRegister,
 }: {
   onClose: () => void;
   onAllocate: (payment: KopoSearchResult) => void;
+  onRegister: (prefill?: { code?: string; amount?: string }) => void;
 }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<KopoSearchResult[]>([]);
@@ -458,7 +460,22 @@ const FindPaymentModal = ({
 
           <div className="max-h-64 overflow-y-auto space-y-2">
             {query.trim().length >= 2 && !searching && results.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-4">No unallocated payments found</p>
+              <div className="text-center py-4 space-y-3">
+                <p className="text-sm text-gray-500">
+                  No payment found in the system for <span className="font-mono font-semibold">{query.trim()}</span>.
+                </p>
+                <p className="text-xs text-gray-400 px-4">
+                  Manual till payments only appear automatically when KopoKopo webhooks reach your server.
+                  Register it from the M-Pesa SMS, then allocate to a student.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onRegister({ code: query.trim().toUpperCase() })}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-amber-500 text-white rounded-xl hover:bg-amber-600"
+                >
+                  <ClipboardPlus size={16} /> Register from M-Pesa SMS
+                </button>
+              </div>
             )}
             {results.map((r) => (
               <button
@@ -480,6 +497,133 @@ const FindPaymentModal = ({
                 </div>
               </button>
             ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const RegisterManualModal = ({
+  onClose,
+  onSuccess,
+  prefill,
+}: {
+  onClose: () => void;
+  onSuccess: (payment: { id: string; amount: number; transactionReference: string }) => void;
+  prefill?: { code?: string; amount?: string };
+}) => {
+  const [code, setCode] = useState(prefill?.code || "");
+  const [amount, setAmount] = useState(prefill?.amount || "");
+  const [phone, setPhone] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleRegister = async () => {
+    const ref = code.trim().toUpperCase();
+    const amt = Number(amount);
+    if (!ref || ref.length < 8) {
+      toast.warning("M-Pesa code required", "Enter the code from the M-Pesa SMS (e.g. UG7QOA5LRC)");
+      return;
+    }
+    if (!Number.isFinite(amt) || amt <= 0) {
+      toast.warning("Amount required", "Enter the amount paid at the till");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { data } = await API.post("/kopokopo/register-manual", {
+        transactionReference: ref,
+        amount: amt,
+        phone: phone.trim() || undefined,
+      });
+      toast.success("Payment registered", "You can now allocate it to a student");
+      onSuccess({
+        id: data.payment.id,
+        amount: data.payment.amount,
+        transactionReference: data.payment.transactionReference,
+      });
+      onClose();
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        "Registration failed";
+      toast.error("Could not register", msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-bold text-[#0A1F44] flex items-center gap-2">
+              <ClipboardPlus size={18} /> Register till payment
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Enter details from the parent&apos;s M-Pesa confirmation SMS
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-900">
+            Use this when a parent paid via <strong>Lipa na M-Pesa → Buy Goods</strong> to till{" "}
+            <strong>3611959</strong> but the payment did not appear automatically.
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-600">M-Pesa code</label>
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="e.g. UG7QOA5LRC"
+              className="mt-1 w-full px-3 py-2.5 text-sm font-mono border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A1F44] outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-600">Amount (KES)</label>
+            <input
+              type="number"
+              min={1}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="e.g. 1"
+              className="mt-1 w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A1F44] outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-600">Phone (optional)</label>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Parent M-Pesa number"
+              className="mt-1 w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A1F44] outline-none"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 text-sm font-semibold border border-gray-200 rounded-xl hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleRegister}
+              disabled={submitting}
+              className="flex-1 py-2.5 text-sm font-semibold bg-[#0A1F44] text-white rounded-xl hover:bg-[#0A1F44]/90 disabled:opacity-50"
+            >
+              {submitting ? "Registering..." : "Register payment"}
+            </button>
           </div>
         </div>
       </div>
@@ -607,6 +751,14 @@ const CollectionsPage = () => {
   } | null>(null);
   const [findPaymentOpen, setFindPaymentOpen] = useState(false);
   const [cashDepositOpen, setCashDepositOpen] = useState(false);
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [registerPrefill, setRegisterPrefill] = useState<{ code?: string; amount?: string }>();
+  const [webhookStatus, setWebhookStatus] = useState<{
+    paymentsToday: number;
+    hoursSinceLastPayment: number | null;
+    webhookLikelyStale: boolean;
+    tillNumber: string;
+  } | null>(null);
   const [filters, setFilters] = useState({
     search: "",
     source: "all" as SourceFilter,
@@ -634,6 +786,27 @@ const CollectionsPage = () => {
   useEffect(() => {
     fetchRows();
   }, [fetchRows]);
+
+  useEffect(() => {
+    API.get("/kopokopo/webhook-status")
+      .then((r) => setWebhookStatus(r.data))
+      .catch(() => setWebhookStatus(null));
+  }, [rows.length]);
+
+  const openRegister = (prefill?: { code?: string; amount?: string }) => {
+    setRegisterPrefill(prefill);
+    setRegisterOpen(true);
+    setFindPaymentOpen(false);
+  };
+
+  const handleRegistered = (payment: { id: string; amount: number; transactionReference: string }) => {
+    fetchRows();
+    setAllocatePayment({
+      id: payment.id,
+      amount: payment.amount,
+      transactionRef: payment.transactionReference,
+    });
+  };
 
   const filteredRows = useMemo(() => {
     let list = rows;
@@ -726,6 +899,22 @@ const CollectionsPage = () => {
 
   return (
     <div className="p-4 md:p-8 bg-[#E8F4FD] min-h-screen font-sans space-y-6">
+      {webhookStatus && (webhookStatus.webhookLikelyStale || webhookStatus.paymentsToday === 0) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3">
+          <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+          <div className="text-sm text-amber-900 space-y-1">
+            <p className="font-semibold">Manual till payments may not appear automatically</p>
+            <p>
+              Till <strong>{webhookStatus.tillNumber}</strong> payments only sync when KopoKopo webhooks reach your server.
+              {webhookStatus.hoursSinceLastPayment != null
+                ? ` Last recorded payment was ${webhookStatus.hoursSinceLastPayment}h ago.`
+                : " No payments recorded yet."}
+              {" "}Use <strong>Register till payment</strong> with the M-Pesa code from the SMS, then allocate to the student.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="bg-[#0A1F44] text-white rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
@@ -751,6 +940,13 @@ const CollectionsPage = () => {
               className="flex items-center gap-2 px-4 py-2 bg-emerald-500/90 hover:bg-emerald-500 rounded-xl text-sm font-semibold"
             >
               <Search size={16} /> Find M-Pesa payment
+            </button>
+            <button
+              type="button"
+              onClick={() => openRegister()}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-500/90 hover:bg-amber-500 rounded-xl text-sm font-semibold"
+            >
+              <ClipboardPlus size={16} /> Register till payment
             </button>
             <button
               type="button"
@@ -994,6 +1190,18 @@ const CollectionsPage = () => {
         <FindPaymentModal
           onClose={() => setFindPaymentOpen(false)}
           onAllocate={handleFindPaymentAllocate}
+          onRegister={openRegister}
+        />
+      )}
+
+      {registerOpen && (
+        <RegisterManualModal
+          prefill={registerPrefill}
+          onClose={() => {
+            setRegisterOpen(false);
+            setRegisterPrefill(undefined);
+          }}
+          onSuccess={handleRegistered}
         />
       )}
 

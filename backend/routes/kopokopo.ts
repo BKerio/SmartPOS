@@ -83,11 +83,18 @@ interface ParsedKopoPayload {
 function parseKopoPayload(payload: any): ParsedKopoPayload {
   const data = payload?.data ?? payload;
   const attrs = data?.attributes ?? {};
-  const resource = attrs?.event?.resource ?? {};
-  const links = attrs?._links ?? data?._links ?? {};
-  const metadata = attrs?.metadata ?? {};
+  // K2 STK callbacks use data.attributes.event.resource; till webhooks use event.resource at top level
+  const resource =
+    attrs?.event?.resource ??
+    payload?.event?.resource ??
+    data?.event?.resource ??
+    {};
+  const links = attrs?._links ?? data?._links ?? payload?._links ?? {};
+  const metadata = attrs?.metadata ?? payload?.metadata ?? {};
 
-  const rawStatus = String(resource.status || attrs.status || '');
+  const rawStatus = String(
+    resource.status || attrs.status || payload?.event?.resource?.status || 'Received',
+  );
   const amountRaw = resource.amount ?? attrs.amount?.value ?? attrs.amount ?? 0;
 
   return {
@@ -95,12 +102,27 @@ function parseKopoPayload(payload: any): ParsedKopoPayload {
     rawStatus,
     amount: Number(amountRaw) || 0,
     currency: resource.currency ?? attrs.amount?.currency ?? 'KES',
-    phone: String(resource.sender_phone_number ?? attrs.sender_phone_number ?? attrs.phone_number ?? ''),
-    reference: String(data?.id ?? attrs.id ?? resource.id ?? ''),
-    transactionReference: String(resource.reference ?? attrs.reference ?? attrs.mpesa_receipt_number ?? ''),
-    location: normalizeLocation(String(links.self ?? '')),
-    originationTime: String(resource.origination_time ?? attrs.origination_time ?? attrs.initiation_time ?? ''),
-    tillNumber: String(resource.till_number ?? attrs.till_number ?? process.env.KOPOKOPO_TILL_NUMBER ?? ''),
+    phone: String(
+      resource.sender_phone_number ??
+        attrs.sender_phone_number ??
+        attrs.phone_number ??
+        '',
+    ),
+    reference: String(data?.id ?? attrs.id ?? resource.id ?? payload?.id ?? ''),
+    transactionReference: String(
+      resource.reference ?? attrs.reference ?? attrs.mpesa_receipt_number ?? '',
+    ),
+    location: normalizeLocation(String(links.self ?? links.resource ?? '')),
+    originationTime: String(
+      resource.origination_time ??
+        attrs.origination_time ??
+        attrs.initiation_time ??
+        payload?.created_at ??
+        '',
+    ),
+    tillNumber: String(
+      resource.till_number ?? attrs.till_number ?? process.env.KOPOKOPO_TILL_NUMBER ?? '',
+    ),
     studentId: String(metadata.student_id ?? metadata.studentId ?? metadata.customer_id ?? '').trim() || undefined,
     studentRegNo: String(metadata.student_reg_no ?? metadata.studentRegNo ?? metadata.adm_no ?? metadata.reg_no ?? '').trim() || undefined,
     paymentId: String(metadata.payment_id ?? metadata.paymentId ?? '').trim() || undefined,
@@ -1214,6 +1236,140 @@ router.post('/:id/allocate', ensureAuthenticated, async (req: Request, res: Resp
   } catch (err: any) {
     console.error('[Kopokopo] Allocate error:', err?.message || err);
     res.status(500).json({ error: err.message || 'Allocation failed' });
+  }
+});
+
+// GET /api/kopokopo/webhook-status — diagnostics for till webhook delivery
+router.get('/webhook-status', ensureAuthenticated, async (req: Request, res: Response) => {
+  if (!ensureFinanceOrAdmin(req, res)) return;
+
+  try {
+    const [latest, todayCount] = await Promise.all([
+      prisma.kopoPayment.findFirst({
+        where: { eventType: 'buygoods_transaction_received', amount: { gt: 0 } },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true, amount: true, transactionReference: true },
+      }),
+      prisma.kopoPayment.count({
+        where: {
+          createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+          amount: { gt: 0 },
+        },
+      }),
+    ]);
+
+    const webhookUrl = process.env.KOPOKOPO_WEBHOOK_URL || '';
+    const hoursSinceLast =
+      latest?.createdAt
+        ? Math.round((Date.now() - latest.createdAt.getTime()) / 3_600_000)
+        : null;
+
+    res.json({
+      tillNumber: process.env.KOPOKOPO_TILL_NUMBER || '',
+      webhookUrl,
+      callbackUrl: process.env.KOPOKOPO_CALLBACK_URL || '',
+      latestPayment: latest,
+      paymentsToday: todayCount,
+      hoursSinceLastPayment: hoursSinceLast,
+      webhookLikelyStale: hoursSinceLast !== null && hoursSinceLast > 24,
+      hint:
+        'Manual till payments (Lipa na M-Pesa → Buy Goods) only appear when KopoKopo webhooks reach your server. If ngrok URL changed, update .env and call POST /api/kopokopo/subscribe-webhooks.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Status check failed' });
+  }
+});
+
+// POST /api/kopokopo/register-manual — register a till payment from M-Pesa SMS when webhook missed it
+router.post('/register-manual', ensureAuthenticated, async (req: Request, res: Response) => {
+  if (!ensureFinanceOrAdmin(req, res)) return;
+
+  const { transactionReference, amount, phone, notes } = req.body as {
+    transactionReference?: string;
+    amount?: number;
+    phone?: string;
+    notes?: string;
+  };
+
+  const ref = String(transactionReference || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
+  const amt = Number(amount);
+
+  if (!ref || ref.length < 8) {
+    res.status(422).json({ error: 'Valid M-Pesa transaction code is required (e.g. UG7QOA5LRC)' });
+    return;
+  }
+  if (!Number.isFinite(amt) || amt <= 0) {
+    res.status(422).json({ error: 'Valid positive amount is required' });
+    return;
+  }
+
+  try {
+    const existing = await prisma.kopoPayment.findFirst({
+      where: {
+        OR: [
+          { transactionReference: { equals: ref, mode: 'insensitive' } },
+          { reference: { equals: ref, mode: 'insensitive' } },
+        ],
+      },
+    });
+
+    if (existing) {
+      if (existing.walletCredited) {
+        res.status(409).json({ error: 'This M-Pesa code is already allocated to a student wallet' });
+        return;
+      }
+      res.json({
+        message: 'Payment already registered',
+        payment: {
+          id: existing.id,
+          amount: existing.amount,
+          transactionReference: existing.transactionReference || existing.reference,
+          allocatable: isAllocatablePayment(existing),
+        },
+      });
+      return;
+    }
+
+    const payment = await prisma.kopoPayment.create({
+      data: {
+        status: 'success',
+        amount: amt,
+        phone: String(phone || '').trim(),
+        transactionReference: ref,
+        purpose: 'general',
+        eventType: 'buygoods_transaction_received',
+        tillNumber: process.env.KOPOKOPO_TILL_NUMBER || '',
+        description: notes?.trim() || `Manual till payment registered · ${ref}`,
+      },
+    });
+
+    await logAuditEvent({
+      eventType: 'manual_payment_register',
+      userType: req.user!.role,
+      userId: req.user!.id,
+      userName: req.user!.name,
+      action: 'Register Manual Till Payment',
+      description: `Registered M-Pesa ${ref} for KES ${amt}`,
+      metadata: { paymentId: payment.id, transactionReference: ref, amount: amt },
+      ipAddress: req.ip,
+    });
+
+    res.status(201).json({
+      message: 'Payment registered — you can now allocate it to a student',
+      payment: {
+        id: payment.id,
+        amount: payment.amount,
+        transactionReference: payment.transactionReference,
+        phone: payment.phone,
+        allocatable: true,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Kopokopo] Manual register error:', err?.message || err);
+    res.status(500).json({ error: err.message || 'Registration failed' });
   }
 });
 

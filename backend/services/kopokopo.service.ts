@@ -201,7 +201,7 @@ export const subscribeWebhook = async (eventType: string, url: string): Promise<
   };
 
   const response = await axios.post(
-    `${KOPOKOPO_BASE_URL}/api/v1/webhook_subscriptions`,
+    `${KOPOKOPO_BASE_URL}/api/v2/webhook_subscriptions`,
     payload,
     {
       headers: {
