@@ -220,8 +220,6 @@ const PayloadModal = ({
   );
 };
 
-  );
-};
 
 const StudentPicker = ({
   selected,
