@@ -120,7 +120,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     const isMatch = await bcrypt.compare(password, parent.password);
     if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const token = signToken({ id: parent.id, phone: parent.phone, role: 'parent', name: parent.name });
+    const token = signToken({ id: parent.id, phone: parent.phone || undefined, role: 'parent', name: parent.name });
 
     await logAuditEvent({
       eventType: 'login',
@@ -235,7 +235,7 @@ router.put('/profile', ensureAuthenticated, async (req: Request, res: Response):
       userType: 'parent',
       userId: parent.id,
       userName: updated.name,
-      userEmail: updated.email,
+      userEmail: updated.email || undefined,
       action: 'Update Profile',
       ipAddress: req.ip,
     });
