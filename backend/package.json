@@ -8,6 +8,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
+    "db:link-topups": "ts-node -r tsconfig-paths/register scripts/link-topups.ts",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate"
   },
@@ -28,7 +29,8 @@
     "nodemailer": "^9.0.1",
     "socket.io": "^4.8.3",
     "uuid": "^14.0.1",
-    "ws": "^8.18.1"
+    "ws": "^8.18.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

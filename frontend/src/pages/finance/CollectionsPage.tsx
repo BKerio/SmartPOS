@@ -788,12 +788,6 @@ const CollectionsPage = () => {
   }, [fetchRows]);
 
   useEffect(() => {
-    // Auto-refresh every 30 seconds (like AuditLogs)
-    const interval = window.setInterval(fetchRows, 30000);
-    return () => window.clearInterval(interval);
-  }, [fetchRows]);
-
-  useEffect(() => {
     API.get("/kopokopo/webhook-status")
       .then((r) => setWebhookStatus(r.data))
       .catch(() => setWebhookStatus(null));
