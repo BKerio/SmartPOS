@@ -31,11 +31,21 @@ function kopoMetadataFromRaw(rawPayload: unknown): Record<string, string> {
   const data = (rawPayload as any)?.data ?? rawPayload;
   const attrs = (data as any)?.attributes ?? {};
   const meta = attrs?.metadata ?? {};
-  const event = attrs?.event ?? {};
+  const event = attrs?.event ?? (data as any)?.event ?? {};
+  const resource = event?.resource ?? {};
+
+  const senderFirst = String(resource.sender_first_name ?? '').trim();
+  const senderMiddle = String(resource.sender_middle_name ?? '').trim();
+  const senderLast = String(resource.sender_last_name ?? '').trim();
+  const senderName = [senderFirst, senderMiddle, senderLast].filter(Boolean).join(' ');
+  const senderPhone = String(resource.sender_phone_number ?? '').trim();
+
   return {
     description: String(meta.description ?? ''),
     student_reg_no: String(meta.student_reg_no ?? meta.studentRegNo ?? meta.reg_no ?? ''),
     student_name: String(meta.student_name ?? meta.studentName ?? ''),
+    payer_name: String(meta.payer_name ?? meta.payerName ?? senderName ?? ''),
+    payer_phone: String(meta.payer_phone ?? meta.payerPhone ?? senderPhone ?? ''),
     purpose: String(meta.purpose ?? ''),
     payer_type: String(meta.payer_type ?? meta.payerType ?? ''),
     status: String(attrs.status ?? ''),
@@ -204,6 +214,8 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
       const guest = isGuestTillPayment(purpose, k.studentId, meta);
       const success = KOPO_SUCCESS.has((k.status || '').toLowerCase());
       const receivedOnTill = tillPaymentReceived(k.status, k.amount);
+      const payerName = meta.payer_name || '';
+      const payerPhone = meta.payer_phone || '';
 
       const payload = {
         source: 'kopo',
@@ -222,6 +234,8 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
         studentId: k.studentId,
         studentName: guest ? 'Guest' : student?.name || meta.student_name || null,
         studentRegNo: guest ? k.phone || 'GUEST' : student?.regNo || meta.student_reg_no || null,
+        payerName: payerName || null,
+        payerPhone: payerPhone || null,
         walletCredited: k.walletCredited,
         posCompleted: k.posCompleted,
         posTransactionId: k.posTransactionId,
@@ -237,6 +251,8 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
           student_id: k.studentId || '',
           student_reg_no: guest ? 'GUEST' : student?.regNo || meta.student_reg_no || '',
           student_name: guest ? 'Guest' : student?.name || meta.student_name || '',
+          payer_name: payerName,
+          payer_phone: payerPhone,
           purpose,
           payer_type: guest ? 'guest' : meta.payer_type || 'student',
           ...(meta.error ? { error: meta.error } : {}),
@@ -247,9 +263,9 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
       return {
         id: k.id,
         source: 'kopo',
-        mpesaNumber: k.phone || '',
+        mpesaNumber: k.phone || payerPhone || '',
         date: k.createdAt,
-        name: guest ? 'Guest' : student?.name || meta.student_name || '',
+        name: guest ? 'Guest' : student?.name || meta.student_name || payerName || '',
         admNo: guest ? k.phone || 'GUEST' : student?.regNo || meta.student_reg_no || '',
         method: kopoMethod(purpose, guest),
         amount: receivedOnTill ? k.amount : 0,
