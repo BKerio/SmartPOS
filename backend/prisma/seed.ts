@@ -140,18 +140,18 @@ async function seed() {
   }
 
   // ── Default parent (for demos / manual linking) ───────────────────────────
-  const parentEmail = 'parent@smartpos.com';
-  let parent = await prisma.parent.findUnique({ where: { email: parentEmail } });
+  const parentPhone = '0712345678';
+  let parent = await prisma.parent.findUnique({ where: { phone: parentPhone } });
   if (!parent) {
     parent = await prisma.parent.create({
       data: {
         name: 'Jane Parent',
-        email: parentEmail,
-        phone: '0712345678',
+        email: 'parent@smartpos.com',
+        phone: parentPhone,
         password: passwordHash,
       },
     });
-    console.log(`Parent created - email: ${parentEmail}  password: ${DEFAULT_PASSWORD}`);
+    console.log(`Parent created - phone: ${parentPhone}  password: ${DEFAULT_PASSWORD}`);
   }
 
   // ── Students from student.csv ─────────────────────────────────────────────

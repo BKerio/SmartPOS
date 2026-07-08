@@ -4,7 +4,7 @@ import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
 
-const emptyParent = { name: "", email: "", phone: "", password: "", studentIds: [] as string[] };
+const emptyParent = { name: "", phone: "", email: "", password: "", studentIds: [] as string[] };
 const inputCls = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#0A1F44] outline-none";
 
 const ManageParents: React.FC = () => {
@@ -23,7 +23,7 @@ const ManageParents: React.FC = () => {
       const linked = (p.students || [])
         .map((s: any) => `${s.name || ""} ${s.regNo || ""}`)
         .join(" ");
-      const haystack = [p.name, p.email, p.phone, linked]
+      const haystack = [p.name, p.phone, p.email, linked]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -57,7 +57,7 @@ const ManageParents: React.FC = () => {
     try {
       const payload = { ...parentForm, studentIds: parentForm.studentIds };
       if (editId) {
-        const body: any = { name: payload.name, email: payload.email, phone: payload.phone, studentIds: payload.studentIds };
+        const body: any = { name: payload.name, phone: payload.phone, email: payload.email, studentIds: payload.studentIds };
         if (payload.password) body.password = payload.password;
         await API.put(`/parents/${editId}`, body);
       } else {
@@ -74,7 +74,7 @@ const ManageParents: React.FC = () => {
   const editParent = (p: any) => {
     setEditId(p._id || p.id);
     setParentForm({
-      name: p.name, email: p.email, phone: p.phone || "", password: "",
+      name: p.name, phone: p.phone || "", email: p.email || "", password: "",
       studentIds: (p.students || []).map((s: any) => s.id),
     });
     setShowForm(true);
@@ -148,8 +148,8 @@ const ManageParents: React.FC = () => {
                     <tr key={p._id || p.id} className="border-t border-gray-50 hover:bg-gray-50/50">
                       <td className="px-4 py-3 font-semibold">{p.name}</td>
                       <td className="px-4 py-3">
-                        <p>{p.email}</p>
-                        <p className="text-gray-400">{p.phone || "-"}</p>
+                        <p className="font-medium">{p.phone || "-"}</p>
+                        <p className="text-gray-400">{p.email || "-"}</p>
                       </td>
                       <td className="px-4 py-3">
                         {(p.students || []).length === 0 ? "-" : (
@@ -184,8 +184,8 @@ const ManageParents: React.FC = () => {
             </div>
             <form onSubmit={saveParent} className="space-y-3">
               <input className={inputCls} placeholder="Full name" value={parentForm.name} onChange={(e) => setParentForm({ ...parentForm, name: e.target.value })} required />
-              <input type="email" className={inputCls} placeholder="Email" value={parentForm.email} onChange={(e) => setParentForm({ ...parentForm, email: e.target.value })} required />
-              <input className={inputCls} placeholder="Phone" value={parentForm.phone} onChange={(e) => setParentForm({ ...parentForm, phone: e.target.value })} />
+              <input className={inputCls} placeholder="Phone" value={parentForm.phone} onChange={(e) => setParentForm({ ...parentForm, phone: e.target.value })} required />
+              <input type="email" className={inputCls} placeholder="Email (optional)" value={parentForm.email} onChange={(e) => setParentForm({ ...parentForm, email: e.target.value })} />
               <input type="password" className={inputCls} placeholder={editId ? "New password (leave blank to keep)" : "Password"} value={parentForm.password} onChange={(e) => setParentForm({ ...parentForm, password: e.target.value })} required={!editId} minLength={7} />
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Link Students</p>

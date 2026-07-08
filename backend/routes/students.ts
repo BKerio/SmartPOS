@@ -120,7 +120,7 @@ const resolveParentId = async (
 ): Promise<{
   parentId: string | null;
   notify?: {
-    parent: { name: string; email: string; phone?: string | null; receiveSms?: boolean; receiveEmail?: boolean };
+    parent: { name: string; email?: string | null; phone?: string | null; receiveSms?: boolean; receiveEmail?: boolean };
     password?: string;
   };
 }> => {
@@ -141,16 +141,15 @@ const resolveParentId = async (
   }
 
   const phone = parentInfo.phone.trim();
-  const email = parentInfo.email?.trim() || `parent-${phone.replace(/\D/g, '')}@school.local`;
   const parentData = {
     name: parentInfo.name.trim(),
     phone,
-    email,
+    email: parentInfo.email?.trim() || null,
     receiveSms: parentInfo.receiveSms !== false,
     receiveEmail: parentInfo.receiveEmail !== false,
   };
 
-  const existing = await prisma.parent.findUnique({ where: { email } });
+  const existing = await prisma.parent.findUnique({ where: { phone } });
   if (existing) {
     await prisma.parent.update({ where: { id: existing.id }, data: parentData });
     return { parentId: existing.id, notify: { parent: parentData } };

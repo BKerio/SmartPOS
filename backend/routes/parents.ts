@@ -28,16 +28,16 @@ router.get('/', ensureAdmin, async (_req: Request, res: Response): Promise<any> 
 // ─── POST /api/parents ────────────────────────────────────────────────────────
 router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
   const { name, email, phone, password, studentIds } = req.body;
-  if (!name || !email || !password) {
-    return res.status(422).json({ message: 'Name, email, and password are required' });
+  if (!name || !phone || !password) {
+    return res.status(422).json({ message: 'Name, phone, and password are required' });
   }
   try {
-    const existing = await prisma.parent.findUnique({ where: { email } });
-    if (existing) return res.status(409).json({ message: 'A parent with this email already exists' });
+    const existing = await prisma.parent.findUnique({ where: { phone } });
+    if (existing) return res.status(409).json({ message: 'A parent with this phone already exists' });
 
     const hashed = await bcrypt.hash(password, 10);
     const parent = await prisma.parent.create({
-      data: { name, email, phone, password: hashed },
+      data: { name, email: email?.trim() || null, phone: String(phone).trim(), password: hashed },
     });
 
     if (Array.isArray(studentIds) && studentIds.length > 0) {
@@ -73,7 +73,7 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       userId: req.user?.id,
       userName: req.user?.name || 'Admin',
       action: 'Create Parent',
-      description: `Created parent account for ${name} (${email})`,
+      description: `Created parent account for ${name} (${String(phone).trim()})`,
       ipAddress: req.ip,
     });
 
@@ -86,20 +86,20 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
 // ─── POST /api/parents/register ───────────────────────────────────────────────
 router.post('/register', async (req: Request, res: Response): Promise<any> => {
   const { name, email, phone, password } = req.body;
-  if (!name || !email || !password) {
-    return res.status(422).json({ message: 'Name, email, and password are required' });
+  if (!name || !phone || !password) {
+    return res.status(422).json({ message: 'Name, phone, and password are required' });
   }
 
   try {
-    const existing = await prisma.parent.findUnique({ where: { email } });
+    const existing = await prisma.parent.findUnique({ where: { phone } });
     if (existing) {
-      return res.status(409).json({ message: 'A parent account with this email already exists' });
+      return res.status(409).json({ message: 'A parent account with this phone already exists' });
     }
 
     const hashed = await bcrypt.hash(password, 10);
     const parent = await prisma.parent.create({
-      data: { name, email, phone, password: hashed },
-      select: { id: true, name: true, email: true },
+      data: { name, email: email?.trim() || null, phone: String(phone).trim(), password: hashed },
+      select: { id: true, name: true, email: true, phone: true },
     });
 
     return res.status(201).json(parent);
@@ -110,29 +110,29 @@ router.post('/register', async (req: Request, res: Response): Promise<any> => {
 
 // ─── POST /api/parents/login ──────────────────────────────────────────────────
 router.post('/login', async (req: Request, res: Response): Promise<any> => {
-  const { email, password } = req.body;
-  if (!email || !password) return res.status(422).json({ message: 'Email and password required' });
+  const { phone, password } = req.body;
+  if (!phone || !password) return res.status(422).json({ message: 'Phone and password required' });
 
   try {
-    const parent = await prisma.parent.findUnique({ where: { email } });
+    const parent = await prisma.parent.findUnique({ where: { phone: String(phone).trim() } });
     if (!parent) return res.status(401).json({ message: 'Invalid credentials' });
 
     const isMatch = await bcrypt.compare(password, parent.password);
     if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const token = signToken({ id: parent.id, email: parent.email, role: 'parent', name: parent.name });
+    const token = signToken({ id: parent.id, phone: parent.phone, role: 'parent', name: parent.name });
 
     await logAuditEvent({
       eventType: 'login',
       userType: 'parent',
       userId: parent.id,
       userName: parent.name,
-      userEmail: parent.email,
+      userEmail: parent.email || undefined,
       action: 'Parent login',
       ipAddress: req.ip,
     });
 
-    return res.json({ token, id: parent.id, name: parent.name, email: parent.email, role: 'parent' });
+    return res.json({ token, id: parent.id, name: parent.name, email: parent.email, phone: parent.phone, role: 'parent' });
   } catch (error) {
     return res.status(500).json({ message: 'Something went wrong' });
   }
@@ -415,17 +415,17 @@ router.get('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
 router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
   const { name, email, phone, password, studentIds } = req.body;
   try {
-    if (email) {
+    if (phone) {
       const conflict = await prisma.parent.findFirst({
-        where: { email, id: { not: req.params.id as string } },
+        where: { phone, id: { not: req.params.id as string } },
       });
-      if (conflict) return res.status(409).json({ message: 'Another parent uses this email' });
+      if (conflict) return res.status(409).json({ message: 'Another parent uses this phone' });
     }
 
     const data: any = {};
     if (name) data.name = name;
-    if (email) data.email = email;
-    if (phone !== undefined) data.phone = phone;
+    if (email !== undefined) data.email = email?.trim() || null;
+    if (phone !== undefined) data.phone = String(phone).trim();
     if (password) data.password = await bcrypt.hash(password, 10);
 
     await prisma.parent.update({ where: { id: req.params.id as string }, data });
@@ -477,7 +477,7 @@ router.delete('/:id', ensureAdmin, async (req: Request, res: Response): Promise<
       userId: req.user?.id,
       userName: req.user?.name || 'Admin',
       action: 'Delete Parent',
-      description: `Deleted parent ${parent.name} (${parent.email})`,
+      description: `Deleted parent ${parent.name} (${parent.phone})`,
       ipAddress: req.ip,
     });
 

@@ -6,6 +6,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'smartpos-secret-key';
 export interface AuthPayload {
   id: string;
   email?: string;
+  phone?: string;
   regNo?: string;
   role: string;
   name: string;

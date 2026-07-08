@@ -32,7 +32,6 @@ const emptyStudent = {
   parentRelationship: "father",
   parentName: "",
   parentPhone: "",
-  parentEmail: "",
   parentReceiveSms: true,
   parentReceiveEmail: true,
   fingerprintTemplate: "",
@@ -75,7 +74,6 @@ const ManageStudents: React.FC = () => {
         s.gender,
         s.parent?.name,
         s.parent?.phone,
-        s.parent?.email,
         s.parentRelationship,
         s.hasFingerprint ? "enrolled fingerprint" : "",
       ]
@@ -146,7 +144,6 @@ const ManageStudents: React.FC = () => {
         parent: {
           name: studentForm.parentName.trim(),
           phone: studentForm.parentPhone.trim(),
-          email: studentForm.parentEmail.trim() || undefined,
           receiveSms: studentForm.parentReceiveSms,
           receiveEmail: studentForm.parentReceiveEmail,
         },
@@ -243,7 +240,6 @@ const ManageStudents: React.FC = () => {
       parentRelationship: s.parentRelationship || "father",
       parentName: s.parent?.name || "",
       parentPhone: s.parent?.phone || "",
-      parentEmail: s.parent?.email?.endsWith("@school.local") ? "" : (s.parent?.email || ""),
       parentReceiveSms: s.parent?.receiveSms !== false,
       parentReceiveEmail: s.parent?.receiveEmail !== false,
       fingerprintTemplate: "",
@@ -423,10 +419,6 @@ const ManageStudents: React.FC = () => {
                   <div>
                     <label className={labelCls}>Phone <span className="text-red-500">*</span></label>
                     <input className={inputCls} placeholder="0712345678" value={studentForm.parentPhone} onChange={(e) => setField("parentPhone", e.target.value)} required />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Email</label>
-                    <input type="email" className={inputCls} placeholder="parent@email.com" value={studentForm.parentEmail} onChange={(e) => setField("parentEmail", e.target.value)} />
                   </div>
                   <div>
                     <label className={labelCls}>Relationship</label>

@@ -30,6 +30,7 @@ const Login: React.FC = () => {
   const { status, user, refreshSession } = useAuth();
   const [role, setRole] = useState<UserRole>("admin");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [regNo, setRegNo] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -80,7 +81,7 @@ const Login: React.FC = () => {
         const res = await API.post("/students/login", { regNo, password });
         data = res.data;
       } else if (role === "parent") {
-        const res = await API.post("/parents/login", { email, password });
+        const res = await API.post("/parents/login", { phone, password });
         data = res.data;
       } else {
         const res = await API.post("/users/login", { email, password, role });
@@ -193,14 +194,25 @@ const Login: React.FC = () => {
                     exit={{ opacity: 0, y: -10 }}
                     className="space-y-3"
                   >
-                    <input
-                      type="email"
-                      placeholder="Enter your Email Address"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      className={inputCls}
-                    />
+                    {role === "parent" ? (
+                      <input
+                        type="tel"
+                        placeholder="Enter your Phone Number"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        required
+                        className={inputCls}
+                      />
+                    ) : (
+                      <input
+                        type="email"
+                        placeholder="Enter your Email Address"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        className={inputCls}
+                      />
+                    )}
                     <div className="relative">
                       <input
                         type={showPassword ? "text" : "password"}
@@ -285,6 +297,7 @@ const Login: React.FC = () => {
                               setRole(option.value);
                               setShowRoleSelector(false);
                               setEmail("");
+                              setPhone("");
                               setPassword("");
                               setRegNo("");
                             }}

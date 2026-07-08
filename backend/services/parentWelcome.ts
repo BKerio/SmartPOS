@@ -2,7 +2,7 @@ import { isMailConfigured, sendParentWelcomeEmail } from '@/services/mail';
 import { isAdvantaSmsConfigured, sendAdvantaSms } from '@/services/sms';
 
 export async function sendParentWelcomeNotifications(params: {
-  parent: { name: string; email: string; phone?: string | null; receiveSms?: boolean; receiveEmail?: boolean };
+  parent: { name: string; email?: string | null; phone?: string | null; receiveSms?: boolean; receiveEmail?: boolean };
   password?: string;
   students: Array<{ name: string; regNo: string }>;
 }) {

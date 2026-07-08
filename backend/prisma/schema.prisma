@@ -25,8 +25,8 @@ model Admin {
 model Parent {
   id           String    @id @default(cuid())
   name         String
-  email        String    @unique
-  phone        String?
+  email        String?   @unique
+  phone        String?   @unique
   password     String
   receiveSms   Boolean   @default(true)
   receiveEmail Boolean   @default(true)

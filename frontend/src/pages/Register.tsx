@@ -27,11 +27,12 @@ const Register: React.FC = () => {
     e.preventDefault();
     if (!form.role) return toast.warning("Select a role", "Choose your account type.");
     if (form.password !== form.confirmPassword) return toast.error("Passwords don't match");
+    if (form.role === "parent" && !form.phone.trim()) return toast.error("Validation", "Phone number is required for parent accounts");
 
     setLoading(true);
     try {
       if (form.role === "parent") {
-        await API.post("/parents/register", { name: form.name, email: form.email, password: form.password, phone: form.phone });
+        await API.post("/parents/register", { name: form.name, phone: form.phone, password: form.password, email: form.email || undefined });
         toast.success("Account created!", "You can now log in as a parent.");
       } else {
         await API.post("/users/register", { name: form.name, email: form.email, password: form.password, phone: form.phone, role: form.role });
@@ -64,10 +65,16 @@ const Register: React.FC = () => {
 
             <input placeholder="Full name" value={form.name} onChange={(e) => set("name", e.target.value)} required
               className="w-full px-3 py-3 bg-gray-50 border rounded-xl text-sm outline-none focus:border-indigo-300" />
-            <input type="email" placeholder="Email address" value={form.email} onChange={(e) => set("email", e.target.value)} required
-              className="w-full px-3 py-3 bg-gray-50 border rounded-xl text-sm outline-none focus:border-indigo-300" />
-            <input type="tel" placeholder="Phone (optional)" value={form.phone} onChange={(e) => set("phone", e.target.value)}
-              className="w-full px-3 py-3 bg-gray-50 border rounded-xl text-sm outline-none focus:border-indigo-300" />
+            {form.role !== "parent" && (
+              <input type="email" placeholder="Email address" value={form.email} onChange={(e) => set("email", e.target.value)} required
+                className="w-full px-3 py-3 bg-gray-50 border rounded-xl text-sm outline-none focus:border-indigo-300" />
+            )}
+            <input type="tel" placeholder={form.role === "parent" ? "Phone number" : "Phone (optional)"} value={form.phone} onChange={(e) => set("phone", e.target.value)}
+              className="w-full px-3 py-3 bg-gray-50 border rounded-xl text-sm outline-none focus:border-indigo-300" required={form.role === "parent"} />
+            {form.role === "parent" && (
+              <input type="email" placeholder="Email (optional)" value={form.email} onChange={(e) => set("email", e.target.value)}
+                className="w-full px-3 py-3 bg-gray-50 border rounded-xl text-sm outline-none focus:border-indigo-300" />
+            )}
             <input type="password" placeholder="Password" value={form.password} onChange={(e) => set("password", e.target.value)} required
               className="w-full px-3 py-3 bg-gray-50 border rounded-xl text-sm outline-none focus:border-indigo-300" />
             <input type="password" placeholder="Confirm password" value={form.confirmPassword} onChange={(e) => set("confirmPassword", e.target.value)} required
