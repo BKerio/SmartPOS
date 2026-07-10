@@ -10,6 +10,7 @@ import {
   fingerprintEnrollmentData,
   FingerprintDuplicateError,
 } from '@/services/fingerprint';
+import { buildWalletPinUpdate, defaultWalletPinData } from '@/services/walletPin';
 
 const router = Router();
 
@@ -27,6 +28,7 @@ const studentListSelect = {
   id: true, name: true, regNo: true, phone: true, email: true,
   gender: true, dateOfBirth: true, course: true, parentRelationship: true,
   walletBalance: true, parentId: true, createdAt: true,
+  walletPinSetAt: true,
   fingerprintTemplate: true, fingerprintEnrolledAt: true,
   parent: { select: { id: true, name: true, email: true, phone: true, receiveSms: true, receiveEmail: true } },
 } as const;
@@ -305,6 +307,7 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
     const finalParentId = parentResolved.parentId;
     const plainPassword = password || finalRegNo.slice(-6);
     const hashed = await bcrypt.hash(plainPassword, 10);
+    const defaultPin = await defaultWalletPinData();
     const student = await prisma.student.create({
       data: {
         name,
@@ -319,6 +322,7 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
         parentRelationship: parentRelationship?.trim() || null,
         password: hashed,
         parentId: finalParentId,
+        ...defaultPin,
         ...fingerprintEnrollmentData(parsedFingerprint),
       },
       select: studentDetailSelect,
@@ -422,6 +426,110 @@ router.get('/lookup/:regNo', ensureAuthenticated, async (req: Request, res: Resp
     });
     if (!student) return res.status(404).json({ message: 'Student not found' });
     return res.json(toPosStudent(student));
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── POST /api/students/wallet-pins/backfill-default ─────────────────────────
+router.post('/wallet-pins/backfill-default', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  try {
+    const pinData = await defaultWalletPinData();
+    const result = await prisma.student.updateMany({
+      where: { walletPinHash: null },
+      data: pinData,
+    });
+
+    await logAuditEvent({
+      eventType: 'wallet_pins_backfilled',
+      userType: 'admin',
+      userId: req.user?.id,
+      userName: req.user?.name || 'Admin',
+      action: 'Backfill Default Wallet PINs',
+      description: `Set default wallet PIN for ${result.count} student(s)`,
+      metadata: { count: result.count },
+      ipAddress: req.ip,
+    });
+
+    return res.json({ message: `Default wallet PIN set for ${result.count} student(s)`, count: result.count });
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── GET /api/students/:id/wallet-settings ────────────────────────────────────
+router.get('/:id/wallet-settings', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  try {
+    const student = await prisma.student.findUnique({
+      where: { id: req.params.id as string },
+      select: {
+        id: true,
+        name: true,
+        regNo: true,
+        walletFrozen: true,
+        dailySpendLimit: true,
+        weeklySpendLimit: true,
+        walletPinSetAt: true,
+      },
+    });
+    if (!student) return res.status(404).json({ message: 'Student not found' });
+    return res.json({ ...student, pinEnabled: Boolean(student.walletPinSetAt) });
+  } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── PUT /api/students/:id/wallet-settings ────────────────────────────────────
+router.put('/:id/wallet-settings', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  const { pin, resetPin } = req.body || {};
+
+  try {
+    const existing = await prisma.student.findUnique({
+      where: { id: req.params.id as string },
+      select: { id: true, name: true, regNo: true },
+    });
+    if (!existing) return res.status(404).json({ message: 'Student not found' });
+
+    let pinData: Awaited<ReturnType<typeof buildWalletPinUpdate>>;
+    try {
+      pinData = await buildWalletPinUpdate({ pin, resetPin });
+    } catch (err) {
+      if (err instanceof Error && err.message === 'INVALID_PIN') {
+        return res.status(422).json({ message: 'PIN must be exactly 4 digits' });
+      }
+      throw err;
+    }
+
+    if (!pinData.walletPinHash && resetPin !== true && !(typeof pin === 'string' && pin.trim())) {
+      return res.status(422).json({ message: 'Provide a 4-digit PIN or resetPin: true' });
+    }
+
+    const updated = await prisma.student.update({
+      where: { id: existing.id },
+      data: pinData,
+      select: {
+        id: true,
+        name: true,
+        regNo: true,
+        walletFrozen: true,
+        dailySpendLimit: true,
+        weeklySpendLimit: true,
+        walletPinSetAt: true,
+      },
+    });
+
+    await logAuditEvent({
+      eventType: 'wallet_pin_updated',
+      userType: 'admin',
+      userId: req.user?.id,
+      userName: req.user?.name || 'Admin',
+      action: resetPin ? 'Reset Wallet PIN' : 'Update Wallet PIN',
+      description: `${resetPin ? 'Reset' : 'Updated'} wallet PIN for ${updated.name} (${updated.regNo})`,
+      metadata: { studentId: updated.id, resetPin: Boolean(resetPin) },
+      ipAddress: req.ip,
+    });
+
+    return res.json({ ...updated, pinEnabled: Boolean(updated.walletPinSetAt) });
   } catch {
     return res.status(500).json({ message: 'Something went wrong' });
   }

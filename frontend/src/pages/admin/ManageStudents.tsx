@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
-import { GraduationCap, Plus, Edit, Trash2, X, Eye, Fingerprint, Search } from "lucide-react";
+import { GraduationCap, Plus, Edit, Trash2, X, Eye, Fingerprint, Search, KeyRound } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
@@ -58,6 +58,10 @@ const ManageStudents: React.FC = () => {
   const [scannerReady, setScannerReady] = useState<boolean | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [validatingFingerprint, setValidatingFingerprint] = useState(false);
+  const [pinStudent, setPinStudent] = useState<any>(null);
+  const [pinSettings, setPinSettings] = useState<{ pinEnabled: boolean } | null>(null);
+  const [pinLoading, setPinLoading] = useState(false);
+  const [pinSaving, setPinSaving] = useState(false);
 
   const filteredStudents = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -255,6 +259,73 @@ const ManageStudents: React.FC = () => {
     fetchData();
   };
 
+  const openPinModal = async (student: any) => {
+    setPinStudent(student);
+    setPinSettings(null);
+    setPinLoading(true);
+    try {
+      const { data } = await API.get(`/students/${student._id || student.id}/wallet-settings`);
+      setPinSettings({ pinEnabled: Boolean(data.pinEnabled) });
+    } catch (e: any) {
+      toast.error("Failed to load wallet PIN", e.response?.data?.message);
+      setPinStudent(null);
+    } finally {
+      setPinLoading(false);
+    }
+  };
+
+  const closePinModal = () => {
+    setPinStudent(null);
+    setPinSettings(null);
+  };
+
+  const setStudentPin = async () => {
+    if (!pinStudent) return;
+    const pin = window.prompt("Enter new 4-digit wallet PIN");
+    if (!pin) return;
+    setPinSaving(true);
+    try {
+      const { data } = await API.put(`/students/${pinStudent._id || pinStudent.id}/wallet-settings`, { pin });
+      setPinSettings({ pinEnabled: Boolean(data.pinEnabled) });
+      toast.success("Wallet PIN updated");
+    } catch (e: any) {
+      toast.error("Update failed", e.response?.data?.message);
+    } finally {
+      setPinSaving(false);
+    }
+  };
+
+  const resetStudentPin = async () => {
+    if (!pinStudent) return;
+    const ok = await toast.confirm("Reset wallet PIN to default (1234)?", { confirmLabel: "Reset" });
+    if (!ok) return;
+    setPinSaving(true);
+    try {
+      const { data } = await API.put(`/students/${pinStudent._id || pinStudent.id}/wallet-settings`, { resetPin: true });
+      setPinSettings({ pinEnabled: Boolean(data.pinEnabled) });
+      toast.success("Wallet PIN reset to 1234");
+    } catch (e: any) {
+      toast.error("Reset failed", e.response?.data?.message);
+    } finally {
+      setPinSaving(false);
+    }
+  };
+
+  const backfillDefaultPins = async () => {
+    const ok = await toast.confirm(
+      "Set default PIN (1234) for all students without a wallet PIN?",
+      { confirmLabel: "Apply to all" },
+    );
+    if (!ok) return;
+    try {
+      const { data } = await API.post("/students/wallet-pins/backfill-default");
+      toast.success("Default PINs applied", data.message);
+      fetchData();
+    } catch (e: any) {
+      toast.error("Backfill failed", e.response?.data?.message);
+    }
+  };
+
   return (
     <div className="p-4 md:p-8 bg-[#E8F4FD] min-h-screen font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -281,6 +352,9 @@ const ManageStudents: React.FC = () => {
               </div>
               <button onClick={() => { closeForm(); setShowForm(true); }} className="flex items-center justify-center gap-2 bg-[#0A1F44] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#0A1F44]/90">
                 <Plus size={16} /> Add Student
+              </button>
+              <button onClick={backfillDefaultPins} className="flex items-center justify-center gap-2 bg-white border border-gray-200 text-[#0A1F44] px-4 py-2 rounded-xl text-sm font-semibold hover:bg-gray-50">
+                <KeyRound size={16} /> Default PINs
               </button>
             </div>
           </div>
@@ -329,6 +403,7 @@ const ManageStudents: React.FC = () => {
                       <td className="px-4 py-3">
                         <div className="flex justify-center gap-1">
                           <button onClick={() => setViewItem(s)} className="p-2 text-gray-400 hover:text-blue-600"><Eye size={16} /></button>
+                          <button onClick={() => openPinModal(s)} className="p-2 text-gray-400 hover:text-indigo-600" title="Wallet PIN"><KeyRound size={16} /></button>
                           <button onClick={() => editStudent(s)} className="p-2 text-gray-400 hover:text-amber-600"><Edit size={16} /></button>
                           <button onClick={() => deleteStudent(s._id || s.id)} className="p-2 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
                         </div>
@@ -514,6 +589,7 @@ const ManageStudents: React.FC = () => {
               <p><span className="text-gray-500">Gender:</span> {viewItem.gender}</p>
               <p><span className="text-gray-500">Date of Birth:</span> {viewItem.dateOfBirth ? formatDateInput(viewItem.dateOfBirth) : "-"}</p>
               <p><span className="text-gray-500">Wallet:</span> KES {(viewItem.walletBalance || 0).toLocaleString()}</p>
+              <p><span className="text-gray-500">Wallet PIN:</span> {viewItem.walletPinSetAt ? "Set" : "Not set"}</p>
               <p><span className="text-gray-500">Fingerprint:</span> {viewItem.hasFingerprint ? "Enrolled" : "Not enrolled"}</p>
               <p><span className="text-gray-500">Parent:</span> {viewItem.parent?.name || "None"}</p>
               {viewItem.parentRelationship && (
@@ -521,6 +597,55 @@ const ManageStudents: React.FC = () => {
               )}
             </div>
             <button onClick={() => setViewItem(null)} className="w-full mt-4 py-2 bg-gray-100 rounded-xl text-sm font-medium">Close</button>
+          </div>
+        </div>
+      )}
+
+      {pinStudent && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closePinModal}>
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="font-bold text-lg text-[#0A1F44] flex items-center gap-2">
+                  <KeyRound size={18} /> Wallet PIN
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">{pinStudent.name} · {pinStudent.regNo}</p>
+              </div>
+              <button onClick={closePinModal} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+
+            {pinLoading ? (
+              <Loader size="sm" title="Loading..." subtitle="Fetching wallet PIN status" className="py-6" />
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-xl bg-gray-50 border border-gray-100 p-4 text-sm">
+                  <p className="text-gray-500">Status</p>
+                  <p className="font-semibold text-[#0A1F44] mt-1">
+                    {pinSettings?.pinEnabled ? "PIN is set" : "No PIN set"}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-2">Default PIN for new students is <strong>1234</strong>.</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={setStudentPin}
+                    disabled={pinSaving}
+                    className="py-2.5 bg-[#0A1F44] text-white rounded-xl text-sm font-semibold hover:bg-[#0A1F44]/90 disabled:opacity-50"
+                  >
+                    Set New PIN
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetStudentPin}
+                    disabled={pinSaving}
+                    className="py-2.5 bg-gray-100 text-gray-800 rounded-xl text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
+                  >
+                    Reset to 1234
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

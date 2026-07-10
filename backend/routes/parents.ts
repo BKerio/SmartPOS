@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import prisma from '@/services/prisma';
 import { signToken, ensureAdmin, ensureAuthenticated } from '@/middlewares/auth';
 import { logAuditEvent } from '@/services/audit';
+import { buildWalletPinUpdate } from '@/services/walletPin';
 import { sendParentWelcomeNotifications } from '@/services/parentWelcome';
 
 const router = Router();
@@ -353,14 +354,14 @@ router.put('/students/:id/wallet-settings', ensureAuthenticated, async (req: Req
 
     if (walletFrozen !== undefined) data.walletFrozen = Boolean(walletFrozen);
 
-    if (resetPin === true) {
-      data.walletPinHash = null;
-      data.walletPinSetAt = null;
-    } else if (typeof pin === 'string' && pin.trim()) {
-      const raw = pin.trim();
-      if (!/^\d{4}$/.test(raw)) return res.status(422).json({ message: 'PIN must be exactly 4 digits' });
-      data.walletPinHash = await bcrypt.hash(raw, 10);
-      data.walletPinSetAt = new Date();
+    try {
+      const pinData = await buildWalletPinUpdate({ pin, resetPin });
+      Object.assign(data, pinData);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'INVALID_PIN') {
+        return res.status(422).json({ message: 'PIN must be exactly 4 digits' });
+      }
+      throw err;
     }
 
     const updated = await prisma.student.update({

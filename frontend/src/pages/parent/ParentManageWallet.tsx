@@ -108,7 +108,7 @@ const ParentManageWallet = () => {
 
   const resetPin = async () => {
     if (!selected) return;
-    const ok = await toast.confirm("Reset Wallet PIN?", { confirmLabel: "Reset" });
+    const ok = await toast.confirm("Reset wallet PIN to default (1234)?", { confirmLabel: "Reset" });
     if (!ok) return;
     try {
       await API.put(`/parents/students/${selected.id}/wallet-settings`, { resetPin: true });

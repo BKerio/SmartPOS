@@ -9,6 +9,7 @@
     "db:push": "prisma db push",
     "db:seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
     "db:link-topups": "ts-node -r tsconfig-paths/register scripts/link-topups.ts",
+    "db:set-default-wallet-pins": "ts-node -r tsconfig-paths/register scripts/set-default-wallet-pins.ts",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate"
   },
