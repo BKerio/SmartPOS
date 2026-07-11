@@ -1,8 +1,9 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
-import { GraduationCap, Plus, Edit, Trash2, X, Eye, Fingerprint, Search, KeyRound } from "lucide-react";
+import { GraduationCap, Plus, Edit, Trash2, X, Eye, Fingerprint, Search, KeyRound, Wallet } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
+import WalletAdjustModal from "@/components/WalletAdjustModal";
 import { captureFingerprint, checkScannerHealth, prepareScanner, checkFingerprintDuplicate } from "@/services/fingerprintScanner";
 
 const COURSE_OPTIONS = [
@@ -62,6 +63,7 @@ const ManageStudents: React.FC = () => {
   const [pinSettings, setPinSettings] = useState<{ pinEnabled: boolean } | null>(null);
   const [pinLoading, setPinLoading] = useState(false);
   const [pinSaving, setPinSaving] = useState(false);
+  const [walletStudent, setWalletStudent] = useState<any>(null);
 
   const filteredStudents = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -403,6 +405,7 @@ const ManageStudents: React.FC = () => {
                       <td className="px-4 py-3">
                         <div className="flex justify-center gap-1">
                           <button onClick={() => setViewItem(s)} className="p-2 text-gray-400 hover:text-blue-600"><Eye size={16} /></button>
+                          <button onClick={() => setWalletStudent(s)} className="p-2 text-gray-400 hover:text-emerald-600" title="Update wallet"><Wallet size={16} /></button>
                           <button onClick={() => openPinModal(s)} className="p-2 text-gray-400 hover:text-indigo-600" title="Wallet PIN"><KeyRound size={16} /></button>
                           <button onClick={() => editStudent(s)} className="p-2 text-gray-400 hover:text-amber-600"><Edit size={16} /></button>
                           <button onClick={() => deleteStudent(s._id || s.id)} className="p-2 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
@@ -597,6 +600,15 @@ const ManageStudents: React.FC = () => {
               )}
             </div>
             <button onClick={() => setViewItem(null)} className="w-full mt-4 py-2 bg-gray-100 rounded-xl text-sm font-medium">Close</button>
+            <button
+              onClick={() => {
+                setWalletStudent(viewItem);
+                setViewItem(null);
+              }}
+              className="w-full mt-2 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700"
+            >
+              Update wallet
+            </button>
           </div>
         </div>
       )}
@@ -648,6 +660,21 @@ const ManageStudents: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {walletStudent && (
+        <WalletAdjustModal
+          initialStudent={{
+            id: walletStudent._id || walletStudent.id,
+            name: walletStudent.name,
+            regNo: walletStudent.regNo,
+            walletBalance: walletStudent.walletBalance,
+          }}
+          onClose={() => setWalletStudent(null)}
+          onSuccess={fetchData}
+          title="Update student wallet"
+          subtitle={`Adjust wallet for ${walletStudent.name}`}
+        />
       )}
     </div>
   );

@@ -3,6 +3,8 @@ import { Receipt, FileJson, X, Copy, Check, Search, Filter, Wallet, UserPlus, Al
 import API from "@/services/api";
 import Loader from "@/components/ui/loader";
 import { toast } from "@/services/toast";
+import StudentPicker, { type StudentOption } from "@/components/StudentPicker";
+import WalletAdjustModal from "@/components/WalletAdjustModal";
 
 type CollectionRow = {
   id?: string;
@@ -21,13 +23,6 @@ type CollectionRow = {
   walletCredited?: boolean;
   allocatable?: boolean;
   payload?: Record<string, unknown>;
-};
-
-type StudentOption = {
-  id: string;
-  name: string;
-  regNo: string;
-  walletBalance?: number;
 };
 
 type KopoSearchResult = {
@@ -220,92 +215,6 @@ const PayloadModal = ({
   );
 };
 
-
-const StudentPicker = ({
-  selected,
-  onSelect,
-  onClear,
-}: {
-  selected: StudentOption | null;
-  onSelect: (student: StudentOption) => void;
-  onClear: () => void;
-}) => {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<StudentOption[]>([]);
-  const [searching, setSearching] = useState(false);
-
-  useEffect(() => {
-    if (selected) return;
-    const q = query.trim();
-    if (q.length < 2) {
-      setResults([]);
-      return;
-    }
-    setSearching(true);
-    const timer = window.setTimeout(async () => {
-      try {
-        const { data } = await API.get<StudentOption[]>("/students/search", { params: { q } });
-        setResults(data);
-      } catch {
-        setResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 280);
-    return () => window.clearTimeout(timer);
-  }, [query, selected]);
-
-  if (selected) {
-    return (
-      <div className="flex items-center justify-between gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-        <div>
-          <p className="font-semibold text-[#0A1F44]">{selected.name}</p>
-          <p className="text-xs text-gray-600">
-            {selected.regNo}
-            {selected.walletBalance != null && ` · Balance: ${formatKes(selected.walletBalance)}`}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClear}
-          className="text-xs font-semibold text-gray-500 hover:text-rose-600"
-        >
-          Change
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search student by name, adm no, or phone..."
-          className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A1F44] outline-none"
-        />
-      </div>
-      {searching && <p className="text-xs text-gray-400">Searching...</p>}
-      {results.length > 0 && (
-        <div className="border border-gray-100 rounded-lg max-h-40 overflow-y-auto">
-          {results.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => onSelect(s)}
-              className="w-full text-left px-3 py-2.5 hover:bg-gray-50 border-b border-gray-50 last:border-0"
-            >
-              <p className="font-semibold text-sm text-[#0A1F44]">{s.name}</p>
-              <p className="text-xs text-gray-500">{s.regNo}</p>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 const AllocateModal = ({
   payment,
@@ -631,112 +540,6 @@ const RegisterManualModal = ({
   );
 };
 
-const CashDepositModal = ({
-  onClose,
-  onSuccess,
-}: {
-  onClose: () => void;
-  onSuccess: () => void;
-}) => {
-  const [student, setStudent] = useState<StudentOption | null>(null);
-  const [amount, setAmount] = useState("");
-  const [reference, setReference] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleDeposit = async () => {
-    const depositAmount = Number(amount);
-    if (!student) {
-      toast.warning("Select a student", "Search and pick the student to top up");
-      return;
-    }
-    if (!Number.isFinite(depositAmount) || depositAmount <= 0) {
-      toast.warning("Invalid amount", "Enter a positive amount");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const { data } = await API.post("/wallet/deposit", {
-        studentId: student.id,
-        amount: depositAmount,
-        reference: reference.trim() || undefined,
-        description: "Cash top-up at till",
-      });
-      toast.success("Cash deposited", `New balance: ${formatKes(data.newBalance)}`);
-      onSuccess();
-      onClose();
-    } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
-        "Deposit failed";
-      toast.error("Could not deposit", msg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <div>
-            <h3 className="font-bold text-[#0A1F44] flex items-center gap-2">
-              <Wallet size={18} /> Cash top-up
-            </h3>
-            <p className="text-xs text-gray-500 mt-0.5">For parents who pay cash at the till</p>
-          </div>
-          <button type="button" onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="p-5 space-y-4">
-          <StudentPicker selected={student} onSelect={setStudent} onClear={() => setStudent(null)} />
-
-          <div>
-            <label className="text-xs font-semibold text-gray-600">Amount (KES)</label>
-            <input
-              type="number"
-              min={1}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="e.g. 1000"
-              className="mt-1 w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A1F44] outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-gray-600">Reference (optional)</label>
-            <input
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              placeholder="Receipt or note"
-              className="mt-1 w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A1F44] outline-none"
-            />
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 text-sm font-semibold border border-gray-200 rounded-xl hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleDeposit}
-              disabled={!student || submitting}
-              className="flex-1 py-2.5 text-sm font-semibold bg-[#0A1F44] text-white rounded-xl hover:bg-[#0A1F44]/90 disabled:opacity-50"
-            >
-              {submitting ? "Depositing..." : "Top up wallet"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const CollectionsPage = () => {
   const [rows, setRows] = useState<CollectionRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -750,7 +553,7 @@ const CollectionsPage = () => {
     date?: string;
   } | null>(null);
   const [findPaymentOpen, setFindPaymentOpen] = useState(false);
-  const [cashDepositOpen, setCashDepositOpen] = useState(false);
+  const [walletAdjustOpen, setWalletAdjustOpen] = useState(false);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [registerPrefill, setRegisterPrefill] = useState<{ code?: string; amount?: string }>();
   const [webhookStatus, setWebhookStatus] = useState<{
@@ -950,10 +753,10 @@ const CollectionsPage = () => {
             </button>
             <button
               type="button"
-              onClick={() => setCashDepositOpen(true)}
+              onClick={() => setWalletAdjustOpen(true)}
               className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-semibold"
             >
-              <Wallet size={16} /> Cash top-up
+              <Wallet size={16} /> Update wallet
             </button>
             <button
               type="button"
@@ -1205,10 +1008,12 @@ const CollectionsPage = () => {
         />
       )}
 
-      {cashDepositOpen && (
-        <CashDepositModal
-          onClose={() => setCashDepositOpen(false)}
+      {walletAdjustOpen && (
+        <WalletAdjustModal
+          onClose={() => setWalletAdjustOpen(false)}
           onSuccess={fetchRows}
+          title="Update student wallet"
+          subtitle="Credit or debit a student wallet (cash, corrections, etc.)"
         />
       )}
     </div>

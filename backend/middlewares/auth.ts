@@ -50,3 +50,12 @@ export const ensureAdmin = (req: Request, res: Response, next: NextFunction): an
     next();
   });
 };
+
+export const ensureFinanceOrAdmin = (req: Request, res: Response, next: NextFunction): any => {
+  ensureAuthenticated(req, res, () => {
+    if (!['admin', 'finance'].includes(req.user?.role || '')) {
+      return res.status(403).json({ error: 'Admin or finance access required' });
+    }
+    next();
+  });
+};
