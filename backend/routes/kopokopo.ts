@@ -178,6 +178,18 @@ async function findKopoPayment(parsed: ParsedKopoPayload, hintLocation?: string)
   return null;
 }
 
+function normalizeMpesaRef(value: string | null | undefined): string {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
+}
+
+/**
+ * Credit a student wallet exactly once for a KopoPayment.
+ * Idempotent by payment id AND by M-Pesa transaction reference so duplicate
+ * payment rows / webhook retries cannot double-credit.
+ */
 async function creditStudentWallet(
   paymentId: string,
   studentId: string,
@@ -194,46 +206,120 @@ async function creditStudentWallet(
     return false;
   }
 
+  const mpesaRef = normalizeMpesaRef(reference);
+
   try {
-    const payment = await prisma.kopoPayment.findUnique({ where: { id: paymentId } });
-    if (!payment || payment.walletCredited) return false;
+    return await prisma.$transaction(async (tx) => {
+      const payment = await tx.kopoPayment.findUnique({ where: { id: paymentId } });
+      if (!payment) return false;
+      if (payment.walletCredited) return false;
 
-    const student = await prisma.student.findUnique({ where: { id: studentId } });
-    if (!student) {
-      throw new Error(`Student not found: ${studentId}`);
-    }
+      const student = await tx.student.findUnique({ where: { id: studentId } });
+      if (!student) {
+        throw new Error(`Student not found: ${studentId}`);
+      }
 
-    const claimed = await prisma.kopoPayment.updateMany({
-      where: { id: paymentId, walletCredited: false },
-      data: { walletCredited: true },
-    });
-    if (claimed.count === 0) return false;
+      // Block if this M-Pesa code already credited another payment row
+      if (mpesaRef) {
+        const siblingCredited = await tx.kopoPayment.findFirst({
+          where: {
+            id: { not: paymentId },
+            walletCredited: true,
+            OR: [
+              { transactionReference: { equals: mpesaRef, mode: 'insensitive' } },
+              { reference: { equals: mpesaRef, mode: 'insensitive' } },
+            ],
+          },
+          select: { id: true },
+        });
+        if (siblingCredited) {
+          await tx.kopoPayment.update({
+            where: { id: paymentId },
+            data: {
+              walletCredited: true,
+              studentId,
+              status: 'superseded',
+              description: `Superseded — M-Pesa ${mpesaRef} already credited via ${siblingCredited.id}`,
+            },
+          });
+          console.warn(
+            `[Kopokopo] Skip double credit — ${mpesaRef} already credited on ${siblingCredited.id}`,
+          );
+          return false;
+        }
 
-    try {
-      await prisma.student.update({
+        const existingDeposit = await tx.walletTransaction.findFirst({
+          where: {
+            type: 'deposit',
+            reference: { equals: mpesaRef, mode: 'insensitive' },
+          },
+          select: { id: true, studentId: true },
+        });
+        if (existingDeposit) {
+          await tx.kopoPayment.update({
+            where: { id: paymentId },
+            data: {
+              walletCredited: true,
+              studentId: existingDeposit.studentId,
+              status: 'superseded',
+              description: `Superseded — wallet deposit ${mpesaRef} already exists`,
+            },
+          });
+          console.warn(
+            `[Kopokopo] Skip double credit — wallet deposit already exists for ${mpesaRef}`,
+          );
+          return false;
+        }
+      }
+
+      // Atomic claim on this payment row
+      const claimed = await tx.kopoPayment.updateMany({
+        where: { id: paymentId, walletCredited: false },
+        data: {
+          walletCredited: true,
+          studentId,
+          ...(mpesaRef ? { transactionReference: mpesaRef } : {}),
+        },
+      });
+      if (claimed.count === 0) return false;
+
+      await tx.student.update({
         where: { id: studentId },
         data: { walletBalance: { increment: amount } },
       });
 
-      await prisma.walletTransaction.create({
+      await tx.walletTransaction.create({
         data: {
           studentId,
           amount,
           type: 'deposit',
-          reference,
+          reference: mpesaRef || reference || paymentId,
           description: `KopoKopo top-up from ${phone || 'M-Pesa'}`,
         },
       });
-    } catch (creditErr) {
-      await prisma.kopoPayment.update({
-        where: { id: paymentId },
-        data: { walletCredited: false },
-      });
-      throw creditErr;
-    }
 
-    console.log(`[Kopokopo] Credited student ${studentId} wallet with KES ${amount}`);
-    return true;
+      // Lock sibling duplicate payment rows so they cannot be allocated/credited later
+      if (mpesaRef) {
+        await tx.kopoPayment.updateMany({
+          where: {
+            id: { not: paymentId },
+            walletCredited: false,
+            OR: [
+              { transactionReference: { equals: mpesaRef, mode: 'insensitive' } },
+              { reference: { equals: mpesaRef, mode: 'insensitive' } },
+            ],
+          },
+          data: {
+            walletCredited: true,
+            status: 'superseded',
+            description: `Superseded after wallet credit of ${mpesaRef}`,
+          },
+        });
+      }
+
+      console.log(`[Kopokopo] Credited student ${studentId} wallet with KES ${amount} (ref ${mpesaRef || paymentId})`);
+      return true;
+    });
   } catch (err: any) {
     console.error('[Kopokopo] Wallet credit failed:', err?.message || err);
     return false;
@@ -1086,7 +1172,12 @@ async function supersedeDuplicatePayments(allocated: {
   const orFilters: Array<Record<string, unknown>> = [];
 
   if (allocated.transactionReference) {
-    orFilters.push({ transactionReference: allocated.transactionReference });
+    orFilters.push({
+      transactionReference: {
+        equals: normalizeMpesaRef(allocated.transactionReference),
+        mode: 'insensitive',
+      },
+    });
   }
 
   const pk = phoneKey(allocated.phone);
@@ -1109,6 +1200,7 @@ async function supersedeDuplicatePayments(allocated: {
     },
     data: {
       status: 'superseded',
+      walletCredited: true,
       description: 'Superseded by manual wallet allocation',
     },
   });
@@ -1229,6 +1321,57 @@ router.post('/:id/allocate', ensureAuthenticated, async (req: Request, res: Resp
       return;
     }
 
+    const mpesaRef = normalizeMpesaRef(payment.transactionReference || payment.reference);
+    if (mpesaRef) {
+      const alreadyCredited = await prisma.kopoPayment.findFirst({
+        where: {
+          id: { not: payment.id },
+          walletCredited: true,
+          OR: [
+            { transactionReference: { equals: mpesaRef, mode: 'insensitive' } },
+            { reference: { equals: mpesaRef, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true, studentId: true },
+      });
+      if (alreadyCredited) {
+        await prisma.kopoPayment.update({
+          where: { id: payment.id },
+          data: {
+            walletCredited: true,
+            status: 'superseded',
+            description: `Superseded — M-Pesa ${mpesaRef} already allocated`,
+          },
+        });
+        res.status(409).json({
+          error: `This M-Pesa code (${mpesaRef}) was already credited to a student wallet`,
+        });
+        return;
+      }
+
+      const existingDeposit = await prisma.walletTransaction.findFirst({
+        where: {
+          type: 'deposit',
+          reference: { equals: mpesaRef, mode: 'insensitive' },
+        },
+        select: { id: true },
+      });
+      if (existingDeposit) {
+        await prisma.kopoPayment.update({
+          where: { id: payment.id },
+          data: {
+            walletCredited: true,
+            status: 'superseded',
+            description: `Superseded — wallet deposit ${mpesaRef} already exists`,
+          },
+        });
+        res.status(409).json({
+          error: `This M-Pesa code (${mpesaRef}) already has a wallet deposit recorded`,
+        });
+        return;
+      }
+    }
+
     await prisma.kopoPayment.update({
       where: { id: payment.id },
       data: {
@@ -1245,7 +1388,7 @@ router.post('/:id/allocate', ensureAuthenticated, async (req: Request, res: Resp
       studentId,
       payment.amount,
       payment.phone,
-      payment.transactionReference || payment.reference || payment.id,
+      mpesaRef || payment.transactionReference || payment.reference || payment.id,
     );
 
     if (!credited) {
