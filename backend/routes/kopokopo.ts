@@ -159,6 +159,22 @@ async function findKopoPayment(parsed: ParsedKopoPayload, hintLocation?: string)
     if (byLocation) return byLocation;
   }
 
+  // Till webhooks often send a new Kopokopo event id on each delivery/retry.
+  // Deduplicate by M-Pesa receipt (transactionReference), which is stable.
+  const mpesaRef = String(parsed.transactionReference || '').trim();
+  if (mpesaRef) {
+    const byMpesa = await prisma.kopoPayment.findFirst({
+      where: {
+        OR: [
+          { transactionReference: { equals: mpesaRef, mode: 'insensitive' } },
+          { reference: { equals: mpesaRef, mode: 'insensitive' } },
+        ],
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (byMpesa) return byMpesa;
+  }
+
   return null;
 }
 
@@ -785,7 +801,29 @@ router.post('/payment/callback', async (req: Request, res: Response) => {
       payment = result.payment;
       posReceiptNo = result.posReceiptNo;
       posTransactionId = result.posTransactionId;
-    } else if (parsed.location || parsed.reference) {
+    } else if (parsed.location || parsed.reference || parsed.transactionReference) {
+      // Final M-Pesa-ref guard (till webhooks reuse event ids across retries)
+      if (parsed.transactionReference) {
+        const byMpesa = await prisma.kopoPayment.findFirst({
+          where: {
+            transactionReference: {
+              equals: String(parsed.transactionReference).trim(),
+              mode: 'insensitive',
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+        if (byMpesa) {
+          const result = await applyPaymentUpdate(byMpesa, parsed, payload);
+          payment = result.payment;
+          posReceiptNo = result.posReceiptNo;
+          posTransactionId = result.posTransactionId;
+          emitKopokopoUpdate(req, buildKopoEmitPayload(payment, parsed, { posReceiptNo, posTransactionId }));
+          res.status(200).json({ message: 'Callback processed successfully' });
+          return;
+        }
+      }
+
       const inferredPurpose = (parsed.purpose as KopoPurpose) || 'general';
       payment = await prisma.kopoPayment.create({
         data: {
@@ -872,34 +910,55 @@ router.post('/webhooks', async (req: Request, res: Response) => {
         posTransactionId = result.posTransactionId;
       } else {
         const inferredPurpose = (parsed.purpose as KopoPurpose) || 'general';
-        payment = await prisma.kopoPayment.create({
-          data: {
-            reference: parsed.reference || undefined,
-            status: 'success',
-            amount: parsed.amount,
-            currency: parsed.currency,
-            phone: parsed.phone,
-            eventType,
-            transactionReference: parsed.transactionReference,
-            studentId: parsed.studentId || null,
-            purpose: inferredPurpose,
-            description:
-              inferredPurpose === 'pos_sale'
-                ? 'SmartPOS Guest Cafeteria Sale'
-                : 'SmartPOS Payment',
-            rawPayload: payload,
-          },
-        });
+        // Re-check M-Pesa ref right before insert to avoid race duplicates from concurrent webhooks
+        const existingByRef = parsed.transactionReference
+          ? await prisma.kopoPayment.findFirst({
+              where: {
+                transactionReference: {
+                  equals: String(parsed.transactionReference).trim(),
+                  mode: 'insensitive',
+                },
+              },
+              orderBy: { createdAt: 'asc' },
+            })
+          : null;
 
-        if (payment.studentId && !payment.walletCredited) {
-          await creditStudentWallet(
-            payment.id,
-            payment.studentId,
-            payment.amount,
-            payment.phone,
-            parsed.transactionReference || parsed.reference || payment.id,
-          );
-          payment = await prisma.kopoPayment.findUnique({ where: { id: payment.id } });
+        if (existingByRef) {
+          const result = await applyPaymentUpdate(existingByRef, parsed, payload);
+          payment = result.payment;
+          posReceiptNo = result.posReceiptNo;
+          posTransactionId = result.posTransactionId;
+        } else {
+          payment = await prisma.kopoPayment.create({
+            data: {
+              reference: parsed.reference || undefined,
+              status: 'success',
+              amount: parsed.amount,
+              currency: parsed.currency,
+              phone: parsed.phone,
+              tillNumber: parsed.tillNumber,
+              eventType,
+              transactionReference: parsed.transactionReference,
+              studentId: parsed.studentId || null,
+              purpose: inferredPurpose,
+              description:
+                inferredPurpose === 'pos_sale'
+                  ? 'SmartPOS Guest Cafeteria Sale'
+                  : 'SmartPOS Payment',
+              rawPayload: payload,
+            },
+          });
+
+          if (payment.studentId && !payment.walletCredited) {
+            await creditStudentWallet(
+              payment.id,
+              payment.studentId,
+              payment.amount,
+              payment.phone,
+              parsed.transactionReference || parsed.reference || payment.id,
+            );
+            payment = await prisma.kopoPayment.findUnique({ where: { id: payment.id } });
+          }
         }
       }
 
