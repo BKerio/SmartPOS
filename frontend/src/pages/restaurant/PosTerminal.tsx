@@ -35,6 +35,7 @@ import {
 import OrderReceiptCard from "@/components/OrderReceiptCard";
 import logo from "@/assets/LOGO.png";
 import { initiateStkPushAndWait } from "@/services/kopokopoPayment";
+import { useAuth } from "@/context/AuthContext";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 interface MenuItem {
@@ -74,6 +75,7 @@ interface ReceiptItem {
   status: string;
   createdAt: string;
   paymentMethod?: string;
+  cashierName?: string | null;
   student: { name: string; regNo: string } | null;
   items: { quantity: number; price: number; menuItem: { name: string } }[];
 }
@@ -89,6 +91,8 @@ const todayDateString = () => {
 };
 
 const PosTerminal = () => {
+  const { user } = useAuth();
+  const staffName = user?.name?.trim() || "";
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [regNo, setRegNo] = useState("");
@@ -114,7 +118,7 @@ const PosTerminal = () => {
   const [lastReceipt, setLastReceipt] = useState<OrderReceiptData | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
 
-  const toReceiptData = (r: ReceiptItem) => receiptFromPosTransaction(r);
+  const toReceiptData = (r: ReceiptItem) => receiptFromPosTransaction(r, undefined, staffName || undefined);
 
   const handlePrintReceipt = async (r: ReceiptItem) => {
     try {
@@ -356,7 +360,11 @@ const PosTerminal = () => {
         `${displayReceiptNo(data.receipt)} · KES ${total}`,
       );
       setLastReceipt(
-        receiptFromPosTransaction(data.receipt, { name: student.name, regNo: student.regNo }),
+        receiptFromPosTransaction(
+          data.receipt,
+          { name: student.name, regNo: student.regNo },
+          staffName || undefined,
+        ),
       );
       setShowReceipt(true);
       setCart([]);
@@ -430,7 +438,7 @@ const PosTerminal = () => {
       const { data } = await API.post("/pos/cash-sale", {
         items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
       });
-      setLastReceipt(receiptFromGuestCash(data.receipt));
+      setLastReceipt(receiptFromGuestCash(data.receipt, staffName || undefined));
       setShowReceipt(true);
       setCart([]);
       fetchMenu();
@@ -472,7 +480,7 @@ const PosTerminal = () => {
         if (result.posTransactionId) {
           try {
             const { data: receipt } = await API.get(`/pos/receipts/${result.posTransactionId}`);
-            receiptData = receiptFromPosTransaction(receipt);
+            receiptData = receiptFromPosTransaction(receipt, undefined, staffName || undefined);
           } catch {
             /* fall back to cart snapshot */
           }
@@ -490,6 +498,7 @@ const PosTerminal = () => {
             total: saleTotal,
             paidAt: new Date().toISOString(),
             paymentMethod: "M-Pesa",
+            servedBy: staffName || undefined,
           };
         }
 

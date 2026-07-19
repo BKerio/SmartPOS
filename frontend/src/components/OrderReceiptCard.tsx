@@ -36,7 +36,9 @@ const OrderReceiptCard = ({ data, compact = false }: Props) => {
     <div className={compact ? "space-y-3" : "space-y-4"}>
       <div className="bg-white border border-dashed border-gray-200 rounded-2xl p-5 text-left font-mono text-sm">
         <div className="text-center border-b border-gray-100 pb-4 mb-4">
-          <img src={logo} alt="SmartPOS" className="h-10 mx-auto mb-2 object-contain" />
+          <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-gray-100">
+            <img src={logo} alt="Better Forks" className="h-24 w-24 object-contain" />
+          </div>
           <p className="text-[10px] uppercase tracking-widest text-gray-400 font-sans">Cafeteria Receipt</p>
           <p className="text-base font-black text-[#0A1F44] mt-2 tracking-wide">{data.receiptNo}</p>
           <p className="text-xs text-gray-500 mt-2 font-sans">
@@ -46,6 +48,11 @@ const OrderReceiptCard = ({ data, compact = false }: Props) => {
             {new Date(data.paidAt).toLocaleString()}
             {data.paymentMethod ? ` · ${data.paymentMethod}` : ""}
           </p>
+          {data.servedBy && (
+            <p className="text-xs text-[#0A1F44] font-semibold mt-2 font-sans">
+              Served by: {data.servedBy}
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">

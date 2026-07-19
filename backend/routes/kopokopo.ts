@@ -1273,7 +1273,7 @@ router.get('/webhook-status', ensureAuthenticated, async (req: Request, res: Res
       hoursSinceLastPayment: hoursSinceLast,
       webhookLikelyStale: hoursSinceLast !== null && hoursSinceLast > 24,
       hint:
-        'Manual till payments (Lipa na M-Pesa → Buy Goods) only appear when KopoKopo webhooks reach your server. If ngrok URL changed, update .env and call POST /api/kopokopo/subscribe-webhooks.',
+        'Manual till payments (Lipa na M-Pesa → Buy Goods) only appear when KopoKopo webhooks reach your server. Ensure KOPOKOPO_WEBHOOK_URL points at production (e.g. https://betterfork.millenium.co.ke/api/kopokopo/webhooks) and call POST /api/kopokopo/subscribe-webhooks after changing it.',
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Status check failed' });

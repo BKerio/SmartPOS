@@ -12,4 +12,6 @@ export type OrderReceiptData = {
   total: number;
   paidAt: string;
   paymentMethod?: string;
+  /** Restaurant staff who processed the sale */
+  servedBy?: string;
 };

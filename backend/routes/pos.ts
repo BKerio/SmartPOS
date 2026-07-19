@@ -22,6 +22,37 @@ const getErrorMessage = (error: unknown): string => {
   return 'Failed to process sale';
 };
 
+async function attachCashierNames<T extends { cashierId: string }>(
+  receipts: T[],
+): Promise<Array<T & { cashierName: string | null }>> {
+  const ids = [...new Set(receipts.map((r) => r.cashierId).filter(Boolean))];
+  if (ids.length === 0) {
+    return receipts.map((r) => ({ ...r, cashierName: null }));
+  }
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true },
+  });
+  const nameById = new Map(users.map((u) => [u.id, u.name]));
+
+  return receipts.map((r) => ({
+    ...r,
+    cashierName: nameById.get(r.cashierId) || (r.cashierId === 'kiosk' ? 'Kiosk' : null),
+  }));
+}
+
+async function withCashierName<T extends { cashierId: string }>(
+  receipt: T,
+  fallbackName?: string,
+): Promise<T & { cashierName: string | null }> {
+  if (fallbackName) {
+    return { ...receipt, cashierName: fallbackName };
+  }
+  const [enriched] = await attachCashierNames([receipt]);
+  return enriched;
+}
+
 const mapSaleError = (message: string): { status: number; body: { message: string } } | null => {
   if (message === 'STUDENT_NOT_FOUND') {
     return { status: 404, body: { message: 'Student not found' } };
@@ -442,7 +473,7 @@ router.post('/sale', ensureAuthenticated, async (req: Request, res: Response): P
 
     res.status(201).json({
       message: 'Sale completed successfully',
-      receipt: result.posTx,
+      receipt: await withCashierName(result.posTx, req.user!.name),
       newBalance: result.student.walletBalance,
     });
   } catch (error: unknown) {
@@ -481,7 +512,7 @@ router.post('/cash-sale', ensureAuthenticated, async (req: Request, res: Respons
 
     res.status(201).json({
       message: 'Cash sale completed',
-      receipt: result.posTx,
+      receipt: await withCashierName(result.posTx, req.user!.name),
       totalAmount: result.totalAmount,
     });
   } catch (error: unknown) {
@@ -697,7 +728,7 @@ router.post('/kiosk-order', async (req: Request, res: Response): Promise<void> =
 
     res.status(201).json({
       message: 'Order placed successfully',
-      receipt: result.posTx,
+      receipt: await withCashierName(result.posTx, 'Kiosk'),
       newBalance: result.student.walletBalance,
       fingerprintEnrolled: result.fingerprintEnrolled,
     });
@@ -731,7 +762,7 @@ router.post('/kiosk-cash-order', async (req: Request, res: Response): Promise<vo
 
     res.status(201).json({
       message: 'Cash order completed',
-      receipt: result.posTx,
+      receipt: await withCashierName(result.posTx, 'Kiosk'),
       totalAmount: result.totalAmount,
     });
   } catch (error: unknown) {
@@ -794,7 +825,7 @@ router.post('/student-order', ensureAuthenticated, async (req: Request, res: Res
 
     res.status(201).json({
       message: 'Order placed successfully',
-      receipt: result.posTx,
+      receipt: await withCashierName(result.posTx, req.user!.name),
       newBalance: result.student.walletBalance,
       fingerprintEnrolled: result.fingerprintEnrolled,
     });
@@ -881,7 +912,7 @@ router.get('/receipts/me', ensureAuthenticated, async (req: Request, res: Respon
         items: { include: { menuItem: { select: { name: true } } } },
       },
     });
-    res.json(receipts);
+    res.json(await attachCashierNames(receipts));
   } catch {
     res.status(500).json({ message: 'Something went wrong' });
   }
@@ -915,7 +946,7 @@ router.get('/receipts/:id', ensureAuthenticated, async (req: Request, res: Respo
       return;
     }
 
-    res.json(receipt);
+    res.json(await withCashierName(receipt));
   } catch {
     res.status(500).json({ message: 'Something went wrong' });
   }
@@ -947,7 +978,7 @@ router.get('/receipts', ensureAuthenticated, async (req: Request, res: Response)
         items: { include: { menuItem: { select: { name: true } } } },
       },
     });
-    res.json(receipts);
+    res.json(await attachCashierNames(receipts));
   } catch {
     res.status(500).json({ message: 'Something went wrong' });
   }

@@ -30,7 +30,7 @@ function safeFilename(receiptNo: string) {
 }
 
 export async function buildReceiptPdf(data: OrderReceiptData, logoUrl?: string): Promise<jsPDF> {
-  const doc = new jsPDF({ unit: "mm", format: [80, 200], orientation: "portrait" });
+  const doc = new jsPDF({ unit: "mm", format: [80, 220], orientation: "portrait" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const centerX = pageWidth / 2;
   let y = 10;
@@ -38,8 +38,12 @@ export async function buildReceiptPdf(data: OrderReceiptData, logoUrl?: string):
   if (logoUrl) {
     const img = await loadImageDataUrl(logoUrl);
     if (img) {
-      doc.addImage(img, "PNG", centerX - 12, y, 24, 12);
-      y += 16;
+      const logoSize = 28;
+      // Soft white plate behind logo for better contrast on thermal print
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(centerX - logoSize / 2 - 1.5, y - 1.5, logoSize + 3, logoSize + 3, 2, 2, "F");
+      doc.addImage(img, "PNG", centerX - logoSize / 2, y, logoSize, logoSize);
+      y += logoSize + 5;
     }
   }
 
@@ -110,9 +114,21 @@ export async function buildReceiptPdf(data: OrderReceiptData, logoUrl?: string):
   doc.setFontSize(8);
   doc.setTextColor(107, 114, 128);
   doc.text(`Payment: ${data.paymentMethod || "Wallet"}`, centerX, y, { align: "center" });
-  y += 8;
+  y += 5;
 
+  if (data.servedBy) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(55, 65, 81);
+    doc.text(`Served by: ${data.servedBy}`, centerX, y, { align: "center" });
+    y += 6;
+  } else {
+    y += 3;
+  }
+
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
+  doc.setTextColor(107, 114, 128);
   doc.text("Thank you for your order.", centerX, y, { align: "center" });
   doc.text("Keep this receipt for your records.", centerX, y + 3.5, { align: "center" });
 

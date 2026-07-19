@@ -18,6 +18,7 @@ interface ReceiptItem {
   status: string;
   createdAt: string;
   paymentMethod?: string;
+  cashierName?: string | null;
   student: { name: string; regNo: string } | null;
   items: { quantity: number; price: number; menuItem: { name: string } }[];
 }
