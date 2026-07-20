@@ -25,6 +25,15 @@ type CollectionRow = {
   payload?: Record<string, unknown>;
 };
 
+type CollectionsSummary = {
+  tillInflow: number;
+  walletTopUps: number;
+  cashSales: number;
+  usage: number;
+  recordCount: number;
+  uniqueTillPayments?: number;
+};
+
 type KopoSearchResult = {
   id: string;
   amount: number;
@@ -542,6 +551,7 @@ const RegisterManualModal = ({
 
 const CollectionsPage = () => {
   const [rows, setRows] = useState<CollectionRow[]>([]);
+  const [serverSummary, setServerSummary] = useState<CollectionsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [payloadOpen, setPayloadOpen] = useState(false);
   const [selectedPayloadId, setSelectedPayloadId] = useState<string | null>(null);
@@ -577,8 +587,18 @@ const CollectionsPage = () => {
     if (filters.endDate) params.endDate = filters.endDate;
 
     try {
-      const r = await API.get<CollectionRow[]>("/finance/collections", { params });
-      setRows(r.data);
+      const r = await API.get<CollectionRow[] | { rows: CollectionRow[]; summary: CollectionsSummary }>(
+        "/finance/collections",
+        { params },
+      );
+      const data = r.data;
+      if (Array.isArray(data)) {
+        setRows(data);
+        setServerSummary(null);
+      } else {
+        setRows(data.rows || []);
+        setServerSummary(data.summary || null);
+      }
     } catch {
       /* ignore */
     } finally {
@@ -680,25 +700,45 @@ const CollectionsPage = () => {
   };
 
   const totals = useMemo(() => {
-    const inflowRow = (r: CollectionRow) =>
-      isWalletTopUpRow(r) ||
-      r.source === "pos_mpesa" ||
-      r.source === "pos_cash" ||
-      (r.source === "kopo" && r.amount > 0 && r.type !== "wallet_topup");
+    // When filters are active, recompute from visible rows; otherwise prefer server unique totals.
+    const useServer = !hasActiveFilters && serverSummary;
 
-    const topUps = filteredRows.filter(inflowRow).reduce((s, r) => s + Math.abs(r.amount), 0);
-    const walletTopUps = filteredRows.filter(isWalletTopUpRow).reduce((s, r) => s + r.amount, 0);
-    const cashSales = filteredRows
-      .filter((r) => r.source === "pos_cash")
-      .reduce((s, r) => s + r.amount, 0);
-    const usage = filteredRows
-      .filter((r) => r.type === "purchase")
-      .reduce((s, r) => s + Math.abs(r.amount), 0);
+    const tillInflowFromRows = () => {
+      const seen = new Set<string>();
+      let sum = 0;
+      for (const r of filteredRows) {
+        const isTill =
+          (r.source === "kopo" && r.amount > 0) ||
+          r.source === "pos_mpesa";
+        if (!isTill) continue;
+        const key = (r.transactionRef || r.id || `${r.name}-${r.amount}-${r.date}`)
+          .toString()
+          .trim()
+          .toUpperCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        sum += Math.abs(r.amount);
+      }
+      return sum;
+    };
+
+    const topUps = useServer ? serverSummary!.tillInflow : tillInflowFromRows();
+    const walletTopUps = useServer
+      ? serverSummary!.walletTopUps
+      : filteredRows.filter(isWalletTopUpRow).reduce((s, r) => s + Math.abs(r.amount), 0);
+    const cashSales = useServer
+      ? serverSummary!.cashSales
+      : filteredRows.filter((r) => r.source === "pos_cash").reduce((s, r) => s + r.amount, 0);
+    const usage = useServer
+      ? serverSummary!.usage
+      : filteredRows
+          .filter((r) => r.type === "purchase" || isWalletUsageRow(r))
+          .reduce((s, r) => s + Math.abs(r.amount), 0);
     const tillAttempts = filteredRows.filter(
-      (r) => r.source === "kopo" || r.source === "pos_mpesa" || r.source === "pos_cash",
+      (r) => r.source === "kopo" || r.source === "pos_mpesa" || r.source === "pos_cash" || isWalletUsageRow(r),
     ).length;
     return { topUps, walletTopUps, cashSales, usage, tillAttempts };
-  }, [filteredRows]);
+  }, [filteredRows, hasActiveFilters, serverSummary]);
 
   return (
     <div className="p-4 md:p-8 bg-[#E8F4FD] min-h-screen font-sans space-y-6">
@@ -769,21 +809,29 @@ const CollectionsPage = () => {
           </div>
           <div className="text-right space-y-1">
             <p className="text-blue-200 text-xs">
-              Till inflows / Wallet top-ups / Cash POS / Usage · Records
+              Till inflow (unique) / Wallet top-ups / Cash POS / Wallet usage · Records
               {hasActiveFilters && filteredRows.length !== rows.length ? (
                 <span className="ml-1">({filteredRows.length} shown)</span>
               ) : null}
             </p>
             <p className="text-lg font-bold">
-              <span className="text-emerald-300">{formatKes(totals.topUps)}</span>
+              <span className="text-emerald-300" title="Unique M-Pesa till receipts">
+                {formatKes(totals.topUps)}
+              </span>
               <span className="text-blue-200"> · </span>
-              <span className="text-sky-300">{formatKes(totals.walletTopUps)}</span>
+              <span className="text-sky-300" title="Allocated / manual wallet top-ups">
+                {formatKes(totals.walletTopUps)}
+              </span>
               <span className="text-blue-200"> · </span>
-              <span className="text-amber-300">{formatKes(totals.cashSales)}</span>
+              <span className="text-amber-300" title="Guest cash POS">
+                {formatKes(totals.cashSales)}
+              </span>
               <span className="text-blue-200"> · </span>
-              <span className="text-rose-300">{formatKes(totals.usage)}</span>
+              <span className="text-rose-300" title="Wallet cafeteria purchases">
+                {formatKes(totals.usage)}
+              </span>
               <span className="text-blue-200"> · </span>
-              <span className="text-white">{totals.tillAttempts}</span>
+              <span className="text-white">{filteredRows.length}</span>
             </p>
           </div>
         </div>

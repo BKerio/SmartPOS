@@ -59,7 +59,58 @@ function isGuestTillPayment(purpose: string, studentId: string | null | undefine
 }
 
 function tillPaymentReceived(status: string, amount: number): boolean {
-  return KOPO_SUCCESS.has((status || '').toLowerCase()) && amount > 0;
+  const s = (status || '').toLowerCase();
+  // Money hit the till for success and for superseded duplicates of a real receipt
+  return (KOPO_SUCCESS.has(s) || s === 'superseded') && amount > 0;
+}
+
+function normalizeTillRef(ref: string | null | undefined, fallbackId: string): string {
+  const cleaned = String(ref || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
+  return cleaned || fallbackId;
+}
+
+/** Keep one row per M-Pesa code so Collections never double-counts till money. */
+function dedupeKopoPaymentsByMpesaRef<
+  T extends {
+    id: string;
+    transactionReference: string;
+    reference: string | null;
+    status: string;
+    walletCredited: boolean;
+    allocatedAt: Date | null;
+    studentId: string | null;
+    createdAt: Date;
+    amount: number;
+  },
+>(payments: T[]): T[] {
+  const rank = (p: T) => {
+    let score = 0;
+    if (p.walletCredited) score += 100;
+    if (p.allocatedAt) score += 50;
+    if (p.studentId) score += 20;
+    if (KOPO_SUCCESS.has((p.status || '').toLowerCase())) score += 10;
+    if ((p.status || '').toLowerCase() === 'superseded') score -= 5;
+    return score;
+  };
+
+  const best = new Map<string, T>();
+  for (const p of payments) {
+    const key = normalizeTillRef(p.transactionReference || p.reference, p.id);
+    const prev = best.get(key);
+    if (!prev) {
+      best.set(key, p);
+      continue;
+    }
+    const prevRank = rank(prev);
+    const nextRank = rank(p);
+    if (nextRank > prevRank || (nextRank === prevRank && p.createdAt < prev.createdAt)) {
+      best.set(key, p);
+    }
+  }
+  return [...best.values()].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }
 
 function kopoSettlementNote(
@@ -147,11 +198,11 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
     dateFilter && Object.keys(dateFilter).length > 0 ? dateFilter : undefined;
 
   try {
-    const [kopos, purchases, deposits, guestPosSales] = await Promise.all([
+    const [koposRaw, purchases, deposits, guestPosSales] = await Promise.all([
       prisma.kopoPayment.findMany({
         where: createdAt ? { createdAt } : undefined,
         orderBy: { createdAt: 'desc' },
-        take: 2000,
+        take: 20000,
       }),
       prisma.walletTransaction.findMany({
         where: {
@@ -159,7 +210,7 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
           type: { in: ['purchase', 'refund'] },
         },
         orderBy: { createdAt: 'desc' },
-        take: 2000,
+        take: 20000,
         include: {
           student: { select: { name: true, regNo: true } },
         },
@@ -171,7 +222,7 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
           NOT: { description: { contains: 'KopoKopo', mode: 'insensitive' } },
         },
         orderBy: { createdAt: 'desc' },
-        take: 2000,
+        take: 20000,
         include: {
           student: { select: { name: true, regNo: true } },
         },
@@ -184,12 +235,14 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
           ...(createdAt ? { createdAt } : {}),
         },
         orderBy: { createdAt: 'desc' },
-        take: 2000,
+        take: 20000,
         include: {
           items: { include: { menuItem: { select: { name: true } } } },
         },
       }),
     ]);
+
+    const kopos = dedupeKopoPaymentsByMpesaRef(koposRaw);
 
     const linkedPosIds = new Set(
       kopos.map((k) => k.posTransactionId).filter(Boolean) as string[],
@@ -390,7 +443,35 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
 
-    return res.json(rows);
+    const tillInflow = kopoRows
+      .filter((r) => r.amount > 0 && r.source === 'kopo')
+      .reduce((s, r) => s + r.amount, 0);
+    const guestMpesa = guestPosRows
+      .filter((r) => r.source === 'pos_mpesa')
+      .reduce((s, r) => s + r.amount, 0);
+    const cashSales = guestPosRows
+      .filter((r) => r.source === 'pos_cash')
+      .reduce((s, r) => s + r.amount, 0);
+    const walletTopUps = kopoRows
+      .filter((r) => r.type === 'wallet_topup' && r.walletCredited)
+      .reduce((s, r) => s + r.amount, 0)
+      + depositRows.reduce((s, r) => s + r.amount, 0);
+    const usage = purchaseRows
+      .filter((r) => r.type === 'purchase')
+      .reduce((s, r) => s + Math.abs(r.amount), 0);
+
+    return res.json({
+      rows,
+      summary: {
+        tillInflow: tillInflow + guestMpesa,
+        walletTopUps,
+        cashSales,
+        usage,
+        recordCount: rows.length,
+        uniqueTillPayments: kopoRows.filter((r) => r.amount > 0).length,
+        rawKopoBeforeDedupe: koposRaw.length,
+      },
+    });
   } catch {
     return res.status(500).json({ message: 'Something went wrong' });
   }
