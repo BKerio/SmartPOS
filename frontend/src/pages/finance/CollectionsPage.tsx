@@ -9,6 +9,7 @@ import WalletAdjustModal from "@/components/WalletAdjustModal";
 type CollectionRow = {
   id?: string;
   source?: string;
+  channel?: string;
   mpesaNumber: string;
   date: string;
   name: string;
@@ -61,7 +62,28 @@ const statusBadge = (status: string) => {
 };
 
 type StatusFilter = "all" | "success" | "pending" | "failed";
-type SourceFilter = "all" | "till" | "guest" | "cash" | "wallet_topup" | "wallet_usage";
+type SourceFilter =
+  | "all"
+  | "till"
+  | "stk"
+  | "student_wallets"
+  | "wallet_topup"
+  | "wallet_usage"
+  | "guest"
+  | "cash"
+  | "unallocated";
+
+const SOURCE_FILTERS: { value: SourceFilter; label: string; hint: string }[] = [
+  { value: "all", label: "All", hint: "Every collection record" },
+  { value: "till", label: "Till (Buy Goods)", hint: "Lipa na M-Pesa till payments" },
+  { value: "stk", label: "STK Push", hint: "Parent/guest STK payments" },
+  { value: "student_wallets", label: "Student wallets", hint: "Top-ups and cafeteria usage" },
+  { value: "wallet_topup", label: "Wallet top-ups", hint: "Money added to student wallets" },
+  { value: "wallet_usage", label: "Wallet usage", hint: "Cafeteria purchases from wallets" },
+  { value: "unallocated", label: "Unallocated till", hint: "Till money not yet assigned" },
+  { value: "guest", label: "Guest POS", hint: "Guest M-Pesa & cash sales" },
+  { value: "cash", label: "Cash only", hint: "Guest cash POS" },
+];
 
 const isGuestPosRow = (row: CollectionRow) =>
   row.source === "pos_mpesa" ||
@@ -82,16 +104,75 @@ const isWalletTopUpRow = (row: CollectionRow) =>
 const isWalletUsageRow = (row: CollectionRow) =>
   row.source === "wallet" && (row.type === "purchase" || row.type === "refund");
 
+const rowChannel = (row: CollectionRow): string => {
+  const fromPayload = typeof row.payload?.channel === "string" ? row.payload.channel : "";
+  if (fromPayload) return fromPayload;
+  if (row.channel) return row.channel;
+  if (row.source === "pos_cash") return "cash";
+  if (row.source === "pos_mpesa" || (row.source === "kopo" && row.type === "pos_sale")) return "stk";
+  if (row.source === "wallet") return "wallet";
+  if (row.source === "kopo" && row.type === "wallet_topup") {
+    return /till → student wallet|manual allocation/i.test(`${row.method} ${row.metadata}`)
+      ? "wallet"
+      : "stk";
+  }
+  if (row.source === "kopo") return "till";
+  return "other";
+};
+
+const isTillBuyGoodsRow = (row: CollectionRow) =>
+  rowChannel(row) === "till" ||
+  (row.source === "kopo" && row.type !== "wallet_topup" && row.type !== "pos_sale");
+
+const isStkPushRow = (row: CollectionRow) =>
+  rowChannel(row) === "stk" ||
+  row.source === "pos_mpesa" ||
+  (row.source === "kopo" && row.type === "pos_sale") ||
+  (row.source === "kopo" &&
+    row.type === "wallet_topup" &&
+    !/till → student wallet|manual allocation/i.test(`${row.method} ${row.metadata}`));
+
 const matchesSource = (row: CollectionRow, source: SourceFilter): boolean => {
   if (source === "all") return true;
+  if (source === "till") return isTillBuyGoodsRow(row);
+  if (source === "stk") return isStkPushRow(row);
+  if (source === "student_wallets") return isWalletTopUpRow(row) || isWalletUsageRow(row);
   if (source === "wallet_topup") return isWalletTopUpRow(row);
   if (source === "wallet_usage") return isWalletUsageRow(row);
+  if (source === "unallocated") return Boolean(row.allocatable);
   if (source === "cash") return row.source === "pos_cash";
   if (source === "guest") return isGuestPosRow(row);
-  if (source === "till") {
-    return row.source === "kopo" && row.type !== "wallet_topup";
-  }
   return true;
+};
+
+const channelBadge = (channel: string) => {
+  switch (channel) {
+    case "till":
+      return "bg-emerald-50 text-emerald-700 border-emerald-100";
+    case "stk":
+      return "bg-indigo-50 text-indigo-700 border-indigo-100";
+    case "wallet":
+      return "bg-sky-50 text-sky-700 border-sky-100";
+    case "cash":
+      return "bg-amber-50 text-amber-800 border-amber-100";
+    default:
+      return "bg-gray-50 text-gray-600 border-gray-100";
+  }
+};
+
+const channelLabel = (channel: string) => {
+  switch (channel) {
+    case "till":
+      return "Till";
+    case "stk":
+      return "STK";
+    case "wallet":
+      return "Wallet";
+    case "cash":
+      return "Cash";
+    default:
+      return channel || "Other";
+  }
 };
 
 const PayloadModal = ({
@@ -853,7 +934,34 @@ const CollectionsPage = () => {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+        <div className="flex flex-wrap gap-2">
+          {SOURCE_FILTERS.map((opt) => {
+            const active = filters.source === opt.value;
+            const count =
+              opt.value === "all"
+                ? rows.length
+                : rows.filter((r) => matchesSource(r, opt.value)).length;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                title={opt.hint}
+                onClick={() => setFilters((f) => ({ ...f, source: opt.value }))}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                  active
+                    ? "bg-[#0A1F44] text-white border-[#0A1F44]"
+                    : "bg-white text-[#0A1F44] border-gray-200 hover:border-[#0A1F44]/40"
+                }`}
+              >
+                {opt.label}
+                <span className={`ml-1 ${active ? "text-blue-200" : "text-gray-400"}`}>
+                  ({count})
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           <div className="relative lg:col-span-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
             <input
@@ -864,18 +972,6 @@ const CollectionsPage = () => {
               className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A1F44] outline-none"
             />
           </div>
-          <select
-            value={filters.source}
-            onChange={(e) => setFilters((f) => ({ ...f, source: e.target.value as SourceFilter }))}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0A1F44] outline-none"
-          >
-            <option value="all">All sources</option>
-            <option value="till">Till M-Pesa</option>
-            <option value="wallet_topup">Wallet top-ups</option>
-            <option value="wallet_usage">Wallet usage</option>
-            <option value="guest">Guest POS (M-Pesa & Cash)</option>
-            <option value="cash">Guest Cash only</option>
-          </select>
           <select
             value={filters.status}
             onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value as StatusFilter }))}
@@ -956,7 +1052,16 @@ const CollectionsPage = () => {
                     <td className="py-3 px-4 text-gray-600 whitespace-nowrap">
                       {new Date(r.date).toLocaleString()}
                     </td>
-                    <td className="py-3 px-4 text-gray-700">{r.method || "-"}</td>
+                    <td className="py-3 px-4 text-gray-700">
+                      <div className="space-y-1">
+                        <span
+                          className={`inline-flex text-[10px] px-2 py-0.5 rounded-full font-semibold border ${channelBadge(rowChannel(r))}`}
+                        >
+                          {channelLabel(rowChannel(r))}
+                        </span>
+                        <p>{r.method || "-"}</p>
+                      </div>
+                    </td>
                     <td className="py-3 px-4">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-semibold capitalize ${statusBadge(r.status)}`}>
                         {r.status || "-"}

@@ -142,10 +142,23 @@ function formatKopoMetadata(
   return description || '-';
 }
 
-function kopoMethod(purpose: string, guest = false): string {
-  if (purpose === 'pos_sale') return guest ? 'M-Pesa Till (Guest POS)' : 'M-Pesa Till (POS)';
-  if (purpose === 'wallet_topup') return 'M-Pesa Till (Wallet Top-up)';
-  return 'M-Pesa Till';
+function kopoMethod(purpose: string, guest = false, opts?: { manuallyAllocated?: boolean }): string {
+  if (purpose === 'pos_sale') return guest ? 'M-Pesa STK (Guest POS)' : 'M-Pesa STK (POS)';
+  if (purpose === 'wallet_topup') {
+    return opts?.manuallyAllocated
+      ? 'Till → Student Wallet'
+      : 'M-Pesa STK (Student Wallet)';
+  }
+  return 'M-Pesa Till (Buy Goods)';
+}
+
+function kopoChannel(
+  purpose: string,
+  opts?: { manuallyAllocated?: boolean },
+): 'till' | 'stk' | 'wallet' {
+  if (purpose === 'pos_sale') return 'stk';
+  if (purpose === 'wallet_topup') return opts?.manuallyAllocated ? 'wallet' : 'stk';
+  return 'till';
 }
 
 // ─── GET /api/finance/summary ─────────────────────────────────────────────────
@@ -269,9 +282,14 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
       const receivedOnTill = tillPaymentReceived(k.status, k.amount);
       const payerName = meta.payer_name || '';
       const payerPhone = meta.payer_phone || '';
+      const manuallyAllocated =
+        Boolean(k.allocatedAt) ||
+        /manual allocation/i.test(k.description || '');
+      const channel = kopoChannel(purpose, { manuallyAllocated });
 
       const payload = {
         source: 'kopo',
+        channel,
         paymentId: k.id,
         status: k.status,
         purpose,
@@ -316,11 +334,12 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
       return {
         id: k.id,
         source: 'kopo',
+        channel,
         mpesaNumber: k.phone || payerPhone || '',
         date: k.createdAt,
         name: guest ? 'Guest' : student?.name || meta.student_name || payerName || '',
         admNo: guest ? k.phone || 'GUEST' : student?.regNo || meta.student_reg_no || '',
-        method: kopoMethod(purpose, guest),
+        method: kopoMethod(purpose, guest, { manuallyAllocated }),
         amount: receivedOnTill ? k.amount : 0,
         attemptedAmount: k.amount,
         status: k.status,
@@ -338,17 +357,19 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
       .map((tx) => {
         const isCash = tx.paymentMethod === 'cash';
         const source = isCash ? 'pos_cash' : 'pos_mpesa';
-        const channel = tx.cashierId === 'kiosk' ? 'Kiosk' : 'POS';
+        const channel = isCash ? 'cash' : 'stk';
+        const channelLabel = tx.cashierId === 'kiosk' ? 'Kiosk' : 'POS';
 
         const payload = {
           source,
+          channel,
           guest: true,
           posTransactionId: tx.id,
           receiptNo: tx.receiptNo,
           totalAmount: tx.totalAmount,
           paymentMethod: tx.paymentMethod,
           cashierId: tx.cashierId,
-          channel,
+          channelLabel,
           items: tx.items.map((line) => ({
             name: line.menuItem.name,
             quantity: line.quantity,
@@ -360,16 +381,17 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
         return {
           id: tx.id,
           source,
+          channel,
           mpesaNumber: '',
           date: tx.createdAt,
           name: 'Guest',
           admNo: tx.receiptNo || 'GUEST',
-          method: isCash ? `Cash (${channel})` : 'M-Pesa Till (Guest POS)',
+          method: isCash ? `Cash (${channelLabel})` : `M-Pesa STK (Guest ${channelLabel})`,
           amount: tx.totalAmount,
           attemptedAmount: tx.totalAmount,
           status: 'completed',
           type: 'pos_sale',
-          metadata: `Guest · ${isCash ? 'Cash' : 'M-Pesa'} · ${channel} · receipt ${tx.receiptNo || tx.id}`,
+          metadata: `Guest · ${isCash ? 'Cash' : 'STK'} · ${channelLabel} · receipt ${tx.receiptNo || tx.id}`,
           transactionRef: tx.receiptNo || tx.id,
           payload,
         };
@@ -378,6 +400,7 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
     const purchaseRows = purchases.map((t) => {
       const payload = {
         source: 'wallet',
+        channel: 'wallet',
         transactionId: t.id,
         type: t.type,
         amount: t.amount,
@@ -392,11 +415,12 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
       return {
         id: t.id,
         source: 'wallet',
+        channel: 'wallet',
         mpesaNumber: '',
         date: t.createdAt,
         name: t.student?.name || '',
         admNo: t.student?.regNo || '',
-        method: t.type === 'refund' ? 'Wallet Refund' : 'Wallet Purchase',
+        method: t.type === 'refund' ? 'Student Wallet Refund' : 'Student Wallet Usage',
         amount: t.amount,
         attemptedAmount: Math.abs(t.amount),
         status: 'completed',
@@ -410,6 +434,7 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
     const depositRows = deposits.map((t) => {
       const payload = {
         source: 'wallet',
+        channel: 'wallet',
         transactionId: t.id,
         type: 'deposit',
         amount: t.amount,
@@ -424,11 +449,12 @@ router.get('/collections', ensureAuthenticated, async (req: Request, res: Respon
       return {
         id: t.id,
         source: 'wallet',
+        channel: 'wallet',
         mpesaNumber: '',
         date: t.createdAt,
         name: t.student?.name || '',
         admNo: t.student?.regNo || '',
-        method: 'Wallet Top-up (Manual)',
+        method: 'Student Wallet Top-up (Manual)',
         amount: t.amount,
         attemptedAmount: t.amount,
         status: 'completed',
