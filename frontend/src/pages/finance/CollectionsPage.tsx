@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Receipt, FileJson, X, Copy, Check, Search, Filter, Wallet, UserPlus, AlertTriangle, ClipboardPlus } from "lucide-react";
 import API from "@/services/api";
 import Loader from "@/components/ui/loader";
@@ -631,6 +632,13 @@ const RegisterManualModal = ({
 };
 
 const CollectionsPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sourceFromUrl = searchParams.get("source") as SourceFilter | null;
+  const initialSource: SourceFilter =
+    sourceFromUrl && SOURCE_FILTERS.some((f) => f.value === sourceFromUrl)
+      ? sourceFromUrl
+      : "all";
+
   const [rows, setRows] = useState<CollectionRow[]>([]);
   const [serverSummary, setServerSummary] = useState<CollectionsSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -655,11 +663,25 @@ const CollectionsPage = () => {
   } | null>(null);
   const [filters, setFilters] = useState({
     search: "",
-    source: "all" as SourceFilter,
+    source: initialSource,
     status: "all" as StatusFilter,
     startDate: "",
     endDate: "",
   });
+
+  useEffect(() => {
+    const src = searchParams.get("source") as SourceFilter | null;
+    if (src && SOURCE_FILTERS.some((f) => f.value === src) && src !== filters.source) {
+      setFilters((f) => ({ ...f, source: src }));
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (filters.source === "all") next.delete("source");
+    else next.set("source", filters.source);
+    setSearchParams(next, { replace: true });
+  }, [filters.source]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
