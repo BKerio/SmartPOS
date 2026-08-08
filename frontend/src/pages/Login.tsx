@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Eye, EyeOff, ChevronDown, CheckCircle2 } from "lucide-react";
-import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { motion } from "framer-motion";
+import { Eye, EyeOff } from "lucide-react";
+import { useNavigate, Link } from "react-router-dom";
 import { toast } from "@/services/toast";
 import API from "@/services/api";
 import Loader from "@/components/ui/loader";
@@ -10,41 +10,15 @@ import { getDashboardPath, useAuth } from "@/context/AuthContext";
 import type { AuthUser, UserRole } from "@/services/authStorage";
 import { persistAuthSession } from "@/services/authStorage";
 
-interface RoleOption {
-  value: UserRole;
-  label: string;
-  description: string;
-}
-
 const BRAND = "#0A1F44";
-
-const roleOptions: RoleOption[] = [
-  { value: "admin", label: "System Admin", description: "System management & oversight" },
-  { value: "student", label: "Student", description: "View wallet balance & history" },
-  { value: "parent", label: "Parent", description: "Monitor balances & top up wallets" },
-  { value: "finance", label: "Finance Officer", description: "Revenue, expenses & reports" },
-  { value: "restaurant", label: "Restaurant Staff", description: "POS terminal & menu management" },
-];
 
 const Login: React.FC = () => {
   const { status, user, refreshSession } = useAuth();
-  const [role, setRole] = useState<UserRole>("admin");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [regNo, setRegNo] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showRoleSelector, setShowRoleSelector] = useState(false);
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-
-  useEffect(() => {
-    const qRole = searchParams.get("role");
-    if (qRole === "student" || qRole === "parent") {
-      setRole(qRole);
-    }
-  }, [searchParams]);
 
   useEffect(() => {
     if (status === "authenticated" && user) {
@@ -58,12 +32,10 @@ const Login: React.FC = () => {
     );
   }
 
-  const currentRole = roleOptions.find((r) => r.value === role) || roleOptions[0];
-
-  const toAuthUser = (data: any, loginRole: UserRole): AuthUser => ({
+  const toAuthUser = (data: any): AuthUser => ({
     id: data.id || data._id,
     name: data.name,
-    role: loginRole,
+    role: data.role as UserRole,
     email: data.email,
     regNo: data.regNo,
     walletBalance: data.walletBalance,
@@ -73,29 +45,25 @@ const Login: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      let data;
-      if (role === "admin") {
-        const res = await API.post("/admin/login", { email, password });
-        data = res.data;
-      } else if (role === "student") {
-        const res = await API.post("/students/login", { regNo, password });
-        data = res.data;
-      } else if (role === "parent") {
-        const res = await API.post("/parents/login", { phone, password });
-        data = res.data;
-      } else {
-        const res = await API.post("/users/login", { email, password, role });
-        data = res.data;
+      const res = await API.post("/auth/login", {
+        identifier: identifier.trim(),
+        password,
+      });
+      const data = res.data;
+
+      if (!data?.role || !data?.token) {
+        toast.error("Login failed", "Unexpected response from server");
+        return;
       }
 
-      const authUser = toAuthUser(data, (data.role || role) as UserRole);
+      const authUser = toAuthUser(data);
       persistAuthSession(authUser, data.token);
       const verified = await refreshSession();
       if (!verified) {
         toast.error("Login failed", "Could not verify your session with the server");
         return;
       }
-      toast.success(`Welcome, ${data.name || currentRole.label}!`);
+      toast.success(`Welcome, ${data.name || "user"}!`);
       navigate(getDashboardPath(authUser.role));
     } catch (error: any) {
       toast.error("Login failed", error.response?.data?.message);
@@ -119,121 +87,50 @@ const Login: React.FC = () => {
           <div className="bg-white rounded-3xl shadow-xl p-6 md:p-8 border border-gray-100">
             <div className="flex flex-col items-center mb-6">
               <motion.img
-                key={role}
                 initial={{ scale: 0.92, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 src={logo}
                 draggable={false}
                 alt="SmartPOS"
-                className="w-28 h-auto object-contain mb-3"
+                className="w-40 h-auto object-contain mb-3"
               />
               <h2 className="text-xl font-bold text-[#0A1F44]">Welcome Back, please login!</h2>
-              <p className="text-slate-500 text-xs mt-1">{currentRole.label} Portal</p>
+              <p className="text-slate-500 text-xs mt-1 text-center">
+                Use your email, phone, or admission number
+              </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#0A1F44] ml-1">Login as</label>
-                <button
-                  type="button"
-                  onClick={() => setShowRoleSelector(true)}
-                  className="w-full flex items-center justify-between p-3 bg-[#0A1F44]/5 border border-[#0A1F44]/10 rounded-xl hover:bg-[#0A1F44]/10 transition-colors"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <img src={logo} draggable={false} alt="" className="w-8 h-8 object-contain rounded-md" />
-                    <div className="text-left">
-                      <span className="block text-sm font-semibold text-[#0A1F44]">{currentRole.label}</span>
-                      <span className="block text-[10px] text-gray-500">{currentRole.description}</span>
-                    </div>
-                  </div>
-                  <ChevronDown className="w-4 h-4 text-[#0A1F44]/60" />
-                </button>
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  autoComplete="username"
+                  placeholder="Email, phone, or admission number"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  required
+                  className={inputCls}
+                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className={`${inputCls} pr-10`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#0A1F44]"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
-
-              <AnimatePresence mode="wait">
-                {role === "student" ? (
-                  <motion.div
-                    key="student"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="space-y-3"
-                  >
-                    <input
-                      type="text"
-                      placeholder="Enter your admission number"
-                      value={regNo}
-                      onChange={(e) => setRegNo(e.target.value)}
-                      required
-                      className={inputCls}
-                    />
-                    <div className="relative">
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        placeholder="Enter your password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        className={`${inputCls} pr-10`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#0A1F44]"
-                        tabIndex={-1}
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="email"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="space-y-3"
-                  >
-                    {role === "parent" ? (
-                      <input
-                        type="tel"
-                        placeholder="Enter your Phone Number"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        required
-                        className={inputCls}
-                      />
-                    ) : (
-                      <input
-                        type="email"
-                        placeholder="Enter your Email Address"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                        className={inputCls}
-                      />
-                    )}
-                    <div className="relative">
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        placeholder="Enter your password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        className={`${inputCls} pr-10`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#0A1F44]"
-                        tabIndex={-1}
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
 
               <button
                 type="submit"
@@ -246,89 +143,27 @@ const Login: React.FC = () => {
                     <Loader size="xs" showText={false} />
                     Authenticating...
                   </>
-                ) : `Login as ${currentRole.label}`}
+                ) : (
+                  "Login"
+                )}
               </button>
 
-              {(role === "student" || role === "parent") && (
-                <p className="text-center">
-                  <Link
-                    to={`/forgot-password?role=${role}`}
-                    className="text-xs font-semibold text-[#0A1F44] hover:underline"
-                  >
-                    Forgot password?
-                  </Link>
-                </p>
-              )}
+              <p className="text-center">
+                <Link
+                  to="/forgot-password"
+                  className="text-xs font-semibold text-[#0A1F44] hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </p>
             </form>
 
             <div className="mt-6 pt-4 border-t border-gray-100 text-center">
-              <p className="text-[10px] text-gray-400">© {new Date().getFullYear()} SmartPOS · Feeding Minds, Nourishing Futures</p>
+              <p className="text-[10px] text-gray-400">
+                © {new Date().getFullYear()} SmartPOS · Feeding Minds, Nourishing Futures
+              </p>
             </div>
           </div>
-
-          <AnimatePresence>
-            {showRoleSelector && (
-              <>
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setShowRoleSelector(false)}
-                  className="fixed inset-0 bg-black/40 backdrop-blur-sm z-20"
-                />
-                <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
-                  <motion.div
-                    initial={{ y: "100%" }}
-                    animate={{ y: 0 }}
-                    exit={{ y: "100%" }}
-                    className="bg-white rounded-t-3xl shadow-xl max-h-[70vh] overflow-y-auto pointer-events-auto"
-                  >
-                    <div className="p-6">
-                      <div className="flex flex-col items-center mb-4">
-                        <img src={logo} alt="SmartPOS" className="w-16 h-auto object-contain mb-2" />
-                        <div className="w-10 h-1 bg-gray-200 rounded-full" />
-                      </div>
-                      <h3 className="text-base font-bold text-center text-[#0A1F44] mb-4">Select Login Role</h3>
-                      <div className="space-y-2">
-                        {roleOptions.map((option) => (
-                          <button
-                            key={option.value}
-                            onClick={() => {
-                              setRole(option.value);
-                              setShowRoleSelector(false);
-                              setEmail("");
-                              setPhone("");
-                              setPassword("");
-                              setRegNo("");
-                            }}
-                            className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition ${
-                              role === option.value
-                                ? "bg-[#0A1F44]/5 border-[#0A1F44]/30"
-                                : "bg-gray-50 border-gray-100 hover:border-[#0A1F44]/20"
-                            }`}
-                          >
-                            <div className="text-left flex-1">
-                              <span className="block text-sm font-bold text-[#0A1F44]">{option.label}</span>
-                              <span className="block text-[10px] text-gray-500">{option.description}</span>
-                            </div>
-                            {role === option.value && (
-                              <CheckCircle2 className="w-5 h-5 text-[#0A1F44] shrink-0" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        onClick={() => setShowRoleSelector(false)}
-                        className="w-full mt-4 py-2 text-sm text-gray-500 hover:text-[#0A1F44]"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </motion.div>
-                </div>
-              </>
-            )}
-          </AnimatePresence>
         </div>
       </div>
     </div>
