@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import prisma from '@/services/prisma';
-import { ensureAuthenticated } from '@/middlewares/auth';
+import { ensureAuthenticated, signToken } from '@/middlewares/auth';
+import { logAuditEvent } from '@/services/audit';
 import { isMailConfigured, sendPasswordResetCode } from '@/services/mail';
 
 const router = Router();
@@ -13,6 +14,36 @@ type ResetRole = (typeof RESET_ROLES)[number];
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function looksLikeEmail(value: string) {
+  return value.includes('@');
+}
+
+function looksLikePhone(value: string) {
+  const digits = value.replace(/\D/g, '');
+  return digits.length >= 9 && digits.length <= 15 && /^[\d+\s()-]+$/.test(value);
+}
+
+function phoneCandidates(raw: string): string[] {
+  const trimmed = raw.trim();
+  const digits = trimmed.replace(/\D/g, '');
+  const candidates = new Set<string>([trimmed]);
+  if (digits) {
+    candidates.add(digits);
+    if (digits.startsWith('254') && digits.length >= 12) {
+      candidates.add(`0${digits.slice(3)}`);
+      candidates.add(`+${digits}`);
+    } else if (digits.startsWith('0') && digits.length >= 10) {
+      candidates.add(`254${digits.slice(1)}`);
+      candidates.add(`+254${digits.slice(1)}`);
+    } else if (digits.length === 9) {
+      candidates.add(`0${digits}`);
+      candidates.add(`254${digits}`);
+      candidates.add(`+254${digits}`);
+    }
+  }
+  return [...candidates];
 }
 
 function generateCode(): string {
@@ -56,6 +87,192 @@ async function findAccount(email: string, role: ResetRole) {
     where: { email: { equals: email, mode: 'insensitive' } },
   });
 }
+
+// ─── POST /api/auth/login ──────────────────────────────────────────────────────
+// Role-intelligent login: identifier can be email, phone, or student regNo.
+router.post('/login', async (req: Request, res: Response): Promise<any> => {
+  const identifier = String(req.body.identifier ?? req.body.email ?? req.body.phone ?? req.body.regNo ?? '').trim();
+  const password = String(req.body.password ?? '');
+
+  if (!identifier || !password) {
+    return res.status(422).json({ message: 'Identifier and password are required' });
+  }
+
+  const ipAddress = req.ip;
+  const userAgent = req.headers['user-agent'];
+
+  try {
+    // Email → admin, staff (finance/restaurant), or parent by email
+    if (looksLikeEmail(identifier)) {
+      const email = normalizeEmail(identifier);
+
+      const admin = await prisma.admin.findUnique({ where: { email } });
+      if (admin) {
+        const isMatch = await bcrypt.compare(password, admin.password);
+        if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+
+        const token = signToken({ id: admin.id, email: admin.email, role: 'admin', name: admin.name });
+        await logAuditEvent({
+          eventType: 'login',
+          userType: 'admin',
+          userId: admin.id,
+          userName: admin.name,
+          userEmail: admin.email,
+          action: 'Admin login',
+          description: `Admin ${admin.email} logged in`,
+          ipAddress,
+          userAgent,
+        });
+        return res.json({
+          token,
+          id: admin.id,
+          _id: admin.id,
+          name: admin.name,
+          email: admin.email,
+          role: 'admin',
+        });
+      }
+
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (user) {
+        if (user.status !== 'approved') {
+          const msgs: Record<string, string> = {
+            pending: 'Your account is pending admin approval',
+            rejected: 'Your account registration was rejected. Please contact the administrator for more information.',
+          };
+          return res.status(403).json({ message: msgs[user.status] || 'Account not active' });
+        }
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+
+        const token = signToken({ id: user.id, email: user.email, role: user.role, name: user.name });
+        await logAuditEvent({
+          eventType: 'login',
+          userType: user.role,
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          action: 'User login',
+          description: `${user.role} ${user.email} logged in`,
+          ipAddress,
+          userAgent,
+        });
+        return res.json({
+          token,
+          id: user.id,
+          _id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        });
+      }
+
+      const parentByEmail = await prisma.parent.findUnique({ where: { email } });
+      if (parentByEmail) {
+        const isMatch = await bcrypt.compare(password, parentByEmail.password);
+        if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+
+        const token = signToken({
+          id: parentByEmail.id,
+          phone: parentByEmail.phone || undefined,
+          email: parentByEmail.email || undefined,
+          role: 'parent',
+          name: parentByEmail.name,
+        });
+        await logAuditEvent({
+          eventType: 'login',
+          userType: 'parent',
+          userId: parentByEmail.id,
+          userName: parentByEmail.name,
+          userEmail: parentByEmail.email || undefined,
+          action: 'Parent login',
+          ipAddress,
+          userAgent,
+        });
+        return res.json({
+          token,
+          id: parentByEmail.id,
+          name: parentByEmail.name,
+          email: parentByEmail.email,
+          phone: parentByEmail.phone,
+          role: 'parent',
+        });
+      }
+
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // Phone → parent (if no parent match, fall through — numeric regNos can look like phones)
+    if (looksLikePhone(identifier)) {
+      const candidates = phoneCandidates(identifier);
+      const parent = await prisma.parent.findFirst({
+        where: { phone: { in: candidates } },
+      });
+
+      if (parent) {
+        const isMatch = await bcrypt.compare(password, parent.password);
+        if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+
+        const token = signToken({
+          id: parent.id,
+          phone: parent.phone || undefined,
+          email: parent.email || undefined,
+          role: 'parent',
+          name: parent.name,
+        });
+        await logAuditEvent({
+          eventType: 'login',
+          userType: 'parent',
+          userId: parent.id,
+          userName: parent.name,
+          userEmail: parent.email || undefined,
+          action: 'Parent login',
+          ipAddress,
+          userAgent,
+        });
+        return res.json({
+          token,
+          id: parent.id,
+          name: parent.name,
+          email: parent.email,
+          phone: parent.phone,
+          role: 'parent',
+        });
+      }
+    }
+
+    // Student registration number
+    const student = await prisma.student.findUnique({ where: { regNo: identifier } });
+    if (!student) return res.status(401).json({ message: 'Invalid credentials' });
+
+    const isMatch = await bcrypt.compare(password, student.password);
+    if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+
+    const token = signToken({ id: student.id, regNo: student.regNo, role: 'student', name: student.name });
+    await logAuditEvent({
+      eventType: 'login',
+      userType: 'student',
+      userId: student.id,
+      userName: student.name,
+      action: 'Student login',
+      description: `Student ${student.regNo} logged in`,
+      ipAddress,
+      userAgent,
+    });
+    return res.json({
+      token,
+      id: student.id,
+      _id: student.id,
+      name: student.name,
+      regNo: student.regNo,
+      walletBalance: student.walletBalance,
+      role: 'student',
+    });
+  } catch (error) {
+    console.error('Unified login error:', error);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
 
 // ─── GET /api/auth/session ─────────────────────────────────────────────────────
 router.get('/session', ensureAuthenticated, async (req: Request, res: Response): Promise<any> => {
