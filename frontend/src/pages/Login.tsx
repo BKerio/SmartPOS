@@ -144,7 +144,7 @@ const Login: React.FC = () => {
                     Authenticating...
                   </>
                 ) : (
-                  "Login"
+                  "Login to your account now"
                 )}
               </button>
 
