@@ -1,5 +1,5 @@
 import { isMailConfigured, sendParentWelcomeEmail } from '@/services/mail';
-import { isAdvantaSmsConfigured, sendAdvantaSms } from '@/services/sms';
+import { isSmsSendingEnabled, sendAdvantaSms } from '@/services/sms';
 
 function parentPortalUrl(): string {
   const base = (process.env.FRONTEND_URL || 'https://betterfork.millenium.co.ke').replace(/\/$/, '');
@@ -28,7 +28,7 @@ export async function sendParentWelcomeNotifications(params: {
     );
   }
 
-  if (parent.receiveSms !== false && parent.phone && isAdvantaSmsConfigured()) {
+  if (parent.receiveSms !== false && parent.phone && isSmsSendingEnabled()) {
     const lines = [
       `Welcome ${parent.name}. Your Better Fork parent account is ready.`,
       `Login phone: ${parent.phone}`,

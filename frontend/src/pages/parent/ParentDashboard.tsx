@@ -244,9 +244,6 @@ const ParentDashboard = () => {
           <Link to="/user-profile" className="flex items-center gap-2 text-sm text-stone-400 font-semibold hover:text-stone-700 transition-colors">
             <User size={14} /> My Profile
           </Link>
-          <Link to="/settings" className="flex items-center gap-2 text-sm text-stone-400 font-semibold hover:text-stone-700 transition-colors">
-            <Wallet size={14} /> Settings
-          </Link>
         </div>
 
       </div>

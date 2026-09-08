@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { isSmsGloballyDisabled } from '@/services/systemSettings';
 
 const {
   ADVANTA_SMS_URL,
@@ -9,6 +10,11 @@ const {
 
 export function isAdvantaSmsConfigured(): boolean {
   return Boolean(ADVANTA_SMS_URL && ADVANTA_API_KEY && ADVANTA_PARTNER_ID && ADVANTA_SHORTCODE);
+}
+
+/** Configured and not turned off by admin Settings → Disable SMS. */
+export function isSmsSendingEnabled(): boolean {
+  return isAdvantaSmsConfigured() && !isSmsGloballyDisabled();
 }
 
 export function normalizeKenyanMobile(raw: string): string | null {
@@ -27,6 +33,9 @@ export function normalizeKenyanMobile(raw: string): string | null {
 }
 
 export async function sendAdvantaSms(toPhone: string, message: string): Promise<void> {
+  if (isSmsGloballyDisabled()) {
+    throw new Error('SMS is disabled by admin');
+  }
   if (!isAdvantaSmsConfigured()) {
     throw new Error('SMS is not configured. Set ADVANTA_SMS_URL, ADVANTA_API_KEY, ADVANTA_PARTNER_ID, ADVANTA_SHORTCODE');
   }

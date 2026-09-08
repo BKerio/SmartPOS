@@ -6,6 +6,7 @@ import { logAuditEvent } from '@/services/audit';
 import { sendParentWelcomeNotifications } from '@/services/parentWelcome';
 import { isMailConfigured } from '@/services/mail';
 import { isAdvantaSmsConfigured } from '@/services/sms';
+import { getSystemSettings, setSystemSettings } from '@/services/systemSettings';
 
 const router = Router();
 
@@ -105,6 +106,54 @@ router.put('/profile', ensureAdmin, async (req: Request, res: Response): Promise
   }
 });
 
+// ─── GET /api/admin/settings ──────────────────────────────────────────────────
+router.get('/settings', ensureAdmin, async (_req: Request, res: Response): Promise<any> => {
+  try {
+    const settings = getSystemSettings();
+    return res.json({
+      ...settings,
+      smsConfigured: isAdvantaSmsConfigured(),
+    });
+  } catch (error) {
+    console.error('Admin settings get error:', error);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── PUT /api/admin/settings ──────────────────────────────────────────────────
+router.put('/settings', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { smsDisabled } = req.body || {};
+    if (typeof smsDisabled !== 'boolean') {
+      return res.status(422).json({ message: 'smsDisabled (boolean) is required' });
+    }
+
+    const settings = setSystemSettings({ smsDisabled });
+
+    await logAuditEvent({
+      eventType: 'settings',
+      userType: 'admin',
+      userId: req.user!.id,
+      userName: req.user!.name || req.user!.email || 'Admin',
+      userEmail: req.user!.email,
+      action: smsDisabled ? 'Disable SMS' : 'Enable SMS',
+      description: smsDisabled
+        ? 'Admin disabled system-wide SMS'
+        : 'Admin enabled system-wide SMS',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return res.json({
+      ...settings,
+      smsConfigured: isAdvantaSmsConfigured(),
+    });
+  } catch (error) {
+    console.error('Admin settings put error:', error);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
 // ─── POST /api/admin/notifications/test ───────────────────────────────────────
 router.post('/notifications/test', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
   const { email, phone, parentName, password, studentName, studentRegNo, dryRun } = req.body || {};
@@ -112,6 +161,7 @@ router.post('/notifications/test', ensureAdmin, async (req: Request, res: Respon
   const config = {
     mailConfigured: isMailConfigured(),
     smsConfigured: isAdvantaSmsConfigured(),
+    smsDisabled: getSystemSettings().smsDisabled,
   };
 
   try {
@@ -129,7 +179,7 @@ router.post('/notifications/test', ensureAdmin, async (req: Request, res: Respon
         config,
         wouldSend: {
           email: Boolean(email && config.mailConfigured),
-          sms: Boolean(phone && config.smsConfigured),
+          sms: Boolean(phone && config.smsConfigured && !config.smsDisabled),
         },
       });
     }

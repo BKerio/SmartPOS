@@ -135,7 +135,7 @@ function AppShell() {
           <Route path="/pending-approvals" element={R(["admin"], <PendingApprovals />)} />
           <Route path="/staff-attendance" element={R(["admin", "finance"], <StaffAttendanceReport />)} />
           <Route path="/admin-profile" element={R(["admin"], <AdminProfile />)} />
-          <Route path="/settings" element={R(["admin", "parent", "finance", "restaurant"], <Settings />)} />
+          <Route path="/settings" element={R(["admin"], <Settings />)} />
 
           {/* Student */}
           <Route path="/student/order" element={R(["student"], <OrderDisplay mode="student" />)} />

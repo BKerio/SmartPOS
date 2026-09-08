@@ -26,7 +26,6 @@ const ParentProfile = () => {
     name: "",
     email: "",
     phone: "",
-    receiveSms: true,
     receiveEmail: true,
     currentPassword: "",
     newPassword: "",
@@ -42,7 +41,6 @@ const ParentProfile = () => {
         name: data.name || "",
         email: data.email || "",
         phone: data.phone || "",
-        receiveSms: data.receiveSms !== false,
         receiveEmail: data.receiveEmail !== false,
         currentPassword: "",
         newPassword: "",
@@ -86,7 +84,6 @@ const ParentProfile = () => {
       const payload: any = {
         name: form.name.trim(),
         phone: form.phone.trim() || null,
-        receiveSms: form.receiveSms,
         receiveEmail: form.receiveEmail,
       };
       if (form.newPassword) {
@@ -100,7 +97,6 @@ const ParentProfile = () => {
         ...f,
         name: data.name,
         phone: data.phone || "",
-        receiveSms: data.receiveSms !== false,
         receiveEmail: data.receiveEmail !== false,
         currentPassword: "",
         newPassword: "",
@@ -163,15 +159,6 @@ const ParentProfile = () => {
               <div className="pt-2 border-t border-gray-100">
                 <p className={labelCls}>Communication Preferences</p>
                 <div className="flex flex-wrap gap-4 mt-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={form.receiveSms}
-                      onChange={(e) => setForm({ ...form, receiveSms: e.target.checked })}
-                      className="rounded border-gray-300"
-                    />
-                    Receive SMS
-                  </label>
                   <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                     <input
                       type="checkbox"
