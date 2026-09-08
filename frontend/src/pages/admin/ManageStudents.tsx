@@ -10,7 +10,6 @@ import {
   downloadStudentsPdf,
   filterOnboardedOnDay,
   formatMoney,
-  isCreatedOnLocalDay,
   parseLocalDateInput,
   REGISTRATION_FEE_KES,
   toLocalDateInput,
@@ -120,6 +119,20 @@ const ManageStudents: React.FC = () => {
     return filterOnboardedOnDay(students, selectedOnboardedDay).length;
   }, [students, selectedOnboardedDay]);
 
+  const collectionTotals = useMemo(() => {
+    const walletTotal = filteredStudents.reduce(
+      (sum, s) => sum + Number(s.walletBalance || 0),
+      0,
+    );
+    const registrationFeesTotal = filteredStudents.length * REGISTRATION_FEE_KES;
+    return {
+      students: filteredStudents.length,
+      walletTotal,
+      registrationFeesTotal,
+      collectedTotal: walletTotal + registrationFeesTotal,
+    };
+  }, [filteredStudents]);
+
   const exportFiltered = (format: "excel" | "pdf") => {
     if (filteredStudents.length === 0) {
       toast.warning("Nothing to export", "No students match the current filter");
@@ -138,7 +151,14 @@ const ManageStudents: React.FC = () => {
       title,
       filenamePrefix,
       registrationFeeDay: selectedOnboardedDay || new Date(),
-      forceRegistrationFee: isDateFiltered,
+      forceRegistrationFee: true,
+      totals: isDateFiltered
+        ? {
+            walletTotal: collectionTotals.walletTotal,
+            registrationFeesTotal: collectionTotals.registrationFeesTotal,
+            collectedTotal: collectionTotals.collectedTotal,
+          }
+        : undefined,
     };
     try {
       if (format === "excel") {
@@ -508,6 +528,33 @@ const ManageStudents: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {isDateFiltered && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                <div className="rounded-xl border border-gray-100 bg-slate-50 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold">Students</p>
+                  <p className="text-lg font-bold text-[#0A1F44]">{collectionTotals.students}</p>
+                </div>
+                <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-amber-700/70 font-semibold">Registration fees</p>
+                  <p className="text-lg font-bold text-amber-800">
+                    KES {formatMoney(collectionTotals.registrationFeesTotal)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-emerald-700/70 font-semibold">Wallet balances</p>
+                  <p className="text-lg font-bold text-emerald-800">
+                    KES {formatMoney(collectionTotals.walletTotal)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-[#0A1F44]/15 bg-[#0A1F44]/5 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-[#0A1F44]/60 font-semibold">Total collected</p>
+                  <p className="text-lg font-bold text-[#0A1F44]">
+                    KES {formatMoney(collectionTotals.collectedTotal)}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {loading ? (
@@ -537,10 +584,7 @@ const ManageStudents: React.FC = () => {
                           : "No students match your search"}
                       </td>
                     </tr>
-                  ) : filteredStudents.map((s) => {
-                    const showRegFee =
-                      isDateFiltered || isCreatedOnLocalDay(s.createdAt);
-                    return (
+                  ) : filteredStudents.map((s) => (
                     <tr key={s._id || s.id} className="border-t border-gray-50 hover:bg-gray-50/50">
                       <td className="px-4 py-3">
                         <p className="font-semibold text-gray-900">{s.name}</p>
@@ -565,12 +609,8 @@ const ManageStudents: React.FC = () => {
                           <p className="text-xs text-gray-400">{s.parent.phone}</p>
                         )}
                       </td>
-                      <td
-                        className={`px-4 py-3 text-right font-medium ${
-                          showRegFee ? "text-amber-700" : "text-gray-400"
-                        }`}
-                      >
-                        {showRegFee ? `KES ${formatMoney(REGISTRATION_FEE_KES)}` : "N/A"}
+                      <td className="px-4 py-3 text-right font-medium text-amber-700">
+                        KES {formatMoney(REGISTRATION_FEE_KES)}
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-green-600">
                         KES {formatMoney(Number(s.walletBalance || 0))}
@@ -585,8 +625,7 @@ const ManageStudents: React.FC = () => {
                         </div>
                       </td>
                     </tr>
-                    );
-                  })}
+                  ))}
                 </tbody>
               </table>
             </div>

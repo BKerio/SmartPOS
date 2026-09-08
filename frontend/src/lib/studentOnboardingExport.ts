@@ -108,12 +108,17 @@ export function downloadStudentsExcel(
     filenamePrefix?: string;
     registrationFeeDay?: Date | null;
     forceRegistrationFee?: boolean;
+    totals?: {
+      walletTotal: number;
+      registrationFeesTotal: number;
+      collectedTotal: number;
+    };
   },
 ) {
   const title = opts?.title || "Students list";
   const rows = buildTableRows(students, {
     registrationFeeDay: opts?.registrationFeeDay,
-    forceRegistrationFee: opts?.forceRegistrationFee,
+    forceRegistrationFee: opts?.forceRegistrationFee !== false,
   });
 
   const headers = [
@@ -131,11 +136,22 @@ export function downloadStudentsExcel(
     "Wallet Balance (KES)",
   ];
 
-  const sheetData = [
+  const sheetData: (string | number)[][] = [
     [title],
     [`Generated: ${new Date().toLocaleString()}`],
     [`Total students: ${rows.length}`],
-    [`Registration fee: KES ${formatMoney(REGISTRATION_FEE_KES)} for onboarded day · N/A otherwise`],
+    [`Registration fee: KES ${formatMoney(REGISTRATION_FEE_KES)} per student (system registration)`],
+  ];
+
+  if (opts?.totals) {
+    sheetData.push(
+      [`Total registration fees: KES ${formatMoney(opts.totals.registrationFeesTotal)}`],
+      [`Total wallet balances: KES ${formatMoney(opts.totals.walletTotal)}`],
+      [`Total collected (wallets + fees): KES ${formatMoney(opts.totals.collectedTotal)}`],
+    );
+  }
+
+  sheetData.push(
     [],
     headers,
     ...rows.map((r) => [
@@ -152,7 +168,7 @@ export function downloadStudentsExcel(
       r.registrationFee,
       r.walletBalance,
     ]),
-  ];
+  );
 
   const ws = XLSX.utils.aoa_to_sheet(sheetData);
   ws["!cols"] = [
@@ -183,12 +199,17 @@ export function downloadStudentsPdf(
     filenamePrefix?: string;
     registrationFeeDay?: Date | null;
     forceRegistrationFee?: boolean;
+    totals?: {
+      walletTotal: number;
+      registrationFeesTotal: number;
+      collectedTotal: number;
+    };
   },
 ) {
   const title = opts?.title || "Students list";
   const rows = buildTableRows(students, {
     registrationFeeDay: opts?.registrationFeeDay,
-    forceRegistrationFee: opts?.forceRegistrationFee,
+    forceRegistrationFee: opts?.forceRegistrationFee !== false,
   });
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
@@ -197,14 +218,23 @@ export function downloadStudentsPdf(
   doc.text(title, 14, 16);
   doc.setFontSize(9);
   doc.setTextColor(100);
+  let y = 22;
   doc.text(
-    `Generated: ${new Date().toLocaleString()}  ·  Total: ${rows.length}  ·  Reg. fee KES ${formatMoney(REGISTRATION_FEE_KES)} or N/A`,
+    `Generated: ${new Date().toLocaleString()}  ·  Total students: ${rows.length}  ·  Reg. fee KES ${formatMoney(REGISTRATION_FEE_KES)} each`,
     14,
-    22,
+    y,
   );
+  if (opts?.totals) {
+    y += 5;
+    doc.text(
+      `Registration fees: KES ${formatMoney(opts.totals.registrationFeesTotal)}  ·  Wallets: KES ${formatMoney(opts.totals.walletTotal)}  ·  Total collected: KES ${formatMoney(opts.totals.collectedTotal)}`,
+      14,
+      y,
+    );
+  }
 
   autoTable(doc, {
-    startY: 26,
+    startY: y + 4,
     head: [[
       "No",
       "Student",
