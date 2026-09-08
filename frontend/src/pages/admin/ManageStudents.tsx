@@ -9,6 +9,11 @@ import {
   downloadStudentsExcel,
   downloadStudentsPdf,
   filterOnboardedOnDay,
+  formatMoney,
+  parseLocalDateInput,
+  REGISTRATION_FEE_KES,
+  toLocalDateInput,
+  walletAfterRegistrationFee,
 } from "@/lib/studentOnboardingExport";
 
 const COURSE_OPTIONS = [
@@ -69,12 +74,22 @@ const ManageStudents: React.FC = () => {
   const [pinLoading, setPinLoading] = useState(false);
   const [pinSaving, setPinSaving] = useState(false);
   const [walletStudent, setWalletStudent] = useState<any>(null);
-  const [dateFilter, setDateFilter] = useState<"all" | "today">("all");
+  /** Empty = all students; otherwise `YYYY-MM-DD` onboarded date filter. */
+  const [onboardedDate, setOnboardedDate] = useState("");
+
+  const selectedOnboardedDay = useMemo(
+    () => (onboardedDate ? parseLocalDateInput(onboardedDate) : null),
+    [onboardedDate],
+  );
+  const isDateFiltered = Boolean(selectedOnboardedDay);
+  const isOnboardedToday =
+    Boolean(selectedOnboardedDay) &&
+    toLocalDateInput(selectedOnboardedDay!) === toLocalDateInput();
 
   const filteredStudents = useMemo(() => {
     let list = students;
-    if (dateFilter === "today") {
-      list = filterOnboardedOnDay(list);
+    if (selectedOnboardedDay) {
+      list = filterOnboardedOnDay(list, selectedOnboardedDay);
     }
     const q = searchQuery.trim().toLowerCase();
     if (!q) return list;
@@ -98,25 +113,40 @@ const ManageStudents: React.FC = () => {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [students, searchQuery, dateFilter]);
+  }, [students, searchQuery, selectedOnboardedDay]);
 
-  const onboardedTodayCount = useMemo(() => filterOnboardedOnDay(students).length, [students]);
+  const onboardedOnSelectedCount = useMemo(() => {
+    if (!selectedOnboardedDay) return 0;
+    return filterOnboardedOnDay(students, selectedOnboardedDay).length;
+  }, [students, selectedOnboardedDay]);
 
   const exportFiltered = (format: "excel" | "pdf") => {
     if (filteredStudents.length === 0) {
       toast.warning("Nothing to export", "No students match the current filter");
       return;
     }
-    const isToday = dateFilter === "today";
-    const title = isToday
-      ? `Students onboarded today (${new Date().toLocaleDateString()})`
+    const dayLabel = selectedOnboardedDay
+      ? selectedOnboardedDay.toLocaleDateString()
+      : "";
+    const title = isDateFiltered
+      ? `Students onboarded on ${dayLabel}`
       : "Students list";
-    const filenamePrefix = isToday ? "students-onboarded-today" : "students-list";
+    const filenamePrefix = isDateFiltered
+      ? `students-onboarded-${onboardedDate}`
+      : "students-list";
     try {
       if (format === "excel") {
-        downloadStudentsExcel(filteredStudents, { title, filenamePrefix });
+        downloadStudentsExcel(filteredStudents, {
+          title,
+          filenamePrefix,
+          applyRegistrationFee: isDateFiltered,
+        });
       } else {
-        downloadStudentsPdf(filteredStudents, { title, filenamePrefix });
+        downloadStudentsPdf(filteredStudents, {
+          title,
+          filenamePrefix,
+          applyRegistrationFee: isDateFiltered,
+        });
       }
       toast.success(
         format === "excel" ? "Excel downloaded" : "PDF downloaded",
@@ -380,10 +410,14 @@ const ManageStudents: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="font-bold text-[#0A1F44]">All Students</h2>
-                {dateFilter === "today" && (
+                {isDateFiltered && selectedOnboardedDay && (
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Showing {filteredStudents.length} onboarded today
-                    {searchQuery.trim() ? " (with search)" : ""} · {onboardedTodayCount} total today
+                    Showing {filteredStudents.length} onboarded on{" "}
+                    {selectedOnboardedDay.toLocaleDateString()}
+                    {searchQuery.trim() ? " (with search)" : ""}
+                    {" · "}
+                    {onboardedOnSelectedCount} total that day
+                    {isOnboardedToday ? " (today)" : ""}
                   </p>
                 )}
               </div>
@@ -410,14 +444,14 @@ const ManageStudents: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  <CalendarDays size={14} /> Filter
+                  <CalendarDays size={14} /> Onboarded
                 </span>
                 <div className="inline-flex rounded-xl border border-gray-200 overflow-hidden text-sm">
                   <button
                     type="button"
-                    onClick={() => setDateFilter("all")}
+                    onClick={() => setOnboardedDate("")}
                     className={`px-3 py-1.5 font-medium transition ${
-                      dateFilter === "all"
+                      !isDateFiltered
                         ? "bg-[#0A1F44] text-white"
                         : "bg-white text-gray-600 hover:bg-gray-50"
                     }`}
@@ -426,19 +460,28 @@ const ManageStudents: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setDateFilter("today")}
+                    onClick={() => setOnboardedDate(toLocalDateInput())}
                     className={`px-3 py-1.5 font-medium transition border-l border-gray-200 ${
-                      dateFilter === "today"
+                      isOnboardedToday
                         ? "bg-[#0A1F44] text-white"
                         : "bg-white text-gray-600 hover:bg-gray-50"
                     }`}
                   >
-                    Onboarded today
-                    <span className={`ml-1.5 text-[11px] ${dateFilter === "today" ? "text-blue-100" : "text-gray-400"}`}>
-                      ({onboardedTodayCount})
-                    </span>
+                    Today
                   </button>
                 </div>
+                <input
+                  type="date"
+                  value={onboardedDate}
+                  onChange={(e) => setOnboardedDate(e.target.value)}
+                  className="px-3 py-1.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#0A1F44] outline-none"
+                  title="Filter by onboarded date"
+                />
+                {isDateFiltered && (
+                  <span className="text-xs text-gray-400">
+                    ({onboardedOnSelectedCount})
+                  </span>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -475,18 +518,21 @@ const ManageStudents: React.FC = () => {
                     <th className="px-4 py-3 text-left">Admission / Course</th>
                     <th className="px-4 py-3 text-center">Fingerprint</th>
                     <th className="px-4 py-3 text-left">Parent</th>
+                    {isDateFiltered && (
+                      <th className="px-4 py-3 text-right">Registration Fee</th>
+                    )}
                     <th className="px-4 py-3 text-right">Wallet</th>
                     <th className="px-4 py-3 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {students.length === 0 ? (
-                    <tr><td colSpan={6} className="p-8 text-center text-gray-400">No students yet</td></tr>
+                    <tr><td colSpan={isDateFiltered ? 7 : 6} className="p-8 text-center text-gray-400">No students yet</td></tr>
                   ) : filteredStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-gray-400">
-                        {dateFilter === "today"
-                          ? "No students were onboarded today"
+                      <td colSpan={isDateFiltered ? 7 : 6} className="p-8 text-center text-gray-400">
+                        {isDateFiltered
+                          ? `No students were onboarded on ${selectedOnboardedDay?.toLocaleDateString()}`
                           : "No students match your search"}
                       </td>
                     </tr>
@@ -515,7 +561,19 @@ const ManageStudents: React.FC = () => {
                           <p className="text-xs text-gray-400">{s.parent.phone}</p>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-green-600">KES {(s.walletBalance || 0).toLocaleString()}</td>
+                      {isDateFiltered && (
+                        <td className="px-4 py-3 text-right font-medium text-amber-700">
+                          KES {formatMoney(REGISTRATION_FEE_KES)}
+                        </td>
+                      )}
+                      <td className="px-4 py-3 text-right font-semibold text-green-600">
+                        KES{" "}
+                        {formatMoney(
+                          isDateFiltered
+                            ? walletAfterRegistrationFee(s.walletBalance)
+                            : Number(s.walletBalance || 0),
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-center gap-1">
                           <button onClick={() => setViewItem(s)} className="p-2 text-gray-400 hover:text-blue-600"><Eye size={16} /></button>
