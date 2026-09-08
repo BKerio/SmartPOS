@@ -729,50 +729,52 @@ const OrderDisplay = ({ mode }: OrderDisplayProps) => {
                   ))
                 )}
               </div>
-              <div className="p-4 border-t border-gray-100 space-y-3">
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Total</span>
-                  <span className="text-emerald-600">KES {total.toLocaleString()}</span>
+              <div className="p-3 border-t border-gray-100 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex justify-between font-bold text-base flex-1">
+                    <span>Total</span>
+                    <span className="text-emerald-600">KES {total.toLocaleString()}</span>
+                  </div>
+                  {cart.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setCart([])}
+                      className="text-[11px] text-red-500 flex items-center gap-1 shrink-0"
+                    >
+                      <Trash2 size={11} /> Clear
+                    </button>
+                  )}
                 </div>
-                {cart.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setCart([])}
-                    className="text-xs text-red-500 flex items-center gap-1"
-                  >
-                    <Trash2 size={12} /> Clear cart
-                  </button>
-                )}
                 <button
                   type="button"
                   disabled={cart.length === 0}
                   onClick={startCheckout}
                   style={{ backgroundColor: BRAND }}
-                  className="w-full py-4 rounded-2xl text-white font-bold disabled:opacity-40"
+                  className="w-full py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-40"
                 >
                   {isKiosk ? "Pay with Wallet" : "Checkout"}
                 </button>
                 {isKiosk && (
-                  <>
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       disabled={mpesaLoading || processing || cart.length === 0}
                       onClick={() => setShowMpesa(true)}
-                      className="w-full py-4 rounded-2xl bg-[#15A84F] hover:bg-[#108c40] text-white font-bold disabled:opacity-40 flex items-center justify-center gap-2"
+                      className="py-2.5 rounded-xl bg-[#15A84F] hover:bg-[#108c40] text-white text-sm font-bold disabled:opacity-40 flex items-center justify-center gap-1.5"
                     >
-                      <Smartphone size={18} />
-                      Pay M-Pesa STK · KES {total.toLocaleString()}
+                      <Smartphone size={15} />
+                      M-Pesa
                     </button>
                     <button
                       type="button"
                       disabled={processing || mpesaLoading || cart.length === 0}
                       onClick={payWithCashGuest}
-                      className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-bold disabled:opacity-40 flex items-center justify-center gap-2"
+                      className="py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold disabled:opacity-40 flex items-center justify-center gap-1.5"
                     >
-                      <Banknote size={18} />
-                      {processing ? "Processing..." : `Pay Cash · KES ${total.toLocaleString()}`}
+                      <Banknote size={15} />
+                      {processing ? "..." : "Cash"}
                     </button>
-                  </>
+                  </div>
                 )}
               </div>
             </>
