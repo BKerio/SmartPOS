@@ -7,6 +7,7 @@ import { buildWalletPinUpdate } from '@/services/walletPin';
 import { sendParentWelcomeNotifications } from '@/services/parentWelcome';
 import { phoneCandidates } from '@/services/phone';
 import { findParentPhoneWhere, verifyParentPassword } from '@/services/parentAuth';
+import { ensureSystemRegistrationFee } from '@/services/registrationFee';
 
 const router = Router();
 
@@ -288,17 +289,30 @@ router.get('/students', ensureAuthenticated, async (req: Request, res: Response)
   try {
     const parent = await prisma.parent.findUnique({
       where: { id: req.user!.id },
+      select: { students: { select: { id: true } } },
+    });
+
+    for (const s of parent?.students || []) {
+      try {
+        await ensureSystemRegistrationFee(s.id);
+      } catch (err: any) {
+        console.error('Registration fee ensure error:', err?.message || err);
+      }
+    }
+
+    const refreshed = await prisma.parent.findUnique({
+      where: { id: req.user!.id },
       include: {
         students: {
           select: {
             id: true, name: true, regNo: true, walletBalance: true,
-            transactions: { orderBy: { createdAt: 'desc' }, take: 5 }, // Last 5 transactions
-          }
-        }
-      }
+            transactions: { orderBy: { createdAt: 'desc' }, take: 5 },
+          },
+        },
+      },
     });
 
-    return res.json(parent?.students || []);
+    return res.json(refreshed?.students || []);
   } catch (error) {
     return res.status(500).json({ message: 'Something went wrong' });
   }
@@ -310,6 +324,18 @@ router.get('/students/:id/history', ensureAuthenticated, async (req: Request, re
 
   try {
     const studentId = req.params.id as string;
+    const linked = await prisma.student.findFirst({
+      where: { id: studentId, parentId: req.user!.id },
+      select: { id: true },
+    });
+    if (!linked) return res.status(404).json({ message: 'Student not found' });
+
+    try {
+      await ensureSystemRegistrationFee(linked.id);
+    } catch (err: any) {
+      console.error('Registration fee ensure error:', err?.message || err);
+    }
+
     const student = await prisma.student.findFirst({
       where: { id: studentId, parentId: req.user!.id },
       select: {

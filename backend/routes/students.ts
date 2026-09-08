@@ -13,6 +13,12 @@ import {
 import { buildWalletPinUpdate, defaultWalletPinData } from '@/services/walletPin';
 import { normalizePersonName, phoneCandidates } from '@/services/phone';
 import { defaultParentPassword } from '@/services/parentAuth';
+import {
+  backfillMissingRegistrationFees,
+  ensureSystemRegistrationFee,
+  REGISTRATION_FEE_DESCRIPTION,
+  REGISTRATION_FEE_KES,
+} from '@/services/registrationFee';
 
 const router = Router();
 
@@ -470,6 +476,17 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       select: studentDetailSelect,
     });
 
+    try {
+      await ensureSystemRegistrationFee(student.id);
+    } catch (err: any) {
+      console.error('Registration fee error:', err?.message || err);
+    }
+
+    const studentWithFee = await prisma.student.findUnique({
+      where: { id: student.id },
+      select: studentDetailSelect,
+    });
+
     if (parentResolved.notify && finalParentId) {
       try {
         await sendParentWelcomeNotifications({
@@ -488,12 +505,16 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       userId: req.user?.id,
       userName: req.user?.name || 'Admin',
       action: 'Create Student',
-      description: `Created student ${name} (${finalRegNo})${parsedFingerprint ? ' with fingerprint' : ''}`,
-      metadata: { regNo: finalRegNo, hasFingerprint: Boolean(parsedFingerprint) },
+      description: `Created student ${name} (${finalRegNo})${parsedFingerprint ? ' with fingerprint' : ''}. ${REGISTRATION_FEE_DESCRIPTION} KES ${REGISTRATION_FEE_KES} applied.`,
+      metadata: {
+        regNo: finalRegNo,
+        hasFingerprint: Boolean(parsedFingerprint),
+        registrationFee: REGISTRATION_FEE_KES,
+      },
       ipAddress: req.ip,
     });
 
-    return res.status(201).json(fmt(student));
+    return res.status(201).json(fmt(studentWithFee || student));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: 'Something went wrong' });
@@ -595,6 +616,34 @@ router.post('/wallet-pins/backfill-default', ensureAdmin, async (req: Request, r
 
     return res.json({ message: `Default wallet PIN set for ${result.count} student(s)`, count: result.count });
   } catch {
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ─── POST /api/students/registration-fees/ensure ──────────────────────────────
+router.post('/registration-fees/ensure', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
+  try {
+    const result = await backfillMissingRegistrationFees();
+
+    await logAuditEvent({
+      eventType: 'registration_fees_backfilled',
+      userType: 'admin',
+      userId: req.user?.id,
+      userName: req.user?.name || 'Admin',
+      action: 'Ensure System Registration Fees',
+      description: `Applied system registration fee (KES ${REGISTRATION_FEE_KES}) to ${result.applied} student(s)`,
+      metadata: result,
+      ipAddress: req.ip,
+    });
+
+    return res.json({
+      message: `Registration fee applied to ${result.applied} student(s)`,
+      ...result,
+      fee: REGISTRATION_FEE_KES,
+      description: REGISTRATION_FEE_DESCRIPTION,
+    });
+  } catch (error) {
+    console.error('Registration fee backfill error:', error);
     return res.status(500).json({ message: 'Something went wrong' });
   }
 });

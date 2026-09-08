@@ -10,10 +10,10 @@ import {
   downloadStudentsPdf,
   filterOnboardedOnDay,
   formatMoney,
+  isCreatedOnLocalDay,
   parseLocalDateInput,
   REGISTRATION_FEE_KES,
   toLocalDateInput,
-  walletAfterRegistrationFee,
 } from "@/lib/studentOnboardingExport";
 
 const COURSE_OPTIONS = [
@@ -134,19 +134,17 @@ const ManageStudents: React.FC = () => {
     const filenamePrefix = isDateFiltered
       ? `students-onboarded-${onboardedDate}`
       : "students-list";
+    const exportOpts = {
+      title,
+      filenamePrefix,
+      registrationFeeDay: selectedOnboardedDay || new Date(),
+      forceRegistrationFee: isDateFiltered,
+    };
     try {
       if (format === "excel") {
-        downloadStudentsExcel(filteredStudents, {
-          title,
-          filenamePrefix,
-          applyRegistrationFee: isDateFiltered,
-        });
+        downloadStudentsExcel(filteredStudents, exportOpts);
       } else {
-        downloadStudentsPdf(filteredStudents, {
-          title,
-          filenamePrefix,
-          applyRegistrationFee: isDateFiltered,
-        });
+        downloadStudentsPdf(filteredStudents, exportOpts);
       }
       toast.success(
         format === "excel" ? "Excel downloaded" : "PDF downloaded",
@@ -164,6 +162,11 @@ const ManageStudents: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
+      try {
+        await API.post("/students/registration-fees/ensure");
+      } catch {
+        // Non-blocking: list still loads even if fee backfill fails
+      }
       const { data } = await API.get("/students");
       setStudents(data);
     } catch (e: any) {
@@ -518,25 +521,26 @@ const ManageStudents: React.FC = () => {
                     <th className="px-4 py-3 text-left">Admission / Course</th>
                     <th className="px-4 py-3 text-center">Fingerprint</th>
                     <th className="px-4 py-3 text-left">Parent</th>
-                    {isDateFiltered && (
-                      <th className="px-4 py-3 text-right">Registration Fee</th>
-                    )}
+                    <th className="px-4 py-3 text-right">Registration Fee</th>
                     <th className="px-4 py-3 text-right">Wallet</th>
                     <th className="px-4 py-3 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {students.length === 0 ? (
-                    <tr><td colSpan={isDateFiltered ? 7 : 6} className="p-8 text-center text-gray-400">No students yet</td></tr>
+                    <tr><td colSpan={7} className="p-8 text-center text-gray-400">No students yet</td></tr>
                   ) : filteredStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={isDateFiltered ? 7 : 6} className="p-8 text-center text-gray-400">
+                      <td colSpan={7} className="p-8 text-center text-gray-400">
                         {isDateFiltered
                           ? `No students were onboarded on ${selectedOnboardedDay?.toLocaleDateString()}`
                           : "No students match your search"}
                       </td>
                     </tr>
-                  ) : filteredStudents.map((s) => (
+                  ) : filteredStudents.map((s) => {
+                    const showRegFee =
+                      isDateFiltered || isCreatedOnLocalDay(s.createdAt);
+                    return (
                     <tr key={s._id || s.id} className="border-t border-gray-50 hover:bg-gray-50/50">
                       <td className="px-4 py-3">
                         <p className="font-semibold text-gray-900">{s.name}</p>
@@ -561,18 +565,15 @@ const ManageStudents: React.FC = () => {
                           <p className="text-xs text-gray-400">{s.parent.phone}</p>
                         )}
                       </td>
-                      {isDateFiltered && (
-                        <td className="px-4 py-3 text-right font-medium text-amber-700">
-                          KES {formatMoney(REGISTRATION_FEE_KES)}
-                        </td>
-                      )}
+                      <td
+                        className={`px-4 py-3 text-right font-medium ${
+                          showRegFee ? "text-amber-700" : "text-gray-400"
+                        }`}
+                      >
+                        {showRegFee ? `KES ${formatMoney(REGISTRATION_FEE_KES)}` : "N/A"}
+                      </td>
                       <td className="px-4 py-3 text-right font-semibold text-green-600">
-                        KES{" "}
-                        {formatMoney(
-                          isDateFiltered
-                            ? walletAfterRegistrationFee(s.walletBalance)
-                            : Number(s.walletBalance || 0),
-                        )}
+                        KES {formatMoney(Number(s.walletBalance || 0))}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-center gap-1">
@@ -584,7 +585,8 @@ const ManageStudents: React.FC = () => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

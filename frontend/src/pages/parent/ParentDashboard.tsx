@@ -223,7 +223,12 @@ const ParentDashboard = () => {
                           const positive = Number(t.amount) >= 0;
                           return (
                             <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
-                              <span className="truncate text-stone-700">{t.description || t.type}</span>
+                              <span className="truncate text-stone-700">
+                                {t.description ||
+                                  (t.type === "registration_fee"
+                                    ? "System registration fee"
+                                    : t.type)}
+                              </span>
                               <span className={`font-extrabold ${positive ? "text-emerald-600" : "text-rose-600"}`}>
                                 {positive ? "+" : "-"}KES {Math.abs(Number(t.amount || 0)).toLocaleString()}
                               </span>

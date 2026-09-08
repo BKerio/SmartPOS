@@ -137,7 +137,10 @@ const ParentWalletHistory = () => {
                   <div key={tx.id} className="px-5 py-4 flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="font-semibold text-[#111] truncate">
-                        {tx.description || tx.type}
+                        {tx.description ||
+                          (tx.type === "registration_fee"
+                            ? "System registration fee"
+                            : tx.type)}
                       </p>
                       <p className="text-xs text-stone-400 mt-1">
                         {fmtDate(tx.createdAt)}{tx.reference ? ` · Ref: ${tx.reference}` : ""}
