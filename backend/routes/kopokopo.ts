@@ -860,6 +860,7 @@ router.get('/status', async (req: Request, res: Response) => {
     let posTransactionId: string | undefined;
 
     if (payment && isSuccessStatus(statusData.status)) {
+      const paymentId = payment.id;
       try {
         const result = await applyPaymentUpdate(payment, parsed, statusData.raw ?? undefined);
         payment = result.payment;
@@ -869,7 +870,7 @@ router.get('/status', async (req: Request, res: Response) => {
         // Payment succeeded at M-Pesa — don't leave the UI hanging if wallet/POS post-processing fails
         console.error('[Kopokopo] Status apply failed after success:', creditErr?.message || creditErr);
         payment = await prisma.kopoPayment.update({
-          where: { id: payment.id },
+          where: { id: paymentId },
           data: {
             status: 'success',
             ...(statusData.raw ? { rawPayload: statusData.raw as object } : {}),

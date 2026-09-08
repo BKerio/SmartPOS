@@ -31,13 +31,14 @@ export async function sendParentWelcomeNotifications(params: {
   if (parent.receiveSms !== false && parent.phone && isAdvantaSmsConfigured()) {
     const lines = [
       `Welcome ${parent.name}. Your Better Fork parent account is ready.`,
+      `Login phone: ${parent.phone}`,
     ];
-    if (password) lines.push(`Password: ${password}`);
+    if (password) lines.push(`Password: ${password} (your phone number)`);
     if (students.length) {
       const s = students.map((st) => `${st.name} (${st.regNo})`).join(', ');
       lines.push(`Student(s): ${s}`);
     }
-    lines.push(`Login: ${siteUrl}`);
+    lines.push(`Open: ${siteUrl}`);
     jobs.push(sendAdvantaSms(parent.phone, lines.join('\n')));
   }
 

@@ -6,6 +6,7 @@ import { logAuditEvent } from '@/services/audit';
 import { buildWalletPinUpdate } from '@/services/walletPin';
 import { sendParentWelcomeNotifications } from '@/services/parentWelcome';
 import { phoneCandidates } from '@/services/phone';
+import { findParentPhoneWhere, verifyParentPassword } from '@/services/parentAuth';
 
 const router = Router();
 
@@ -13,7 +14,7 @@ const fmt = (p: any) => ({ ...p, _id: p.id });
 
 async function findExistingParentByPhoneOrEmail(phone: string, email?: string | null) {
   const byPhone = await prisma.parent.findFirst({
-    where: { phone: { in: phoneCandidates(phone) } },
+    where: findParentPhoneWhere(phone),
   });
   if (byPhone) {
     return { type: 'phone' as const, parent: byPhone };
@@ -145,10 +146,12 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
   if (!phone || !password) return res.status(422).json({ message: 'Phone and password required' });
 
   try {
-    const parent = await prisma.parent.findUnique({ where: { phone: String(phone).trim() } });
+    const parent = await prisma.parent.findFirst({
+      where: findParentPhoneWhere(String(phone).trim()),
+    });
     if (!parent) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const isMatch = await bcrypt.compare(password, parent.password);
+    const isMatch = await verifyParentPassword(parent, String(password));
     if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
     const token = signToken({ id: parent.id, phone: parent.phone || undefined, role: 'parent', name: parent.name });

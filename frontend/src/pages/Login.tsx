@@ -8,12 +8,11 @@ import Loader from "@/components/ui/loader";
 import logo from "@/assets/LOGO.png";
 import { getDashboardPath, useAuth } from "@/context/AuthContext";
 import type { AuthUser, UserRole } from "@/services/authStorage";
-import { persistAuthSession } from "@/services/authStorage";
 
 const BRAND = "#0A1F44";
 
 const Login: React.FC = () => {
-  const { status, user, refreshSession } = useAuth();
+  const { status, user, login, refreshSession } = useAuth();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -45,9 +44,23 @@ const Login: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     try {
+      const rawId = identifier.trim();
+      const rawPass = password;
+      const digits = rawId.replace(/\D/g, "");
+      const normalizedId =
+        !rawId.includes("@") && digits.length >= 9 && digits.length <= 15
+          ? digits.startsWith("254") && digits.length >= 12
+            ? `0${digits.slice(3)}`
+            : digits.length === 9
+              ? `0${digits}`
+              : digits.startsWith("0")
+                ? digits
+                : rawId
+          : rawId;
+
       const res = await API.post("/auth/login", {
-        identifier: identifier.trim(),
-        password,
+        identifier: normalizedId,
+        password: rawPass.trim(),
       });
       const data = res.data;
 
@@ -57,16 +70,13 @@ const Login: React.FC = () => {
       }
 
       const authUser = toAuthUser(data);
-      persistAuthSession(authUser, data.token);
-      const verified = await refreshSession();
-      if (!verified) {
-        toast.error("Login failed", "Could not verify your session with the server");
-        return;
-      }
+      // Set session immediately from login response — don't block on a second round-trip
+      login(authUser, data.token);
+      void refreshSession();
       toast.success(`Welcome, ${data.name || "user"}!`);
       navigate(getDashboardPath(authUser.role));
     } catch (error: any) {
-      toast.error("Login failed", error.response?.data?.message);
+      toast.error("Login failed", error.response?.data?.message || "Invalid phone/email or password");
     } finally {
       setLoading(false);
     }
@@ -96,7 +106,7 @@ const Login: React.FC = () => {
               />
               <h2 className="text-xl font-bold text-[#0A1F44]">Welcome Back, please login!</h2>
               <p className="text-slate-500 text-xs mt-1 text-center">
-                Use your email, phone, or admission number
+                Email, phone, or admission number · Parents: password is your phone
               </p>
             </div>
 

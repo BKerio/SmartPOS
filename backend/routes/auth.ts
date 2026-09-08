@@ -5,6 +5,7 @@ import prisma from '@/services/prisma';
 import { ensureAuthenticated, signToken } from '@/middlewares/auth';
 import { logAuditEvent } from '@/services/audit';
 import { isMailConfigured, sendPasswordResetCode } from '@/services/mail';
+import { verifyParentPassword } from '@/services/parentAuth';
 
 const router = Router();
 
@@ -22,15 +23,14 @@ function looksLikeEmail(value: string) {
 
 function looksLikePhone(value: string) {
   const digits = value.replace(/\D/g, '');
-  return digits.length >= 9 && digits.length <= 15 && /^[\d+\s()-]+$/.test(value);
+  return digits.length >= 9 && digits.length <= 15;
 }
 
 function phoneCandidates(raw: string): string[] {
   const trimmed = raw.trim();
   const digits = trimmed.replace(/\D/g, '');
-  const candidates = new Set<string>([trimmed]);
+  const candidates = new Set<string>([trimmed, digits].filter(Boolean));
   if (digits) {
-    candidates.add(digits);
     if (digits.startsWith('254') && digits.length >= 12) {
       candidates.add(`0${digits.slice(3)}`);
       candidates.add(`+${digits}`);
@@ -44,6 +44,31 @@ function phoneCandidates(raw: string): string[] {
     }
   }
   return [...candidates];
+}
+
+function normalizeLoginIdentifier(raw: string): string {
+  const trimmed = String(raw || '').trim();
+  if (looksLikeEmail(trimmed)) return normalizeEmail(trimmed);
+  if (looksLikePhone(trimmed)) {
+    const digits = trimmed.replace(/\D/g, '');
+    if (digits.startsWith('254') && digits.length >= 12) return `0${digits.slice(3)}`;
+    if (digits.length === 9) return `0${digits}`;
+    return digits.startsWith('0') ? digits : trimmed;
+  }
+  return trimmed;
+}
+
+async function passwordMatches(hash: string, password: string, opts?: { phoneMode?: boolean }) {
+  const attempts = new Set<string>();
+  const trimmed = String(password || '').trim();
+  if (trimmed) attempts.add(trimmed);
+  if (opts?.phoneMode) {
+    for (const c of phoneCandidates(trimmed)) attempts.add(c);
+  }
+  for (const attempt of attempts) {
+    if (attempt && (await bcrypt.compare(attempt, hash))) return true;
+  }
+  return false;
 }
 
 function generateCode(): string {
@@ -91,10 +116,12 @@ async function findAccount(email: string, role: ResetRole) {
 // ─── POST /api/auth/login ──────────────────────────────────────────────────────
 // Role-intelligent login: identifier can be email, phone, or student regNo.
 router.post('/login', async (req: Request, res: Response): Promise<any> => {
-  const identifier = String(req.body.identifier ?? req.body.email ?? req.body.phone ?? req.body.regNo ?? '').trim();
+  const identifier = normalizeLoginIdentifier(
+    String(req.body.identifier ?? req.body.email ?? req.body.phone ?? req.body.regNo ?? ''),
+  );
   const password = String(req.body.password ?? '');
 
-  if (!identifier || !password) {
+  if (!identifier || !password.trim()) {
     return res.status(422).json({ message: 'Identifier and password are required' });
   }
 
@@ -108,7 +135,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
 
       const admin = await prisma.admin.findUnique({ where: { email } });
       if (admin) {
-        const isMatch = await bcrypt.compare(password, admin.password);
+        const isMatch = await passwordMatches(admin.password, password);
         if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
         const token = signToken({ id: admin.id, email: admin.email, role: 'admin', name: admin.name });
@@ -142,7 +169,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
           };
           return res.status(403).json({ message: msgs[user.status] || 'Account not active' });
         }
-        const isMatch = await bcrypt.compare(password, user.password);
+        const isMatch = await passwordMatches(user.password, password);
         if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
         const token = signToken({ id: user.id, email: user.email, role: user.role, name: user.name });
@@ -169,7 +196,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
 
       const parentByEmail = await prisma.parent.findUnique({ where: { email } });
       if (parentByEmail) {
-        const isMatch = await bcrypt.compare(password, parentByEmail.password);
+        const isMatch = await verifyParentPassword(parentByEmail, password);
         if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
         const token = signToken({
@@ -210,7 +237,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
       });
 
       if (parent) {
-        const isMatch = await bcrypt.compare(password, parent.password);
+        const isMatch = await verifyParentPassword(parent, password);
         if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
         const token = signToken({
@@ -245,7 +272,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     const student = await prisma.student.findUnique({ where: { regNo: identifier } });
     if (!student) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const isMatch = await bcrypt.compare(password, student.password);
+    const isMatch = await passwordMatches(student.password, password);
     if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
     const token = signToken({ id: student.id, regNo: student.regNo, role: 'student', name: student.name });

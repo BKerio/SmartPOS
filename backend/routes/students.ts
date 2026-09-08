@@ -12,6 +12,7 @@ import {
 } from '@/services/fingerprint';
 import { buildWalletPinUpdate, defaultWalletPinData } from '@/services/walletPin';
 import { normalizePersonName, phoneCandidates } from '@/services/phone';
+import { defaultParentPassword } from '@/services/parentAuth';
 
 const router = Router();
 
@@ -112,8 +113,7 @@ type ParentEnrollmentInput = {
 };
 
 function buildDefaultParentPassword(phone: string): string {
-  const digits = String(phone || '').replace(/\D/g, '');
-  return (digits.slice(-6).padStart(6, '0') || 'parent1');
+  return defaultParentPassword(phone);
 }
 
 const resolveParentId = async (

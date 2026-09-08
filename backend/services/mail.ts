@@ -100,14 +100,17 @@ export async function sendParentWelcomeEmail(params: {
       '',
       'Your parent portal account has been created.',
       ...passwordLine,
+      passwordLine.length
+        ? 'Tip: your password is your phone number unless you changed it.'
+        : '',
       'Linked student(s):',
       ...(studentLines.length ? studentLines : ['- (none)']),
       '',
       `Login here: ${loginUrl}`,
-      'Use your phone number and password to sign in.',
+      'Sign in with your phone number and password.',
       '',
       'Please keep this password safe.',
-    ].join('\n'),
+    ].filter((line, i, arr) => line !== '' || arr[i - 1] !== '').join('\n'),
     html: `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px">
         <h2 style="color:#0A1F44;margin:0 0 12px">${fromName}</h2>
