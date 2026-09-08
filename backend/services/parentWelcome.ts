@@ -1,12 +1,18 @@
 import { isMailConfigured, sendParentWelcomeEmail } from '@/services/mail';
 import { isAdvantaSmsConfigured, sendAdvantaSms } from '@/services/sms';
 
+function parentPortalUrl(): string {
+  const base = (process.env.FRONTEND_URL || 'https://betterfork.millenium.co.ke').replace(/\/$/, '');
+  return `${base}/login`;
+}
+
 export async function sendParentWelcomeNotifications(params: {
   parent: { name: string; email?: string | null; phone?: string | null; receiveSms?: boolean; receiveEmail?: boolean };
   password?: string;
   students: Array<{ name: string; regNo: string }>;
 }) {
   const { parent, password, students } = params;
+  const siteUrl = parentPortalUrl();
 
   const jobs: Array<Promise<any>> = [];
 
@@ -17,19 +23,21 @@ export async function sendParentWelcomeNotifications(params: {
         parentName: parent.name,
         password,
         students,
+        siteUrl,
       }),
     );
   }
 
   if (parent.receiveSms !== false && parent.phone && isAdvantaSmsConfigured()) {
     const lines = [
-      `Welcome ${parent.name}. Your SmartPOS Parent account is ready.`,
+      `Welcome ${parent.name}. Your Better Fork parent account is ready.`,
     ];
     if (password) lines.push(`Password: ${password}`);
     if (students.length) {
       const s = students.map((st) => `${st.name} (${st.regNo})`).join(', ');
       lines.push(`Student(s): ${s}`);
     }
+    lines.push(`Login: ${siteUrl}`);
     jobs.push(sendAdvantaSms(parent.phone, lines.join('\n')));
   }
 

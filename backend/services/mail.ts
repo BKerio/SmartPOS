@@ -68,10 +68,13 @@ export async function sendParentWelcomeEmail(params: {
   parentName: string;
   password?: string;
   students: Array<{ name: string; regNo: string }>;
+  siteUrl?: string;
 }) {
   const transport = getTransport();
   const fromName = MAIL_FROM_NAME || 'SmartPOS';
   const { fromAddress, replyTo } = resolveFromAddress();
+  const siteUrl = (params.siteUrl || process.env.FRONTEND_URL || 'https://betterfork.millenium.co.ke').replace(/\/$/, '');
+  const loginUrl = siteUrl.includes('/login') ? siteUrl : `${siteUrl}/login`;
 
   const studentLines = (params.students || []).map((s) => `- ${s.name} (${s.regNo})`);
   const studentHtml = (params.students || [])
@@ -100,6 +103,9 @@ export async function sendParentWelcomeEmail(params: {
       'Linked student(s):',
       ...(studentLines.length ? studentLines : ['- (none)']),
       '',
+      `Login here: ${loginUrl}`,
+      'Use your phone number and password to sign in.',
+      '',
       'Please keep this password safe.',
     ].join('\n'),
     html: `
@@ -110,6 +116,15 @@ export async function sendParentWelcomeEmail(params: {
         ${passwordHtml}
         <p style="margin:16px 0 6px">Linked student(s):</p>
         <ul style="margin:0;padding-left:18px">${studentHtml || '<li>(none)</li>'}</ul>
+        <p style="margin:20px 0 8px">
+          <a href="${escapeHtml(loginUrl)}" style="display:inline-block;background:#0A1F44;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700">
+            Open Parent Portal
+          </a>
+        </p>
+        <p style="color:#6b7280;font-size:12px;margin:0">
+          Or visit <a href="${escapeHtml(loginUrl)}" style="color:#0A1F44">${escapeHtml(loginUrl)}</a><br/>
+          Sign in with your phone number and password.
+        </p>
         <p style="color:#6b7280;font-size:12px;margin-top:18px">Please keep this password safe.</p>
       </div>
     `,

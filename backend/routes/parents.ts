@@ -5,10 +5,26 @@ import { signToken, ensureAdmin, ensureAuthenticated } from '@/middlewares/auth'
 import { logAuditEvent } from '@/services/audit';
 import { buildWalletPinUpdate } from '@/services/walletPin';
 import { sendParentWelcomeNotifications } from '@/services/parentWelcome';
+import { phoneCandidates } from '@/services/phone';
 
 const router = Router();
 
 const fmt = (p: any) => ({ ...p, _id: p.id });
+
+async function findExistingParentByPhoneOrEmail(phone: string, email?: string | null) {
+  const byPhone = await prisma.parent.findFirst({
+    where: { phone: { in: phoneCandidates(phone) } },
+  });
+  if (byPhone) {
+    return { type: 'phone' as const, parent: byPhone };
+  }
+  const trimmedEmail = email?.trim();
+  if (trimmedEmail) {
+    const byEmail = await prisma.parent.findUnique({ where: { email: trimmedEmail } });
+    if (byEmail) return { type: 'email' as const, parent: byEmail };
+  }
+  return null;
+}
 
 // ─── GET /api/parents ─────────────────────────────────────────────────────────
 router.get('/', ensureAdmin, async (_req: Request, res: Response): Promise<any> => {
@@ -33,8 +49,19 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
     return res.status(422).json({ message: 'Name, phone, and password are required' });
   }
   try {
-    const existing = await prisma.parent.findUnique({ where: { phone } });
-    if (existing) return res.status(409).json({ message: 'A parent with this phone already exists' });
+    const existing = await findExistingParentByPhoneOrEmail(String(phone).trim(), email);
+    if (existing?.type === 'phone') {
+      return res.status(409).json({
+        message: `A parent with this phone already exists (${existing.parent.name}). Link students to the existing parent instead.`,
+        existingParent: { id: existing.parent.id, name: existing.parent.name, phone: existing.parent.phone },
+      });
+    }
+    if (existing?.type === 'email') {
+      return res.status(409).json({
+        message: `A parent with this email already exists (${existing.parent.name}). Use their registered phone to link instead.`,
+        existingParent: { id: existing.parent.id, name: existing.parent.name, phone: existing.parent.phone },
+      });
+    }
 
     const hashed = await bcrypt.hash(password, 10);
     const parent = await prisma.parent.create({
@@ -92,9 +119,12 @@ router.post('/register', async (req: Request, res: Response): Promise<any> => {
   }
 
   try {
-    const existing = await prisma.parent.findUnique({ where: { phone } });
-    if (existing) {
+    const existing = await findExistingParentByPhoneOrEmail(String(phone).trim(), email);
+    if (existing?.type === 'phone') {
       return res.status(409).json({ message: 'A parent account with this phone already exists' });
+    }
+    if (existing?.type === 'email') {
+      return res.status(409).json({ message: 'A parent account with this email already exists' });
     }
 
     const hashed = await bcrypt.hash(password, 10);
@@ -418,9 +448,21 @@ router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
   try {
     if (phone) {
       const conflict = await prisma.parent.findFirst({
-        where: { phone, id: { not: req.params.id as string } },
+        where: {
+          id: { not: req.params.id as string },
+          phone: { in: phoneCandidates(String(phone).trim()) },
+        },
       });
       if (conflict) return res.status(409).json({ message: 'Another parent uses this phone' });
+    }
+    if (email?.trim()) {
+      const conflictEmail = await prisma.parent.findFirst({
+        where: {
+          id: { not: req.params.id as string },
+          email: email.trim(),
+        },
+      });
+      if (conflictEmail) return res.status(409).json({ message: 'Another parent uses this email' });
     }
 
     const data: any = {};

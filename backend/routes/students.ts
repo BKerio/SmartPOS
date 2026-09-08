@@ -11,6 +11,7 @@ import {
   FingerprintDuplicateError,
 } from '@/services/fingerprint';
 import { buildWalletPinUpdate, defaultWalletPinData } from '@/services/walletPin';
+import { normalizePersonName, phoneCandidates } from '@/services/phone';
 
 const router = Router();
 
@@ -143,18 +144,51 @@ const resolveParentId = async (
   }
 
   const phone = parentInfo.phone.trim();
+  const email = parentInfo.email?.trim() || null;
   const parentData = {
     name: parentInfo.name.trim(),
     phone,
-    email: parentInfo.email?.trim() || null,
+    email,
     receiveSms: parentInfo.receiveSms !== false,
     receiveEmail: parentInfo.receiveEmail !== false,
   };
 
-  const existing = await prisma.parent.findUnique({ where: { phone } });
-  if (existing) {
-    await prisma.parent.update({ where: { id: existing.id }, data: parentData });
-    return { parentId: existing.id, notify: { parent: parentData } };
+  const candidates = phoneCandidates(phone);
+  const existingByPhone = await prisma.parent.findFirst({
+    where: { phone: { in: candidates } },
+  });
+  if (existingByPhone) {
+    await prisma.parent.update({
+      where: { id: existingByPhone.id },
+      data: {
+        name: parentData.name,
+        email: email || existingByPhone.email,
+        receiveSms: parentData.receiveSms,
+        receiveEmail: parentData.receiveEmail,
+      },
+    });
+    return {
+      parentId: existingByPhone.id,
+      notify: {
+        parent: {
+          name: parentData.name,
+          phone: existingByPhone.phone,
+          email: email || existingByPhone.email,
+          receiveSms: parentData.receiveSms,
+          receiveEmail: parentData.receiveEmail,
+        },
+      },
+    };
+  }
+
+  if (email) {
+    const existingByEmail = await prisma.parent.findUnique({ where: { email } });
+    if (existingByEmail) {
+      throw Object.assign(new Error('PARENT_EMAIL_EXISTS'), {
+        code: 'PARENT_EMAIL_EXISTS',
+        parent: existingByEmail,
+      });
+    }
   }
 
   const plainPassword = buildDefaultParentPassword(phone);
@@ -165,6 +199,79 @@ const resolveParentId = async (
     notify: { parent: parentData, password: plainPassword },
   };
 };
+
+async function findDuplicateStudent(params: {
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  parentId?: string | null;
+  parentPhone?: string | null;
+  excludeStudentId?: string;
+}): Promise<{ message: string; existing: { id: string; name: string; regNo: string } } | null> {
+  const { name, phone, email, parentId, parentPhone, excludeStudentId } = params;
+  const normalizedName = normalizePersonName(name);
+  if (!normalizedName) return null;
+
+  const exclude = excludeStudentId ? { id: { not: excludeStudentId } } : {};
+
+  if (phone?.trim()) {
+    const candidates = phoneCandidates(phone);
+    const byPhone = await prisma.student.findFirst({
+      where: {
+        ...exclude,
+        OR: candidates.map((p) => ({ phone: p })),
+      },
+      select: { id: true, name: true, regNo: true },
+    });
+    if (byPhone) {
+      return {
+        message: `A student with this phone already exists (${byPhone.name} · ${byPhone.regNo})`,
+        existing: byPhone,
+      };
+    }
+  }
+
+  if (email?.trim()) {
+    const byEmail = await prisma.student.findFirst({
+      where: {
+        ...exclude,
+        email: { equals: email.trim(), mode: 'insensitive' },
+      },
+      select: { id: true, name: true, regNo: true },
+    });
+    if (byEmail) {
+      return {
+        message: `A student with this email already exists (${byEmail.name} · ${byEmail.regNo})`,
+        existing: byEmail,
+      };
+    }
+  }
+
+  let resolvedParentId = parentId || null;
+  if (!resolvedParentId && parentPhone?.trim()) {
+    const parent = await prisma.parent.findFirst({
+      where: { phone: { in: phoneCandidates(parentPhone) } },
+      select: { id: true },
+    });
+    resolvedParentId = parent?.id || null;
+  }
+
+  if (resolvedParentId) {
+    const siblings = await prisma.student.findMany({
+      where: { ...exclude, parentId: resolvedParentId },
+      select: { id: true, name: true, regNo: true },
+    });
+    const match = siblings.find((s) => normalizePersonName(s.name) === normalizedName);
+    if (match) {
+      return {
+        message: `This student is already registered under this parent (${match.name} · ${match.regNo}). Update the existing record instead of creating a new one.`,
+        existing: match,
+      };
+    }
+  }
+
+  return null;
+}
 
 const parseDateOfBirth = (value: unknown): Date | null | undefined => {
   if (value === undefined) return undefined;
@@ -276,6 +383,17 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       return res.status(409).json({ message: 'A student with this admission number already exists' });
     }
 
+    const duplicate = await findDuplicateStudent({
+      name,
+      phone,
+      email,
+      parentId,
+      parentPhone: parentInfo?.phone,
+    });
+    if (duplicate) {
+      return res.status(409).json({ message: duplicate.message, existingStudent: duplicate.existing });
+    }
+
     let parsedDob: Date | null = null;
     try {
       const parsed = parseDateOfBirth(dateOfBirth);
@@ -303,8 +421,32 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       }
     }
 
-    const parentResolved = await resolveParentId(parentId, parentInfo);
+    let parentResolved;
+    try {
+      parentResolved = await resolveParentId(parentId, parentInfo);
+    } catch (err: any) {
+      if (err?.code === 'PARENT_EMAIL_EXISTS') {
+        return res.status(409).json({
+          message: `A parent with this email already exists (${err.parent?.name || 'existing parent'}). Use their phone number to link instead.`,
+        });
+      }
+      throw err;
+    }
     const finalParentId = parentResolved.parentId;
+
+    if (finalParentId) {
+      const duplicateUnderParent = await findDuplicateStudent({
+        name,
+        parentId: finalParentId,
+      });
+      if (duplicateUnderParent) {
+        return res.status(409).json({
+          message: duplicateUnderParent.message,
+          existingStudent: duplicateUnderParent.existing,
+        });
+      }
+    }
+
     const plainPassword = password || finalRegNo.slice(-6);
     const hashed = await bcrypt.hash(plainPassword, 10);
     const defaultPin = await defaultWalletPinData();
@@ -674,8 +816,41 @@ router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
     }
 
     if (parentId !== undefined || parentInfo) {
-      parentResolvedForNotify = await resolveParentId(parentId, parentInfo, current.parentId);
+      try {
+        parentResolvedForNotify = await resolveParentId(parentId, parentInfo, current.parentId);
+      } catch (err: any) {
+        if (err?.code === 'PARENT_EMAIL_EXISTS') {
+          return res.status(409).json({
+            message: `A parent with this email already exists (${err.parent?.name || 'existing parent'}). Use their phone number to link instead.`,
+          });
+        }
+        throw err;
+      }
       data.parentId = parentResolvedForNotify.parentId;
+    }
+
+    const nextName = name !== undefined ? name : undefined;
+    const nextPhone = phone !== undefined ? phone?.trim() || null : undefined;
+    const nextEmail = email !== undefined ? email?.trim() || null : undefined;
+    const nextParentId =
+      data.parentId !== undefined ? data.parentId : current.parentId;
+
+    if (nextName !== undefined || nextPhone !== undefined || nextEmail !== undefined || parentId !== undefined || parentInfo) {
+      const currentFull = await prisma.student.findUnique({
+        where: { id: req.params.id as string },
+        select: { name: true, phone: true, email: true, parentId: true },
+      });
+      const duplicate = await findDuplicateStudent({
+        name: nextName ?? currentFull?.name ?? '',
+        phone: nextPhone !== undefined ? nextPhone : currentFull?.phone,
+        email: nextEmail !== undefined ? nextEmail : currentFull?.email,
+        parentId: nextParentId,
+        parentPhone: parentInfo?.phone,
+        excludeStudentId: req.params.id as string,
+      });
+      if (duplicate) {
+        return res.status(409).json({ message: duplicate.message, existingStudent: duplicate.existing });
+      }
     }
 
     if (fingerprintTemplate !== undefined) {
