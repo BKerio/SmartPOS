@@ -152,13 +152,11 @@ const ManageStudents: React.FC = () => {
       filenamePrefix,
       registrationFeeDay: selectedOnboardedDay || new Date(),
       forceRegistrationFee: true,
-      totals: isDateFiltered
-        ? {
-            walletTotal: collectionTotals.walletTotal,
-            registrationFeesTotal: collectionTotals.registrationFeesTotal,
-            collectedTotal: collectionTotals.collectedTotal,
-          }
-        : undefined,
+      totals: {
+        walletTotal: collectionTotals.walletTotal,
+        registrationFeesTotal: collectionTotals.registrationFeesTotal,
+        collectedTotal: collectionTotals.collectedTotal,
+      },
     };
     try {
       if (format === "excel") {
@@ -182,8 +180,15 @@ const ManageStudents: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
+      // Backend GET /students also backfills fees; POST ensures a forced pass.
       try {
-        await API.post("/students/registration-fees/ensure");
+        const ensure = await API.post("/students/registration-fees/ensure");
+        if (ensure.data?.applied > 0) {
+          toast.success(
+            "Registration fees applied",
+            `Deducted KES ${ensure.data.fee || 500} from ${ensure.data.applied} student wallet(s)`,
+          );
+        }
       } catch {
         // Non-blocking: list still loads even if fee backfill fails
       }
@@ -529,10 +534,12 @@ const ManageStudents: React.FC = () => {
               </div>
             </div>
 
-            {isDateFiltered && (
+            {filteredStudents.length > 0 && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
                 <div className="rounded-xl border border-gray-100 bg-slate-50 px-3 py-2.5">
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold">Students</p>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold">
+                    {isDateFiltered ? "Students" : "All students"}
+                  </p>
                   <p className="text-lg font-bold text-[#0A1F44]">{collectionTotals.students}</p>
                 </div>
                 <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2.5">

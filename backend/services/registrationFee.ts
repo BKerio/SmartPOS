@@ -51,10 +51,14 @@ export async function ensureSystemRegistrationFee(studentId: string) {
   });
 }
 
-/** Apply missing registration fees for all students that do not have one yet. */
-export async function backfillMissingRegistrationFees() {
-  const students = await prisma.student.findMany({ select: { id: true } });
-  const already = await prisma.walletTransaction.findMany({
+/** Students that still need the system registration fee deducted. */
+export async function findStudentsMissingRegistrationFee() {
+  const students = await prisma.student.findMany({
+    select: { id: true, name: true, regNo: true, walletBalance: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const feeRows = await prisma.walletTransaction.findMany({
     where: {
       OR: [
         { reference: REGISTRATION_FEE_REF },
@@ -62,16 +66,66 @@ export async function backfillMissingRegistrationFees() {
       ],
     },
     select: { studentId: true },
-    distinct: ['studentId'],
   });
-  const hasFee = new Set(already.map((t) => t.studentId));
+  const hasFee = new Set(feeRows.map((t) => t.studentId));
+
+  return students.filter((s) => !hasFee.has(s.id));
+}
+
+/**
+ * Sync walletBalance to the sum of wallet transactions in one SQL pass.
+ * Fixes fee ledger rows that were recorded without updating the balance.
+ */
+export async function reconcileWalletBalancesFromLedger() {
+  const synced = await prisma.$executeRaw`
+    UPDATE students AS s
+    SET "walletBalance" = t.ledger
+    FROM (
+      SELECT "studentId" AS sid, COALESCE(SUM(amount), 0)::double precision AS ledger
+      FROM wallet_transactions
+      GROUP BY "studentId"
+    ) t
+    WHERE s.id = t.sid
+      AND ABS(s."walletBalance" - t.ledger) > 0.005
+  `;
+
+  return { synced: Number(synced) };
+}
+
+/**
+ * Apply missing registration fees for every student, then reconcile wallet
+ * balances to the transaction ledger so the KES 500 cut shows everywhere.
+ */
+export async function backfillMissingRegistrationFees() {
+  const missing = await findStudentsMissingRegistrationFee();
+  const totalStudents = await prisma.student.count();
 
   let applied = 0;
-  for (const s of students) {
-    if (hasFee.has(s.id)) continue;
-    const result = await ensureSystemRegistrationFee(s.id);
-    if (result.applied) applied += 1;
+  let failed = 0;
+  const errors: string[] = [];
+
+  // Sequential to avoid connection pool exhaustion (limit often 1 via PgBouncer).
+  for (const s of missing) {
+    try {
+      const result = await ensureSystemRegistrationFee(s.id);
+      if (result.applied) applied += 1;
+    } catch (err: any) {
+      failed += 1;
+      errors.push(`${s.id}: ${err?.message || String(err)}`);
+    }
   }
 
-  return { applied, total: students.length, skipped: students.length - applied };
+  const reconcile = await reconcileWalletBalancesFromLedger();
+  const stillMissing = await findStudentsMissingRegistrationFee();
+
+  return {
+    applied,
+    failed,
+    total: totalStudents,
+    missingBefore: missing.length,
+    missingAfter: stillMissing.length,
+    skipped: totalStudents - applied - stillMissing.length,
+    balancesSynced: reconcile.synced,
+    errors: errors.slice(0, 20),
+  };
 }

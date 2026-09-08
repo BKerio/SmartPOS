@@ -362,6 +362,13 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
 // ─── GET /api/students ────────────────────────────────────────────────────────
 router.get('/', ensureAdmin, async (_req: Request, res: Response): Promise<any> => {
   try {
+    // Guarantee every student has the system registration fee deducted.
+    try {
+      await backfillMissingRegistrationFees();
+    } catch (err: any) {
+      console.error('Registration fee backfill on list error:', err?.message || err);
+    }
+
     const students = await prisma.student.findMany({
       orderBy: { createdAt: 'desc' },
       select: studentListSelect,
