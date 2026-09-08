@@ -39,6 +39,11 @@ function resolveSocketUrl(): string {
   return window.location.origin;
 }
 
+function isTerminalStatus(status?: string) {
+  const s = (status || "").toLowerCase();
+  return Boolean(s) && s !== "pending" && s !== "unknown";
+}
+
 export async function initiateStkPushAndWait(
   opts: StkPushOptions,
   onAwaiting?: () => void,
@@ -58,7 +63,10 @@ export async function initiateStkPushAndWait(
 
   let pushData: { location?: string; resumed?: boolean; paymentId?: string };
   try {
-    ({ data: pushData } = await API.post("/kopokopo/stkpush", payload, requestConfig));
+    ({ data: pushData } = await API.post("/kopokopo/stkpush", payload, {
+      ...requestConfig,
+      timeout: 35_000,
+    }));
   } catch (err: any) {
     const data = err?.response?.data;
     if (err?.response?.status === 409 && data?.code === "PENDING_STK" && data?.location) {
@@ -84,8 +92,13 @@ export async function initiateStkPushAndWait(
   onAwaiting?.();
 
   return new Promise((resolve, reject) => {
-    const socket: Socket = io(resolveSocketUrl(), { transports: ["polling", "websocket"] });
+    const socket: Socket = io(resolveSocketUrl(), {
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 4,
+      timeout: 8_000,
+    });
     let settled = false;
+    let pollInFlight = false;
 
     const finish = (result: StkPaymentResult) => {
       if (settled) return;
@@ -108,27 +121,36 @@ export async function initiateStkPushAndWait(
       socket.disconnect();
     };
 
-    socket.emit("join_kopokopo", { location: paymentLocation });
-    socket.on("kopokopo_update", (data: StkPaymentResult) => {
-      const status = (data?.status || "").toLowerCase();
-      if (status && status !== "pending") finish(data);
-    });
-
-    const pollInterval = window.setInterval(async () => {
+    const pollOnce = async () => {
+      if (settled || pollInFlight) return;
+      pollInFlight = true;
       try {
         const { data } = await API.get<StkPaymentResult>("/kopokopo/status", {
           params: { location: paymentLocation },
           ...requestConfig,
+          timeout: 15_000,
         });
-        const status = (data?.status || "").toLowerCase();
-        if (status && status !== "pending") finish(data);
+        if (isTerminalStatus(data?.status)) finish(data);
       } catch {
-        /* ignore poll errors */
+        /* ignore transient poll errors */
+      } finally {
+        pollInFlight = false;
       }
-    }, 5000);
+    };
+
+    socket.emit("join_kopokopo", { location: paymentLocation });
+    socket.on("kopokopo_update", (data: StkPaymentResult) => {
+      if (isTerminalStatus(data?.status)) finish(data);
+    });
+
+    // Poll immediately, then every 2s (was 5s with no immediate check)
+    void pollOnce();
+    const pollInterval = window.setInterval(() => {
+      void pollOnce();
+    }, 2_000);
 
     const hardTimeout = window.setTimeout(() => {
       fail(new Error("Payment timed out. Check your M-Pesa messages and try again."));
-    }, 180_000);
+    }, 120_000);
   });
 }

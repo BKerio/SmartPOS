@@ -63,9 +63,29 @@ interface StudentInfo {
 interface SalesSummary {
   date: string;
   totalSales: number;
+  posSales?: number;
+  tillInflow?: number;
   transactionCount: number;
+  tillPaymentCount?: number;
   itemsSold: number;
-  hourlyBreakdown: { hour: string; amount: number; count: number }[];
+  hourlyBreakdown: { hour: string; amount: number; count: number; posAmount?: number; tillAmount?: number }[];
+  tillPayments?: TillPaymentRow[];
+}
+
+interface TillPaymentRow {
+  id: string;
+  source: "till";
+  receiptNo?: string | null;
+  totalAmount: number;
+  status: string;
+  paymentMethod?: string;
+  purpose?: string;
+  phone?: string | null;
+  tillNumber?: string | null;
+  label?: string;
+  createdAt: string;
+  student: { name: string; regNo: string } | null;
+  items: { quantity: number; price: number; menuItem: { name: string } }[];
 }
 
 interface ReceiptItem {
@@ -76,6 +96,9 @@ interface ReceiptItem {
   createdAt: string;
   paymentMethod?: string;
   cashierName?: string | null;
+  source?: "pos" | "till";
+  label?: string;
+  phone?: string | null;
   student: { name: string; regNo: string } | null;
   items: { quantity: number; price: number; menuItem: { name: string } }[];
 }
@@ -154,7 +177,27 @@ const PosTerminal = () => {
         API.get<ReceiptItem[]>("/pos/receipts", { params: { date } }),
       ]);
       setSalesSummary(summaryRes.data);
-      setSalesReceipts(receiptsRes.data);
+
+      const posRows: ReceiptItem[] = (receiptsRes.data || []).map((r) => ({ ...r, source: "pos" as const }));
+      // Drop POS M-Pesa rows that are already represented by till/webhook payments (same day money)
+      const tillRows: ReceiptItem[] = (summaryRes.data.tillPayments || []).map((t) => ({
+        id: t.id,
+        receiptNo: t.receiptNo,
+        totalAmount: t.totalAmount,
+        status: t.status,
+        createdAt: t.createdAt,
+        paymentMethod: t.paymentMethod || "till",
+        source: "till" as const,
+        label: t.label,
+        phone: t.phone,
+        student: t.student,
+        items: t.items,
+      }));
+      const posNonMpesa = posRows.filter((r) => (r.paymentMethod || "wallet").toLowerCase() !== "mpesa");
+      const merged = [...tillRows, ...posNonMpesa].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      setSalesReceipts(merged);
     } catch (e: any) {
       toast.error("Error", e.response?.data?.message ?? "Failed to load sales data");
     } finally {
@@ -593,48 +636,68 @@ const PosTerminal = () => {
             <Loader size="sm" title="Loading sales..." subtitle="Fetching daily summary and receipts" className="py-8" />
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                <div className="bg-white rounded-2xl p-6 border border-gray-100">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-2xl p-5 border border-gray-100">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-500">Total Sales</p>
-                      <p className="text-3xl font-bold text-green-600 mt-1">
+                      <p className="text-sm text-gray-500">Total Collected</p>
+                      <p className="text-2xl font-bold text-green-600 mt-1">
                         KES {(salesSummary?.totalSales ?? 0).toLocaleString()}
                       </p>
                     </div>
                     <div className="p-3 bg-green-50 rounded-xl text-green-600">
-                      <TrendingUp size={24} />
+                      <TrendingUp size={22} />
                     </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-2">Completed POS transactions</p>
+                  <p className="text-xs text-gray-400 mt-2">POS + till M-Pesa (no double count)</p>
                 </div>
-                <div className="bg-white rounded-2xl p-6 border border-gray-100">
+                <div className="bg-white rounded-2xl p-5 border border-gray-100">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-500">Transactions</p>
-                      <p className="text-3xl font-bold text-[#0A1F44] mt-1">
-                        {salesSummary?.transactionCount ?? 0}
+                      <p className="text-sm text-gray-500">Till M-Pesa</p>
+                      <p className="text-2xl font-bold text-[#15A84F] mt-1">
+                        KES {(salesSummary?.tillInflow ?? 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-emerald-50 rounded-xl text-[#15A84F]">
+                      <Smartphone size={22} />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">
+                    {salesSummary?.tillPaymentCount ?? 0} webhook payment
+                    {(salesSummary?.tillPaymentCount ?? 0) === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <div className="bg-white rounded-2xl p-5 border border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500">POS Sales</p>
+                      <p className="text-2xl font-bold text-[#0A1F44] mt-1">
+                        KES {(salesSummary?.posSales ?? 0).toLocaleString()}
                       </p>
                     </div>
                     <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600">
-                      <Receipt size={24} />
+                      <Receipt size={22} />
                     </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-2">Receipts for selected day</p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    {salesSummary?.transactionCount ?? 0} receipt
+                    {(salesSummary?.transactionCount ?? 0) === 1 ? "" : "s"}
+                  </p>
                 </div>
-                <div className="bg-white rounded-2xl p-6 border border-gray-100">
+                <div className="bg-white rounded-2xl p-5 border border-gray-100">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-gray-500">Items Sold</p>
-                      <p className="text-3xl font-bold text-indigo-600 mt-1">
+                      <p className="text-2xl font-bold text-indigo-600 mt-1">
                         {salesSummary?.itemsSold ?? 0}
                       </p>
                     </div>
                     <div className="p-3 bg-amber-50 rounded-xl text-amber-600">
-                      <Package size={24} />
+                      <Package size={22} />
                     </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-2">Total menu items checked out</p>
+                  <p className="text-xs text-gray-400 mt-2">Menu items checked out</p>
                 </div>
               </div>
 
@@ -662,7 +725,7 @@ const PosTerminal = () => {
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                   <h3 className="font-bold text-[#0A1F44] flex items-center gap-2">
-                    <Receipt size={18} /> Day Receipts
+                    <Receipt size={18} /> Day Activity
                   </h3>
                   <p className="text-xs text-gray-400">
                     {new Date(`${salesDate}T12:00:00`).toLocaleDateString(undefined, {
@@ -674,7 +737,7 @@ const PosTerminal = () => {
                   </p>
                 </div>
                 {salesReceipts.length === 0 ? (
-                  <div className="p-8 text-center text-gray-500">No receipts for this day</div>
+                  <div className="p-8 text-center text-gray-500">No sales or till payments for this day</div>
                 ) : (
                   <div className="divide-y divide-gray-50">
                     {salesReceipts.map((r) => (
@@ -686,29 +749,53 @@ const PosTerminal = () => {
                         >
                           <div>
                             <p className="font-semibold text-[#0A1F44]">
-                              {r.student ? (
+                              {r.source === "till" ? (
+                                <>
+                                  {r.student ? (
+                                    <>
+                                      {r.student.name}{" "}
+                                      <span className="text-gray-400 font-normal">({r.student.regNo})</span>
+                                    </>
+                                  ) : (
+                                    <span>{r.label || "Till M-Pesa"}</span>
+                                  )}
+                                  <span className="ml-2 text-[10px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                                    Till
+                                  </span>
+                                </>
+                              ) : r.student ? (
                                 <>
                                   {r.student.name}{" "}
                                   <span className="text-gray-400 font-normal">({r.student.regNo})</span>
                                 </>
                               ) : (
-                                <span>Guest <span className="text-gray-400 font-normal">({r.paymentMethod === "cash" ? "Cash" : "M-Pesa"})</span></span>
+                                <span>
+                                  Guest{" "}
+                                  <span className="text-gray-400 font-normal">
+                                    ({r.paymentMethod === "cash" ? "Cash" : "M-Pesa"})
+                                  </span>
+                                </span>
                               )}
                             </p>
                             <p className="text-xs text-gray-400 mt-0.5">
-                              {new Date(r.createdAt).toLocaleString()} · {displayReceiptNo(r)}
+                              {new Date(r.createdAt).toLocaleString()}
+                              {r.source === "till"
+                                ? ` · ${r.receiptNo || "Till payment"}${r.phone ? ` · ${r.phone}` : ""}`
+                                : ` · ${displayReceiptNo(r)}`}
                             </p>
                           </div>
                           <div className="text-right">
                             <p className="font-bold text-green-600">KES {r.totalAmount.toLocaleString()}</p>
                             <span
                               className={`text-xs px-2 py-0.5 rounded-full ${
-                                r.status === "completed"
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-gray-100 text-gray-600"
+                                r.source === "till"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : r.status === "completed"
+                                    ? "bg-green-100 text-green-700"
+                                    : "bg-gray-100 text-gray-600"
                               }`}
                             >
-                              {r.status}
+                              {r.source === "till" ? r.label || "Till webhook" : r.status}
                             </span>
                           </div>
                         </button>
@@ -724,22 +811,24 @@ const PosTerminal = () => {
                                 </span>
                               </div>
                             ))}
-                            <div className="flex gap-2 mt-3 pt-3 border-t border-gray-200">
-                              <button
-                                type="button"
-                                onClick={() => handlePrintReceipt(r)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0A1F44] border border-[#0A1F44]/20 rounded-lg hover:bg-[#0A1F44]/5"
-                              >
-                                <Printer size={14} /> Print
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDownloadReceipt(r)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#0A1F44] rounded-lg hover:bg-[#0A1F44]/90"
-                              >
-                                <Download size={14} /> Download PDF
-                              </button>
-                            </div>
+                            {r.source !== "till" && (
+                              <div className="flex gap-2 mt-3 pt-3 border-t border-gray-200">
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintReceipt(r)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0A1F44] border border-[#0A1F44]/20 rounded-lg hover:bg-[#0A1F44]/5"
+                                >
+                                  <Printer size={14} /> Print
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadReceipt(r)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#0A1F44] rounded-lg hover:bg-[#0A1F44]/90"
+                                >
+                                  <Download size={14} /> Download PDF
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

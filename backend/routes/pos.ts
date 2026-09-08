@@ -853,8 +853,18 @@ router.get('/sales/summary', ensureAuthenticated, async (req: Request, res: Resp
     createdAt: { gte: bounds.start, lte: bounds.end },
   };
 
+  const KOPO_SUCCESS = new Set(['success', 'received', 'complete', 'completed', 'paid']);
+  const tillReceived = (status: string, amount: number) => {
+    const s = (status || '').toLowerCase();
+    return (KOPO_SUCCESS.has(s) || s === 'superseded') && amount > 0;
+  };
+  const normalizeTillRef = (ref: string | null | undefined, fallbackId: string) => {
+    const cleaned = String(ref || '').trim().toUpperCase().replace(/\s+/g, '');
+    return cleaned || fallbackId;
+  };
+
   try {
-    const [aggregate, transactionCount, receipts] = await Promise.all([
+    const [aggregate, transactionCount, receipts, kopoRaw] = await Promise.all([
       prisma.posTransaction.aggregate({ where, _sum: { totalAmount: true } }),
       prisma.posTransaction.count({ where }),
       prisma.posTransaction.findMany({
@@ -862,10 +872,80 @@ router.get('/sales/summary', ensureAuthenticated, async (req: Request, res: Resp
         select: {
           createdAt: true,
           totalAmount: true,
+          paymentMethod: true,
           items: { select: { quantity: true } },
         },
       }),
+      prisma.kopoPayment.findMany({
+        where: {
+          createdAt: { gte: bounds.start, lte: bounds.end },
+          amount: { gt: 0 },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          amount: true,
+          status: true,
+          eventType: true,
+          purpose: true,
+          phone: true,
+          description: true,
+          tillNumber: true,
+          transactionReference: true,
+          reference: true,
+          posCompleted: true,
+          posTransactionId: true,
+          walletCredited: true,
+          studentId: true,
+          createdAt: true,
+        },
+      }),
     ]);
+
+    // One row per M-Pesa code for money that actually hit the till
+    const tillCandidates = kopoRaw.filter((p) => tillReceived(p.status, p.amount));
+    const bestByRef = new Map<string, (typeof tillCandidates)[number]>();
+    for (const p of tillCandidates) {
+      const key = normalizeTillRef(p.transactionReference || p.reference, p.id);
+      const prev = bestByRef.get(key);
+      if (!prev) {
+        bestByRef.set(key, p);
+        continue;
+      }
+      let prevScore = 0;
+      let nextScore = 0;
+      if (prev.walletCredited) prevScore += 100;
+      if (prev.posCompleted) prevScore += 80;
+      if (prev.studentId) prevScore += 20;
+      if (KOPO_SUCCESS.has((prev.status || '').toLowerCase())) prevScore += 10;
+      if (p.walletCredited) nextScore += 100;
+      if (p.posCompleted) nextScore += 80;
+      if (p.studentId) nextScore += 20;
+      if (KOPO_SUCCESS.has((p.status || '').toLowerCase())) nextScore += 10;
+      if (nextScore > prevScore || (nextScore === prevScore && p.createdAt < prev.createdAt)) {
+        bestByRef.set(key, p);
+      }
+    }
+    const tillPayments = [...bestByRef.values()].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+    );
+
+    const studentIds = [...new Set(tillPayments.map((p) => p.studentId).filter(Boolean))] as string[];
+    const students = studentIds.length
+      ? await prisma.student.findMany({
+          where: { id: { in: studentIds } },
+          select: { id: true, name: true, regNo: true },
+        })
+      : [];
+    const studentById = new Map(students.map((s) => [s.id, s]));
+
+    const tillInflow = tillPayments.reduce((sum, p) => sum + p.amount, 0);
+    // POS M-Pesa is already counted in till webhook/callback rows — avoid double-counting
+    const posNonMpesa = receipts
+      .filter((r) => (r.paymentMethod || 'wallet').toLowerCase() !== 'mpesa')
+      .reduce((sum, r) => sum + r.totalAmount, 0);
+    const posSales = aggregate._sum.totalAmount || 0;
+    const combinedTotal = posNonMpesa + tillInflow;
 
     const itemsSold = receipts.reduce(
       (sum, receipt) => sum + receipt.items.reduce((lineSum, item) => lineSum + item.quantity, 0),
@@ -876,22 +956,67 @@ router.get('/sales/summary', ensureAuthenticated, async (req: Request, res: Resp
       hour: `${String(hour).padStart(2, '0')}:00`,
       amount: 0,
       count: 0,
+      posAmount: 0,
+      tillAmount: 0,
     }));
 
     for (const receipt of receipts) {
       const hour = new Date(receipt.createdAt).getHours();
-      hourly[hour].amount += receipt.totalAmount;
+      // Only non-M-Pesa POS in hourly combined (M-Pesa comes from till rows)
+      if ((receipt.paymentMethod || 'wallet').toLowerCase() !== 'mpesa') {
+        hourly[hour].amount += receipt.totalAmount;
+        hourly[hour].posAmount += receipt.totalAmount;
+        hourly[hour].count += 1;
+      } else {
+        hourly[hour].posAmount += receipt.totalAmount;
+        hourly[hour].count += 1;
+      }
+    }
+    for (const payment of tillPayments) {
+      const hour = new Date(payment.createdAt).getHours();
+      hourly[hour].amount += payment.amount;
+      hourly[hour].tillAmount += payment.amount;
       hourly[hour].count += 1;
     }
 
+    const tillRows = tillPayments.map((p) => {
+      const student = p.studentId ? studentById.get(p.studentId) : null;
+      const purpose = (p.purpose || '').toLowerCase();
+      let label = 'Till M-Pesa (Buy Goods)';
+      if (purpose === 'pos_sale') label = 'M-Pesa STK (POS)';
+      else if (purpose === 'wallet_topup') label = p.walletCredited ? 'Till → Wallet Top-up' : 'Till M-Pesa (Wallet pending)';
+      else if (p.eventType === 'buygoods_transaction_received') label = 'Till M-Pesa (Buy Goods)';
+
+      return {
+        id: `till-${p.id}`,
+        source: 'till' as const,
+        receiptNo: p.transactionReference || p.reference || p.id,
+        totalAmount: p.amount,
+        status: 'completed',
+        paymentMethod: 'till',
+        purpose: p.purpose,
+        phone: p.phone || null,
+        tillNumber: p.tillNumber || null,
+        label,
+        createdAt: p.createdAt,
+        student: student ? { name: student.name, regNo: student.regNo } : null,
+        items: [{ quantity: 1, price: p.amount, menuItem: { name: label } }],
+      };
+    });
+
     res.json({
       date: dateStr,
-      totalSales: aggregate._sum.totalAmount || 0,
+      totalSales: combinedTotal,
+      posSales,
+      tillInflow,
       transactionCount,
+      tillPaymentCount: tillPayments.length,
       itemsSold,
       hourlyBreakdown: hourly,
+      tillPayments: tillRows,
     });
-  } catch {
+  } catch (error) {
+    console.error('Sales summary error:', error);
     res.status(500).json({ message: 'Something went wrong' });
   }
 });

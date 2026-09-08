@@ -39,6 +39,7 @@ export const getAccessToken = async (): Promise<string> => {
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'SmartPOS/1.0',
       },
+      timeout: 12_000,
     },
   );
 
@@ -138,6 +139,7 @@ export const initiateSTKPush = async (opts: StkPushOptions): Promise<StkPushResu
         'Content-Type': 'application/json',
         'User-Agent': 'SmartPOS/1.0',
       },
+      timeout: 20_000,
     },
   );
 
@@ -171,6 +173,7 @@ export const getPaymentStatus = async (location: string): Promise<PaymentStatus>
       Authorization: `Bearer ${accessToken}`,
       'User-Agent': 'SmartPOS/1.0',
     },
+    timeout: 12_000,
   });
 
   const data = response.data as any;

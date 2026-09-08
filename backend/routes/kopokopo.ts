@@ -319,7 +319,7 @@ async function creditStudentWallet(
 
       console.log(`[Kopokopo] Credited student ${studentId} wallet with KES ${amount} (ref ${mpesaRef || paymentId})`);
       return true;
-    });
+    }, { maxWait: 5_000, timeout: 15_000 });
   } catch (err: any) {
     console.error('[Kopokopo] Wallet credit failed:', err?.message || err);
     return false;
@@ -436,8 +436,8 @@ async function applyPaymentUpdate(
   return { payment: updated, posReceiptNo, posTransactionId };
 }
 
-const STALE_PENDING_MS = 5 * 60 * 1000;
-const ORPHAN_PENDING_MS = 2 * 60 * 1000;
+const STALE_PENDING_MS = 2 * 60 * 1000; // STK prompts expire ~60–90s; unblock retries after 2 min
+const ORPHAN_PENDING_MS = 45 * 1000;
 
 function phoneKey(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -482,51 +482,57 @@ async function syncPendingFromKopokopo(paymentId: string, location: string) {
   }
 }
 
-/** Sync stale pending STK requests for a phone and return any still-active one. */
+/** Clear stale pending STKs for a phone; only sync the newest live one with Kopokopo. */
 async function resolvePhonePendingBlock(phone: string) {
   const key = phoneKey(phone);
   const now = Date.now();
+  const lookback = new Date(now - STALE_PENDING_MS - 60_000);
 
   const candidates = await prisma.kopoPayment.findMany({
-    where: { status: 'pending' },
+    where: {
+      status: 'pending',
+      createdAt: { gte: lookback },
+    },
     orderBy: { createdAt: 'desc' },
-    take: 30,
+    take: 40,
   });
 
   const forPhone = candidates.filter((p) => phoneKey(p.phone) === key);
-  let activeWithLocation: (typeof candidates)[0] | null = null;
+  if (forPhone.length === 0) return null;
+
+  const toFail: string[] = [];
+  let newestLive: (typeof forPhone)[0] | null = null;
 
   for (const payment of forPhone) {
     const age = now - payment.createdAt.getTime();
 
-    if (payment.location) {
-      const updated = await syncPendingFromKopokopo(payment.id, payment.location);
-      const current = updated ?? (await prisma.kopoPayment.findUnique({ where: { id: payment.id } }));
-      if (!current || current.status !== 'pending') continue;
-
-      if (age > STALE_PENDING_MS) {
-        await prisma.kopoPayment.update({
-          where: { id: current.id },
-          data: { status: 'failed' },
-        });
-        continue;
-      }
-
-      if (!activeWithLocation || current.createdAt > activeWithLocation.createdAt) {
-        activeWithLocation = current;
-      }
+    if (!payment.location) {
+      if (age > ORPHAN_PENDING_MS) toFail.push(payment.id);
       continue;
     }
 
-    if (age > ORPHAN_PENDING_MS) {
-      await prisma.kopoPayment.update({
-        where: { id: payment.id },
-        data: { status: 'failed' },
-      });
+    if (age > STALE_PENDING_MS) {
+      toFail.push(payment.id);
+      continue;
     }
+
+    if (!newestLive) newestLive = payment;
   }
 
-  return activeWithLocation;
+  if (toFail.length > 0) {
+    await prisma.kopoPayment.updateMany({
+      where: { id: { in: toFail } },
+      data: { status: 'failed' },
+    });
+  }
+
+  if (!newestLive?.location) return null;
+
+  // One Kopokopo status call max — do not sync every pending row (was making STK feel stuck)
+  const updated = await syncPendingFromKopokopo(newestLive.id, newestLive.location);
+  if (updated && updated.status !== 'pending') return null;
+
+  return updated ?? newestLive;
 }
 
 function respondPendingStk(
@@ -538,7 +544,7 @@ function respondPendingStk(
   if (!payment.location) {
     res.status(422).json({
       error:
-        'An M-Pesa request is already pending on this phone number. Check the phone for the STK prompt or wait about 5 minutes.',
+        'An M-Pesa request is already pending on this phone number. Check the phone for the STK prompt or wait about 2 minutes.',
       code: 'PENDING_PHONE',
     });
     return;
@@ -546,7 +552,7 @@ function respondPendingStk(
 
   if (Math.abs(payment.amount - requestedAmount) > 0.01) {
     res.status(409).json({
-      error: `There is already a pending M-Pesa request for KES ${payment.amount} on this phone. Complete it on the phone or wait about 5 minutes before trying a different amount.`,
+      error: `There is already a pending M-Pesa request for KES ${payment.amount} on this phone. Complete it on the phone or wait about 2 minutes before trying a different amount.`,
       code: 'PENDING_STK',
       location: payment.location,
       paymentId: payment.id,
@@ -753,7 +759,7 @@ router.post('/stkpush', async (req: Request, res: Response) => {
         console.error('[Kopokopo] STK Push Error (phone blocked):', kopoBody || stkErr.message);
         res.status(422).json({
           error:
-            'An M-Pesa request is already pending on this phone number. Check the phone for the STK prompt or wait about 5 minutes.',
+            'An M-Pesa request is already pending on this phone number. Check the phone for the STK prompt or wait about 2 minutes.',
           code: 'PENDING_PHONE',
           details: kopoBody || stkErr.message,
         });
@@ -799,7 +805,41 @@ router.get('/status', async (req: Request, res: Response) => {
     return;
   }
 
+  const normalized = normalizeLocation(location);
+
   try {
+    // Fast path: already finalized in DB — skip Kopokopo round-trip
+    const locId = locationId(normalized);
+    const existing =
+      (await prisma.kopoPayment.findFirst({
+        where: { OR: [{ location: normalized }, { location }] },
+        orderBy: { createdAt: 'desc' },
+      })) ||
+      (locId
+        ? await prisma.kopoPayment.findFirst({
+            where: { reference: locId },
+            orderBy: { createdAt: 'desc' },
+          })
+        : null);
+
+    if (existing && existing.status !== 'pending') {
+      res.json({
+        status: existing.status,
+        amount: existing.amount,
+        currency: existing.currency,
+        reference: existing.reference,
+        transactionReference: existing.transactionReference,
+        phone: existing.phone,
+        paymentId: existing.id,
+        studentId: existing.studentId,
+        walletCredited: existing.walletCredited,
+        purpose: existing.purpose,
+        posCompleted: existing.posCompleted,
+        posTransactionId: existing.posTransactionId,
+      });
+      return;
+    }
+
     const statusData = await getPaymentStatus(location);
     const parsed: ParsedKopoPayload = {
       ...parseKopoPayload(statusData.raw ?? {}),
@@ -810,21 +850,36 @@ router.get('/status', async (req: Request, res: Response) => {
       phone: statusData.phone || '',
       reference: String(statusData.reference || ''),
       transactionReference: String(statusData.reference || ''),
-      location: normalizeLocation(location),
+      location: normalized,
       originationTime: statusData.originationTime || '',
       tillNumber: process.env.KOPOKOPO_TILL_NUMBER || '',
     };
 
-    let payment = await findKopoPayment(parsed, location);
+    let payment = existing || (await findKopoPayment(parsed, location));
     let posReceiptNo: string | undefined;
     let posTransactionId: string | undefined;
 
     if (payment && isSuccessStatus(statusData.status)) {
-      const result = await applyPaymentUpdate(payment, parsed, statusData.raw ?? undefined);
-      payment = result.payment;
-      posReceiptNo = result.posReceiptNo;
-      posTransactionId = result.posTransactionId;
-    } else if (payment) {
+      try {
+        const result = await applyPaymentUpdate(payment, parsed, statusData.raw ?? undefined);
+        payment = result.payment;
+        posReceiptNo = result.posReceiptNo;
+        posTransactionId = result.posTransactionId;
+      } catch (creditErr: any) {
+        // Payment succeeded at M-Pesa — don't leave the UI hanging if wallet/POS post-processing fails
+        console.error('[Kopokopo] Status apply failed after success:', creditErr?.message || creditErr);
+        payment = await prisma.kopoPayment.update({
+          where: { id: payment.id },
+          data: {
+            status: 'success',
+            ...(statusData.raw ? { rawPayload: statusData.raw as object } : {}),
+            ...(parsed.transactionReference
+              ? { transactionReference: parsed.transactionReference }
+              : {}),
+          },
+        });
+      }
+    } else if (payment && parsed.status !== 'pending') {
       payment = await prisma.kopoPayment.update({
         where: { id: payment.id },
         data: {
