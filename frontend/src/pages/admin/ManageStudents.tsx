@@ -1,10 +1,15 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
-import { GraduationCap, Plus, Edit, Trash2, X, Eye, Fingerprint, Search, KeyRound, Wallet } from "lucide-react";
+import { GraduationCap, Plus, Edit, Trash2, X, Eye, Fingerprint, Search, KeyRound, Wallet, FileSpreadsheet, FileText, CalendarDays } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
 import WalletAdjustModal from "@/components/WalletAdjustModal";
 import { captureFingerprint, checkScannerHealth, prepareScanner, checkFingerprintDuplicate } from "@/services/fingerprintScanner";
+import {
+  downloadStudentsExcel,
+  downloadStudentsPdf,
+  filterOnboardedOnDay,
+} from "@/lib/studentOnboardingExport";
 
 const COURSE_OPTIONS = [
   "Diploma Water Engineering",
@@ -64,11 +69,16 @@ const ManageStudents: React.FC = () => {
   const [pinLoading, setPinLoading] = useState(false);
   const [pinSaving, setPinSaving] = useState(false);
   const [walletStudent, setWalletStudent] = useState<any>(null);
+  const [dateFilter, setDateFilter] = useState<"all" | "today">("all");
 
   const filteredStudents = useMemo(() => {
+    let list = students;
+    if (dateFilter === "today") {
+      list = filterOnboardedOnDay(list);
+    }
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return students;
-    return students.filter((s) => {
+    if (!q) return list;
+    return list.filter((s) => {
       const haystack = [
         s.name,
         s.regNo,
@@ -88,7 +98,34 @@ const ManageStudents: React.FC = () => {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [students, searchQuery]);
+  }, [students, searchQuery, dateFilter]);
+
+  const onboardedTodayCount = useMemo(() => filterOnboardedOnDay(students).length, [students]);
+
+  const exportFiltered = (format: "excel" | "pdf") => {
+    if (filteredStudents.length === 0) {
+      toast.warning("Nothing to export", "No students match the current filter");
+      return;
+    }
+    const isToday = dateFilter === "today";
+    const title = isToday
+      ? `Students onboarded today (${new Date().toLocaleDateString()})`
+      : "Students list";
+    const filenamePrefix = isToday ? "students-onboarded-today" : "students-list";
+    try {
+      if (format === "excel") {
+        downloadStudentsExcel(filteredStudents, { title, filenamePrefix });
+      } else {
+        downloadStudentsPdf(filteredStudents, { title, filenamePrefix });
+      }
+      toast.success(
+        format === "excel" ? "Excel downloaded" : "PDF downloaded",
+        `${filteredStudents.length} student(s) exported`,
+      );
+    } catch (e: any) {
+      toast.error("Export failed", e?.message || "Could not generate file");
+    }
+  };
 
   const setField = <K extends keyof typeof emptyStudent>(key: K, value: (typeof emptyStudent)[K]) => {
     setStudentForm((f) => ({ ...f, [key]: value }));
@@ -339,25 +376,91 @@ const ManageStudents: React.FC = () => {
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 border-b border-gray-100">
-            <h2 className="font-bold text-[#0A1F44]">All Students</h2>
-            <div className="flex flex-col sm:flex-row gap-3 sm:items-center w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-72">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search students, admission no, parent..."
-                  className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#0A1F44] outline-none"
-                />
+          <div className="flex flex-col gap-4 p-5 border-b border-gray-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="font-bold text-[#0A1F44]">All Students</h2>
+                {dateFilter === "today" && (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Showing {filteredStudents.length} onboarded today
+                    {searchQuery.trim() ? " (with search)" : ""} · {onboardedTodayCount} total today
+                  </p>
+                )}
               </div>
-              <button onClick={() => { closeForm(); setShowForm(true); }} className="flex items-center justify-center gap-2 bg-[#0A1F44] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#0A1F44]/90">
-                <Plus size={16} /> Add Student
-              </button>
-              <button onClick={backfillDefaultPins} className="flex items-center justify-center gap-2 bg-white border border-gray-200 text-[#0A1F44] px-4 py-2 rounded-xl text-sm font-semibold hover:bg-gray-50">
-                <KeyRound size={16} /> Default PINs
-              </button>
+              <div className="flex flex-col sm:flex-row gap-3 sm:items-center w-full sm:w-auto">
+                <div className="relative flex-1 sm:w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search students, admission no, parent..."
+                    className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#0A1F44] outline-none"
+                  />
+                </div>
+                <button onClick={() => { closeForm(); setShowForm(true); }} className="flex items-center justify-center gap-2 bg-[#0A1F44] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#0A1F44]/90">
+                  <Plus size={16} /> Add Student
+                </button>
+                <button onClick={backfillDefaultPins} className="flex items-center justify-center gap-2 bg-white border border-gray-200 text-[#0A1F44] px-4 py-2 rounded-xl text-sm font-semibold hover:bg-gray-50">
+                  <KeyRound size={16} /> Default PINs
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <CalendarDays size={14} /> Filter
+                </span>
+                <div className="inline-flex rounded-xl border border-gray-200 overflow-hidden text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setDateFilter("all")}
+                    className={`px-3 py-1.5 font-medium transition ${
+                      dateFilter === "all"
+                        ? "bg-[#0A1F44] text-white"
+                        : "bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDateFilter("today")}
+                    className={`px-3 py-1.5 font-medium transition border-l border-gray-200 ${
+                      dateFilter === "today"
+                        ? "bg-[#0A1F44] text-white"
+                        : "bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    Onboarded today
+                    <span className={`ml-1.5 text-[11px] ${dateFilter === "today" ? "text-blue-100" : "text-gray-400"}`}>
+                      ({onboardedTodayCount})
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => exportFiltered("excel")}
+                  disabled={filteredStudents.length === 0}
+                  className="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl text-sm font-semibold border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Export filtered list to Excel"
+                >
+                  <FileSpreadsheet size={15} /> Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportFiltered("pdf")}
+                  disabled={filteredStudents.length === 0}
+                  className="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl text-sm font-semibold border border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Export filtered list to PDF"
+                >
+                  <FileText size={15} /> PDF
+                </button>
+              </div>
             </div>
           </div>
 
@@ -380,7 +483,13 @@ const ManageStudents: React.FC = () => {
                   {students.length === 0 ? (
                     <tr><td colSpan={6} className="p-8 text-center text-gray-400">No students yet</td></tr>
                   ) : filteredStudents.length === 0 ? (
-                    <tr><td colSpan={6} className="p-8 text-center text-gray-400">No students match your search</td></tr>
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-gray-400">
+                        {dateFilter === "today"
+                          ? "No students were onboarded today"
+                          : "No students match your search"}
+                      </td>
+                    </tr>
                   ) : filteredStudents.map((s) => (
                     <tr key={s._id || s.id} className="border-t border-gray-50 hover:bg-gray-50/50">
                       <td className="px-4 py-3">
@@ -400,7 +509,12 @@ const ManageStudents: React.FC = () => {
                           <span className="text-xs text-gray-400">-</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{s.parent?.name || "-"}</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        <p>{s.parent?.name || "-"}</p>
+                        {s.parent?.phone && (
+                          <p className="text-xs text-gray-400">{s.parent.phone}</p>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right font-semibold text-green-600">KES {(s.walletBalance || 0).toLocaleString()}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-center gap-1">
