@@ -2,8 +2,16 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 
-/** Fixed registration fee applied when filtering by onboarded date (display/export). */
+/** Fixed registration fee for students onboarded on/after 8 Sep 2026. */
 export const REGISTRATION_FEE_KES = 500;
+
+/** Must match backend `REGISTRATION_FEE_EFFECTIVE_FROM` (Africa/Nairobi). */
+export const REGISTRATION_FEE_EFFECTIVE_FROM = new Date("2026-09-08T00:00:00+03:00");
+
+export function isRegistrationFeeEligible(createdAt?: string | Date | null): boolean {
+  if (!createdAt) return false;
+  return new Date(createdAt).getTime() >= REGISTRATION_FEE_EFFECTIVE_FROM.getTime();
+}
 
 export type StudentExportRow = {
   name: string;
@@ -69,15 +77,10 @@ function formatDateTime(value?: string | Date | null) {
   });
 }
 
-function buildTableRows(
-  students: StudentExportRow[],
-  opts?: { registrationFeeDay?: Date | null; forceRegistrationFee?: boolean },
-) {
-  const feeDay = opts?.registrationFeeDay || new Date();
-  const forceFee = Boolean(opts?.forceRegistrationFee);
+function buildTableRows(students: StudentExportRow[]) {
   return students.map((s, i) => {
     const wallet = Number(s.walletBalance || 0);
-    const hasFee = forceFee || isCreatedOnLocalDay(s.createdAt, feeDay);
+    const hasFee = isRegistrationFeeEligible(s.createdAt);
     return {
       no: i + 1,
       studentName: s.name || "-",
@@ -106,8 +109,6 @@ export function downloadStudentsExcel(
   opts?: {
     title?: string;
     filenamePrefix?: string;
-    registrationFeeDay?: Date | null;
-    forceRegistrationFee?: boolean;
     totals?: {
       walletTotal: number;
       registrationFeesTotal: number;
@@ -116,10 +117,7 @@ export function downloadStudentsExcel(
   },
 ) {
   const title = opts?.title || "Students list";
-  const rows = buildTableRows(students, {
-    registrationFeeDay: opts?.registrationFeeDay,
-    forceRegistrationFee: opts?.forceRegistrationFee !== false,
-  });
+  const rows = buildTableRows(students);
 
   const headers = [
     "No",
@@ -140,7 +138,9 @@ export function downloadStudentsExcel(
     [title],
     [`Generated: ${new Date().toLocaleString()}`],
     [`Total students: ${rows.length}`],
-    [`Registration fee: KES ${formatMoney(REGISTRATION_FEE_KES)} per student (system registration)`],
+    [
+      `Registration fee: KES ${formatMoney(REGISTRATION_FEE_KES)} for students onboarded on/after ${REGISTRATION_FEE_EFFECTIVE_FROM.toLocaleDateString()} · N/A otherwise`,
+    ],
   ];
 
   if (opts?.totals) {
@@ -197,8 +197,6 @@ export function downloadStudentsPdf(
   opts?: {
     title?: string;
     filenamePrefix?: string;
-    registrationFeeDay?: Date | null;
-    forceRegistrationFee?: boolean;
     totals?: {
       walletTotal: number;
       registrationFeesTotal: number;
@@ -207,10 +205,7 @@ export function downloadStudentsPdf(
   },
 ) {
   const title = opts?.title || "Students list";
-  const rows = buildTableRows(students, {
-    registrationFeeDay: opts?.registrationFeeDay,
-    forceRegistrationFee: opts?.forceRegistrationFee !== false,
-  });
+  const rows = buildTableRows(students);
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
   doc.setFontSize(14);
@@ -220,7 +215,7 @@ export function downloadStudentsPdf(
   doc.setTextColor(100);
   let y = 22;
   doc.text(
-    `Generated: ${new Date().toLocaleString()}  ·  Total students: ${rows.length}  ·  Reg. fee KES ${formatMoney(REGISTRATION_FEE_KES)} each`,
+    `Generated: ${new Date().toLocaleString()}  ·  Total students: ${rows.length}  ·  Reg. fee KES ${formatMoney(REGISTRATION_FEE_KES)} (from ${REGISTRATION_FEE_EFFECTIVE_FROM.toLocaleDateString()})`,
     14,
     y,
   );

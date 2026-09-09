@@ -10,6 +10,7 @@ import {
   downloadStudentsPdf,
   filterOnboardedOnDay,
   formatMoney,
+  isRegistrationFeeEligible,
   parseLocalDateInput,
   REGISTRATION_FEE_KES,
   toLocalDateInput,
@@ -124,9 +125,13 @@ const ManageStudents: React.FC = () => {
       (sum, s) => sum + Number(s.walletBalance || 0),
       0,
     );
-    const registrationFeesTotal = filteredStudents.length * REGISTRATION_FEE_KES;
+    const feeEligibleCount = filteredStudents.filter((s) =>
+      isRegistrationFeeEligible(s.createdAt),
+    ).length;
+    const registrationFeesTotal = feeEligibleCount * REGISTRATION_FEE_KES;
     return {
       students: filteredStudents.length,
+      feeEligibleCount,
       walletTotal,
       registrationFeesTotal,
       collectedTotal: walletTotal + registrationFeesTotal,
@@ -150,8 +155,6 @@ const ManageStudents: React.FC = () => {
     const exportOpts = {
       title,
       filenamePrefix,
-      registrationFeeDay: selectedOnboardedDay || new Date(),
-      forceRegistrationFee: true,
       totals: {
         walletTotal: collectionTotals.walletTotal,
         registrationFeesTotal: collectionTotals.registrationFeesTotal,
@@ -616,8 +619,16 @@ const ManageStudents: React.FC = () => {
                           <p className="text-xs text-gray-400">{s.parent.phone}</p>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-medium text-amber-700">
-                        KES {formatMoney(REGISTRATION_FEE_KES)}
+                      <td
+                        className={`px-4 py-3 text-right font-medium ${
+                          isRegistrationFeeEligible(s.createdAt)
+                            ? "text-amber-700"
+                            : "text-gray-400"
+                        }`}
+                      >
+                        {isRegistrationFeeEligible(s.createdAt)
+                          ? `KES ${formatMoney(REGISTRATION_FEE_KES)}`
+                          : "N/A"}
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-green-600">
                         KES {formatMoney(Number(s.walletBalance || 0))}

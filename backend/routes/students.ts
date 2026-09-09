@@ -512,7 +512,7 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
       userId: req.user?.id,
       userName: req.user?.name || 'Admin',
       action: 'Create Student',
-      description: `Created student ${name} (${finalRegNo})${parsedFingerprint ? ' with fingerprint' : ''}. ${REGISTRATION_FEE_DESCRIPTION} KES ${REGISTRATION_FEE_KES} applied.`,
+      description: `Created student ${name} (${finalRegNo})${parsedFingerprint ? ' with fingerprint' : ''}`,
       metadata: {
         regNo: finalRegNo,
         hasFingerprint: Boolean(parsedFingerprint),
