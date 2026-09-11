@@ -74,7 +74,18 @@ const PayWithKopokopo = () => {
   const handlePaymentResult = (data: any, fallbackAmount: number, sourcePhone: string) => {
     const status: string = (data?.status || '').toLowerCase();
 
-    if (status === 'success' || status === 'received' || status === 'complete') {
+    // Only confirmed paid (backend maps to success after M-Pesa receipt / PIN)
+    if (status === 'success') {
+      const mpesaRef = String(data?.transactionReference || '').trim();
+      if (!mpesaRef) {
+        MySwal.fire({
+          title: 'Still waiting for M-Pesa',
+          text: 'Enter your M-Pesa PIN on the phone to complete the payment.',
+          icon: 'info',
+          confirmButtonText: 'OK',
+        });
+        return;
+      }
       if (data?.walletCredited === false && data?.studentId) {
         MySwal.fire({
           title: 'Payment received',
@@ -86,7 +97,7 @@ const PayWithKopokopo = () => {
       setLastReceipt({
         amount: data?.amount || fallbackAmount,
         currency: data?.currency || 'KES',
-        reference: data?.transactionReference || data?.reference || 'N/A',
+        reference: mpesaRef,
         phone: data?.phone || sourcePhone,
         originationTime: data?.originationTime || new Date().toISOString(),
       });

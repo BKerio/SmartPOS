@@ -178,15 +178,33 @@ export const getPaymentStatus = async (location: string): Promise<PaymentStatus>
 
   const data = response.data as any;
   const attrs = data?.data?.attributes ?? data?.attributes ?? {};
-  const resource = attrs?.event?.resource ?? {};
+  const resource =
+    attrs?.event?.resource && typeof attrs.event.resource === 'object'
+      ? attrs.event.resource
+      : {};
 
   const amountRaw = resource.amount ?? attrs.amount?.value ?? attrs.amount ?? 0;
+  // Incoming Payment lifecycle lives on attributes.status (Pending | Success | Failed).
+  // resource.status ("Received") only appears after the customer completes M-Pesa.
+  const mpesaRef = String(resource.reference || '').trim();
+  const attrsStatus = String(attrs.status || '').trim();
+  const resourceStatus = String(resource.status || '').trim();
+
+  let status = attrsStatus || resourceStatus || 'Pending';
+  // Never treat as paid without an M-Pesa receipt — avoids "success" before PIN.
+  if (!mpesaRef) {
+    const s = status.toLowerCase();
+    if (s === 'success' || s === 'received' || s === 'complete' || s === 'completed' || s === 'paid') {
+      status = 'Pending';
+    }
+  }
 
   return {
-    status: resource.status || attrs.status || 'Unknown',
+    status,
     amount: Number(amountRaw) || 0,
     currency: resource.currency ?? attrs.amount?.currency ?? 'KES',
-    reference: resource.reference ?? attrs.reference ?? data?.data?.id ?? attrs.id,
+    // Prefer M-Pesa receipt; do not fall back to Kopokopo payment UUID (that looked "paid" early)
+    reference: mpesaRef || '',
     originationTime: resource.origination_time ?? attrs.origination_time ?? attrs.initiation_time,
     phone: resource.sender_phone_number ?? attrs.sender_phone_number ?? '',
     raw: data,

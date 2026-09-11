@@ -514,7 +514,8 @@ const PosTerminal = () => {
       });
 
       const status = (result.status || "").toLowerCase();
-      if (status === "success" || status === "received" || status === "complete") {
+      const mpesaRef = String(result.transactionReference || "").trim();
+      if (status === "success" && mpesaRef) {
         const cartSnapshot = [...cart];
         const saleTotal = total;
         const phone = mpesaPhone.trim();
@@ -558,6 +559,8 @@ const PosTerminal = () => {
         if (view === "sales" || salesDate === todayDateString()) {
           fetchSalesData(salesDate);
         }
+      } else if (status === "success" && !mpesaRef) {
+        toast.warning("Awaiting PIN", "Customer must enter M-Pesa PIN to complete payment");
       } else if (status === "failed" || status === "error") {
         toast.error("Payment failed", "M-Pesa payment was not completed");
       } else {

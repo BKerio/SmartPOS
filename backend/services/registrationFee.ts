@@ -5,6 +5,7 @@ export const REGISTRATION_FEE_KES = 500;
 export const REGISTRATION_FEE_REF = 'SYSTEM_REGISTRATION';
 export const REGISTRATION_FEE_TYPE = 'registration_fee';
 export const REGISTRATION_FEE_DESCRIPTION = 'System registration fee';
+export const PRE_FEE_OPENING_RESTORE_REF = 'PRE_FEE_OPENING_RESTORE';
 
 /**
  * Registration fee applies only to students onboarded on/after this local date
@@ -74,7 +75,7 @@ export async function ensureSystemRegistrationFee(studentId: string) {
 
 /**
  * Remove incorrectly applied registration fees from students onboarded before the cutoff,
- * and credit KES 500 back to their wallets.
+ * and credit KES 500 back with a ledger row so history stays consistent.
  */
 export async function reverseIneligibleRegistrationFees() {
   const feeRows = await prisma.walletTransaction.findMany({
@@ -96,12 +97,22 @@ export async function reverseIneligibleRegistrationFees() {
   let reversed = 0;
   for (const row of feeRows) {
     if (isRegistrationFeeEligible(row.student.createdAt)) continue;
+    const credit = Math.abs(Number(row.amount) || REGISTRATION_FEE_KES);
 
     await prisma.$transaction(async (tx) => {
       await tx.walletTransaction.delete({ where: { id: row.id } });
       await tx.student.update({
         where: { id: row.studentId },
-        data: { walletBalance: { increment: Math.abs(Number(row.amount) || REGISTRATION_FEE_KES) } },
+        data: { walletBalance: { increment: credit } },
+      });
+      await tx.walletTransaction.create({
+        data: {
+          studentId: row.studentId,
+          amount: credit,
+          type: 'adjustment',
+          reference: 'REGISTRATION_FEE_REVERSAL',
+          description: 'Registration fee reversal (student onboarded before fee start date)',
+        },
       });
     });
     reversed += 1;
@@ -117,6 +128,8 @@ export async function findStudentsMissingRegistrationFee() {
     select: { id: true, name: true, regNo: true, walletBalance: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   });
+
+  if (students.length === 0) return [];
 
   const feeRows = await prisma.walletTransaction.findMany({
     where: {
@@ -134,28 +147,92 @@ export async function findStudentsMissingRegistrationFee() {
 }
 
 /**
- * Sync walletBalance to the sum of wallet transactions in one SQL pass.
+ * Restore older students to pre-registration-fee wallet levels.
+ *
+ * The fee rollout ran a ledger sync that wiped opening balances that were never
+ * stored as deposit rows. We put those openings back as a single adjustment so:
+ *   wallet = originalOpening + sum(existing non-restore transactions)
+ * which is the balance before the registration-fee work — without re-importing
+ * students or overwriting later top-ups/purchases.
  */
-export async function reconcileWalletBalancesFromLedger() {
-  const synced = await prisma.$executeRaw`
-    UPDATE students AS s
-    SET "walletBalance" = t.ledger
-    FROM (
-      SELECT "studentId" AS sid, COALESCE(SUM(amount), 0)::double precision AS ledger
-      FROM wallet_transactions
-      GROUP BY "studentId"
-    ) t
-    WHERE s.id = t.sid
-      AND ABS(s."walletBalance" - t.ledger) > 0.005
-  `;
+export async function restoreOlderStudentsPreRegistrationFee(
+  openingByRegNo: Map<string, number>,
+) {
+  const older = await prisma.student.findMany({
+    where: { createdAt: { lt: REGISTRATION_FEE_EFFECTIVE_FROM } },
+    select: {
+      id: true,
+      regNo: true,
+      walletBalance: true,
+      transactions: {
+        select: { id: true, amount: true, reference: true },
+      },
+    },
+  });
 
-  return { synced: Number(synced) };
+  let restored = 0;
+  let skipped = 0;
+  let missingOpening = 0;
+  const errors: string[] = [];
+
+  for (const s of older) {
+    try {
+      const already = s.transactions.some((t) => t.reference === PRE_FEE_OPENING_RESTORE_REF);
+      if (already) {
+        skipped += 1;
+        continue;
+      }
+
+      const opening = openingByRegNo.get(s.regNo.toUpperCase());
+      if (opening == null || !(opening > 0)) {
+        missingOpening += 1;
+        continue;
+      }
+
+      // Ledger without a prior restore row (= current activity since onboard).
+      const activitySum = s.transactions.reduce((a, t) => a + Number(t.amount || 0), 0);
+      const target = opening + activitySum;
+      const delta = target - Number(s.walletBalance || 0);
+      if (Math.abs(delta) < 0.005) {
+        skipped += 1;
+        continue;
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.student.update({
+          where: { id: s.id },
+          data: { walletBalance: { increment: delta } },
+        });
+        await tx.walletTransaction.create({
+          data: {
+            studentId: s.id,
+            amount: delta,
+            type: 'adjustment',
+            reference: PRE_FEE_OPENING_RESTORE_REF,
+            description:
+              'Opening balance restored (undo registration-fee ledger wipe; pre-fee position)',
+          },
+        });
+      });
+      restored += 1;
+    } catch (err: any) {
+      errors.push(`${s.regNo}: ${err?.message || String(err)}`);
+    }
+  }
+
+  return {
+    older: older.length,
+    restored,
+    skipped,
+    missingOpening,
+    errors: errors.slice(0, 20),
+  };
 }
 
 /**
  * 1) Reverse fees wrongly charged to students before the cutoff
  * 2) Apply missing fees only to eligible (new) students
- * 3) Reconcile wallet balances to the ledger
+ * NOTE: Does NOT reconcile wallets to ledger sum (that wiped openings).
  */
 export async function backfillMissingRegistrationFees() {
   const reversed = await reverseIneligibleRegistrationFees();
@@ -179,7 +256,6 @@ export async function backfillMissingRegistrationFees() {
     }
   }
 
-  const reconcile = await reconcileWalletBalancesFromLedger();
   const stillMissing = await findStudentsMissingRegistrationFee();
 
   return {
@@ -191,7 +267,7 @@ export async function backfillMissingRegistrationFees() {
     missingBefore: missing.length,
     missingAfter: stillMissing.length,
     skipped: eligibleTotal - applied - stillMissing.length,
-    balancesSynced: reconcile.synced,
+    balancesSynced: 0,
     effectiveFrom: REGISTRATION_FEE_EFFECTIVE_FROM.toISOString(),
     errors: errors.slice(0, 20),
   };

@@ -21,6 +21,8 @@ export type StkPaymentResult = {
   reference?: string;
   transactionReference?: string;
   phone?: string;
+  location?: string;
+  paymentId?: string;
   walletCredited?: boolean;
   posCompleted?: boolean;
   posReceiptNo?: string;
@@ -39,9 +41,33 @@ function resolveSocketUrl(): string {
   return window.location.origin;
 }
 
+function normalizeLocation(url?: string): string {
+  if (!url) return "";
+  try {
+    const u = new URL(url.trim());
+    return `${u.origin}${u.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return url.trim().replace(/\/$/, "");
+  }
+}
+
+/** Only real end-states. Do not treat arbitrary non-pending strings as done. */
 function isTerminalStatus(status?: string) {
   const s = (status || "").toLowerCase();
-  return Boolean(s) && s !== "pending" && s !== "unknown";
+  return s === "success" || s === "failed" || s === "error" || s === "reversed" || s === "cancelled";
+}
+
+function matchesPayment(
+  data: StkPaymentResult | undefined,
+  paymentLocation: string,
+  paymentId?: string,
+) {
+  if (!data) return false;
+  if (paymentId && data.paymentId && data.paymentId === paymentId) return true;
+  const eventLoc = normalizeLocation(data.location);
+  const waitLoc = normalizeLocation(paymentLocation);
+  if (eventLoc && waitLoc && eventLoc === waitLoc) return true;
+  return false;
 }
 
 export async function initiateStkPushAndWait(
@@ -88,6 +114,7 @@ export async function initiateStkPushAndWait(
 
   const paymentLocation = pushData?.location as string | undefined;
   if (!paymentLocation) throw new Error("No payment location returned");
+  const paymentId = pushData?.paymentId;
 
   onAwaiting?.();
 
@@ -140,10 +167,20 @@ export async function initiateStkPushAndWait(
 
     socket.emit("join_kopokopo", { location: paymentLocation });
     socket.on("kopokopo_update", (data: StkPaymentResult) => {
-      if (isTerminalStatus(data?.status)) finish(data);
+      // Ignore other customers' till/STK events (backend also broadcasts globally)
+      if (!matchesPayment(data, paymentLocation, paymentId)) return;
+      if (!isTerminalStatus(data?.status)) return;
+      // Success without M-Pesa receipt = premature (before PIN)
+      if (
+        (data.status || "").toLowerCase() === "success" &&
+        !String(data.transactionReference || "").trim()
+      ) {
+        return;
+      }
+      finish(data);
     });
 
-    // Poll immediately, then every 2s (was 5s with no immediate check)
+    // Poll immediately, then every 2s
     void pollOnce();
     const pollInterval = window.setInterval(() => {
       void pollOnce();

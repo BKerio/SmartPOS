@@ -45,6 +45,12 @@ function isSuccessStatus(status: string): boolean {
   return mapStatus(status) === 'success';
 }
 
+/** True only when Kopokopo indicates paid AND we have an M-Pesa receipt (PIN completed). */
+function isConfirmedPaid(parsed: Pick<ParsedKopoPayload, 'rawStatus' | 'status' | 'transactionReference'>): boolean {
+  if (!isSuccessStatus(parsed.rawStatus) && parsed.status !== 'success') return false;
+  return Boolean(String(parsed.transactionReference || '').trim());
+}
+
 function normalizeLocation(url: string): string {
   if (!url) return '';
   try {
@@ -92,14 +98,25 @@ function parseKopoPayload(payload: any): ParsedKopoPayload {
   const links = attrs?._links ?? data?._links ?? payload?._links ?? {};
   const metadata = attrs?.metadata ?? payload?.metadata ?? {};
 
+  // Prefer Incoming Payment attributes.status (Pending|Success|Failed).
+  // resource.status ("Received") is the buygoods result after M-Pesa PIN — not before.
+  // Never default to "Received" (that caused premature "Payment Successful" before PIN).
   const rawStatus = String(
-    resource.status || attrs.status || payload?.event?.resource?.status || 'Received',
+    attrs.status || resource.status || payload?.event?.resource?.status || 'Pending',
   );
   const amountRaw = resource.amount ?? attrs.amount?.value ?? attrs.amount ?? 0;
+  // Only trust M-Pesa receipt on the transaction resource (not merchant metadata attrs.reference)
+  const trustedMpesaRef = String(resource.reference ?? attrs.mpesa_receipt_number ?? '').trim();
+
+  let mapped = mapStatus(rawStatus);
+  // Gate success on a real M-Pesa receipt so STK "Success/Received" without PIN cannot complete.
+  if (mapped === 'success' && !trustedMpesaRef) {
+    mapped = 'pending';
+  }
 
   return {
-    status: mapStatus(rawStatus),
-    rawStatus,
+    status: mapped,
+    rawStatus: mapped === 'pending' && isSuccessStatus(rawStatus) && !trustedMpesaRef ? 'Pending' : rawStatus,
     amount: Number(amountRaw) || 0,
     currency: resource.currency ?? attrs.amount?.currency ?? 'KES',
     phone: String(
@@ -109,9 +126,7 @@ function parseKopoPayload(payload: any): ParsedKopoPayload {
         '',
     ),
     reference: String(data?.id ?? attrs.id ?? resource.id ?? payload?.id ?? ''),
-    transactionReference: String(
-      resource.reference ?? attrs.reference ?? attrs.mpesa_receipt_number ?? '',
-    ),
+    transactionReference: trustedMpesaRef,
     location: normalizeLocation(String(links.self ?? links.resource ?? '')),
     originationTime: String(
       resource.origination_time ??
@@ -407,7 +422,7 @@ async function applyPaymentUpdate(
     },
   });
 
-  if (isSuccessStatus(parsed.rawStatus) && studentId && !payment.walletCredited) {
+  if (isConfirmedPaid(parsed) && studentId && !payment.walletCredited) {
     await creditStudentWallet(
       payment.id,
       studentId,
@@ -420,7 +435,7 @@ async function applyPaymentUpdate(
   let posReceiptNo: string | undefined;
   let posTransactionId: string | undefined;
   if (
-    isSuccessStatus(parsed.rawStatus) &&
+    isConfirmedPaid(parsed) &&
     payment.purpose === 'pos_sale' &&
     !payment.posCompleted
   ) {
@@ -454,7 +469,9 @@ function isPendingPhoneBlockError(err: unknown): boolean {
 async function syncPendingFromKopokopo(paymentId: string, location: string) {
   try {
     const statusData = await getPaymentStatus(location);
-    const mapped = mapStatus(statusData.status);
+    const mpesaRef = String(statusData.reference || '').trim();
+    let mapped = mapStatus(statusData.status);
+    if (mapped === 'success' && !mpesaRef) mapped = 'pending';
     if (mapped === 'pending') return null;
 
     const payment = await prisma.kopoPayment.findUnique({ where: { id: paymentId } });
@@ -467,12 +484,14 @@ async function syncPendingFromKopokopo(paymentId: string, location: string) {
       amount: statusData.amount || payment.amount,
       currency: statusData.currency || payment.currency,
       phone: statusData.phone || payment.phone,
-      reference: String(statusData.reference || payment.reference || ''),
-      transactionReference: String(statusData.reference || payment.transactionReference || ''),
+      reference: String(payment.reference || statusData.reference || ''),
+      transactionReference: mpesaRef || payment.transactionReference || '',
       location: normalizeLocation(location),
       originationTime: statusData.originationTime || payment.originationTime || '',
       tillNumber: payment.tillNumber,
     };
+
+    if (!isConfirmedPaid(parsed) && mapped === 'success') return null;
 
     const result = await applyPaymentUpdate(payment, parsed, statusData.raw ?? undefined);
     return result.payment;
@@ -841,25 +860,36 @@ router.get('/status', async (req: Request, res: Response) => {
     }
 
     const statusData = await getPaymentStatus(location);
+    const fromRaw = parseKopoPayload(statusData.raw ?? {});
+    const mpesaRef = String(
+      statusData.reference || fromRaw.transactionReference || '',
+    ).trim();
+    let mapped = mapStatus(statusData.status);
+    if (mapped === 'success' && !mpesaRef) {
+      mapped = 'pending';
+    }
+
     const parsed: ParsedKopoPayload = {
-      ...parseKopoPayload(statusData.raw ?? {}),
-      rawStatus: statusData.status,
-      status: mapStatus(statusData.status),
-      amount: statusData.amount || 0,
-      currency: statusData.currency || 'KES',
-      phone: statusData.phone || '',
-      reference: String(statusData.reference || ''),
-      transactionReference: String(statusData.reference || ''),
+      ...fromRaw,
+      rawStatus: mapped === 'pending' && isSuccessStatus(statusData.status) && !mpesaRef
+        ? 'Pending'
+        : statusData.status,
+      status: mapped,
+      amount: statusData.amount || fromRaw.amount || 0,
+      currency: statusData.currency || fromRaw.currency || 'KES',
+      phone: statusData.phone || fromRaw.phone || '',
+      reference: fromRaw.reference || String(statusData.reference || ''),
+      transactionReference: mpesaRef,
       location: normalized,
-      originationTime: statusData.originationTime || '',
-      tillNumber: process.env.KOPOKOPO_TILL_NUMBER || '',
+      originationTime: statusData.originationTime || fromRaw.originationTime || '',
+      tillNumber: process.env.KOPOKOPO_TILL_NUMBER || fromRaw.tillNumber || '',
     };
 
     let payment = existing || (await findKopoPayment(parsed, location));
     let posReceiptNo: string | undefined;
     let posTransactionId: string | undefined;
 
-    if (payment && isSuccessStatus(statusData.status)) {
+    if (payment && isConfirmedPaid(parsed)) {
       const paymentId = payment.id;
       try {
         const result = await applyPaymentUpdate(payment, parsed, statusData.raw ?? undefined);
@@ -988,7 +1018,7 @@ router.post('/payment/callback', async (req: Request, res: Response) => {
         },
       });
 
-      if (isSuccessStatus(parsed.rawStatus) && payment.studentId && !payment.walletCredited) {
+      if (isConfirmedPaid(parsed) && payment.studentId && !payment.walletCredited) {
         await creditStudentWallet(
           payment.id,
           payment.studentId,
@@ -998,6 +1028,12 @@ router.post('/payment/callback', async (req: Request, res: Response) => {
         );
         payment = await prisma.kopoPayment.findUnique({ where: { id: payment.id } });
       }
+    }
+
+    // Only broadcast terminal success when M-Pesa receipt exists (PIN completed)
+    if (parsed.status === 'success' && !isConfirmedPaid(parsed)) {
+      parsed.status = 'pending';
+      parsed.rawStatus = 'Pending';
     }
 
     emitKopokopoUpdate(req, buildKopoEmitPayload(payment, parsed, { posReceiptNo, posTransactionId }));
@@ -1038,8 +1074,12 @@ router.post('/webhooks', async (req: Request, res: Response) => {
       eventType === 'b2b_transaction_received'
     ) {
       const parsed = parseKopoPayload(payload);
-      parsed.status = 'success';
-      parsed.rawStatus = 'Received';
+      // Till buygoods is paid only when M-Pesa receipt is present
+      if (!parsed.transactionReference) {
+        console.warn('[Kopokopo] Ignoring buygoods webhook without M-Pesa reference');
+      } else {
+        parsed.status = 'success';
+        parsed.rawStatus = 'Received';
 
       let payment = await findKopoPayment(parsed);
       let posReceiptNo: string | undefined;
@@ -1105,6 +1145,7 @@ router.post('/webhooks', async (req: Request, res: Response) => {
       }
 
       emitKopokopoUpdate(req, buildKopoEmitPayload(payment, parsed, { posReceiptNo, posTransactionId }));
+      }
     }
 
     res.status(200).json({ message: 'Webhook received' });
