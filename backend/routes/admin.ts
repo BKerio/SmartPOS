@@ -62,10 +62,10 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
 // ─── GET /api/admin/profile ───────────────────────────────────────────────────
 router.get('/profile', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
   try {
-    const admin = await prisma.admin.findUnique({
-      where: { id: req.user!.id },
-      select: { id: true, name: true, email: true, createdAt: true },
-    });
+    const select = { id: true, name: true, email: true, createdAt: true };
+    const admin =
+      (await prisma.admin.findUnique({ where: { id: req.user!.id }, select })) ||
+      (await prisma.user.findFirst({ where: { id: req.user!.id, role: 'admin' }, select }));
 
     if (!admin) return res.status(404).json({ message: 'Admin not found' });
 
@@ -79,7 +79,9 @@ router.get('/profile', ensureAdmin, async (req: Request, res: Response): Promise
 router.put('/profile', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
   const { name, currentPassword, newPassword } = req.body;
   try {
-    const admin = await prisma.admin.findUnique({ where: { id: req.user!.id } });
+    const primaryAdmin = await prisma.admin.findUnique({ where: { id: req.user!.id } });
+    const admin =
+      primaryAdmin || (await prisma.user.findFirst({ where: { id: req.user!.id, role: 'admin' } }));
     if (!admin) return res.status(404).json({ message: 'Admin not found' });
 
     let passwordHash = admin.password;
@@ -94,11 +96,12 @@ router.put('/profile', ensureAdmin, async (req: Request, res: Response): Promise
       passwordHash = await bcrypt.hash(newPassword, 10);
     }
 
-    const updated = await prisma.admin.update({
+    const args = {
       where: { id: admin.id },
       data: { name: name || admin.name, password: passwordHash },
       select: { id: true, name: true, email: true, createdAt: true },
-    });
+    };
+    const updated = primaryAdmin ? await prisma.admin.update(args) : await prisma.user.update(args);
 
     return res.json({ ...updated, _id: updated.id, role: 'admin' });
   } catch (error) {

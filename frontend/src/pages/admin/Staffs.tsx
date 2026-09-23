@@ -10,7 +10,7 @@ import {
   checkStaffFingerprintDuplicate,
 } from "@/services/fingerprintScanner";
 
-type StaffRole = "finance" | "restaurant";
+type StaffRole = "admin" | "finance" | "restaurant";
 type StaffStatus = "approved" | "pending" | "rejected";
 
 type StaffRow = {
@@ -39,7 +39,7 @@ const inputCls =
   "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#0A1F44] outline-none";
 
 const roleLabel = (role: string) =>
-  role === "restaurant" ? "Restaurant" : role === "finance" ? "Finance" : role;
+  role === "restaurant" ? "Restaurant" : role === "finance" ? "Finance" : role === "admin" ? "Admin" : role;
 
 const Staffs = () => {
   const [staff, setStaff] = useState<StaffRow[]>([]);
@@ -269,6 +269,7 @@ const Staffs = () => {
               <option value="all">All roles</option>
               <option value="restaurant">Restaurant</option>
               <option value="finance">Finance</option>
+              <option value="admin">Admin</option>
             </select>
             <select
               value={statusFilter}
@@ -426,7 +427,13 @@ const Staffs = () => {
               >
                 <option value="restaurant">Restaurant staff</option>
                 <option value="finance">Finance officer</option>
+                <option value="admin">Administrator (full access)</option>
               </select>
+              {staffForm.role === "admin" && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Admins can manage staff, students, finances, settings and approvals.
+                </p>
+              )}
               <select
                 className={inputCls}
                 value={staffForm.status}

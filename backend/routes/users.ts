@@ -33,6 +33,9 @@ const userListSelect = {
   createdAt: true,
 } as const;
 
+// Roles an admin may assign. Self-registration (/register) stays limited to finance/restaurant.
+const STAFF_ROLES = ['admin', 'finance', 'restaurant'];
+
 // ─── POST /api/users (admin create) ───────────────────────────────────────────
 router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> => {
   const { name, email, password, phone, role, status } = req.body;
@@ -41,13 +44,14 @@ router.post('/', ensureAdmin, async (req: Request, res: Response): Promise<any> 
     return res.status(422).json({ message: 'Name, email, password and role are required' });
   }
 
-  const allowedRoles = ['finance', 'restaurant'];
-  if (!allowedRoles.includes(role)) {
-    return res.status(422).json({ message: 'Role must be finance or restaurant' });
+  if (!STAFF_ROLES.includes(role)) {
+    return res.status(422).json({ message: 'Role must be admin, finance or restaurant' });
   }
 
   try {
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing =
+      (await prisma.user.findUnique({ where: { email } })) ||
+      (await prisma.admin.findUnique({ where: { email } }));
     if (existing) return res.status(409).json({ message: 'An account with this email already exists' });
 
     const hashed = await bcrypt.hash(password, 10);
@@ -310,9 +314,10 @@ router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
   const { name, email, phone, password, role, status } = req.body;
   try {
     if (email) {
-      const conflict = await prisma.user.findFirst({
-        where: { email, id: { not: req.params.id as string } },
-      });
+      const conflict =
+        (await prisma.user.findFirst({
+          where: { email, id: { not: req.params.id as string } },
+        })) || (await prisma.admin.findUnique({ where: { email } }));
       if (conflict) return res.status(409).json({ message: 'Another user uses this email' });
     }
 
@@ -320,7 +325,7 @@ router.put('/:id', ensureAdmin, async (req: Request, res: Response): Promise<any
     if (name) data.name = name;
     if (email) data.email = email;
     if (phone !== undefined) data.phone = phone;
-    if (role && ['finance', 'restaurant'].includes(role)) data.role = role;
+    if (role && STAFF_ROLES.includes(role)) data.role = role;
     if (status && ['pending', 'approved', 'rejected'].includes(status)) data.status = status;
     if (password) data.password = await bcrypt.hash(password, 10);
 

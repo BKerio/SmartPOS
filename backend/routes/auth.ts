@@ -312,8 +312,22 @@ router.get('/session', ensureAuthenticated, async (req: Request, res: Response):
           where: { id },
           select: { id: true, name: true, email: true },
         });
-        if (!admin) return res.status(401).json({ message: 'Session invalid' });
-        return res.json({ user: { ...admin, role: 'admin' } });
+        if (admin) return res.json({ user: { ...admin, role: 'admin' } });
+
+        // Staff account granted admin privilege
+        const staffAdmin = await prisma.user.findUnique({
+          where: { id },
+          select: { id: true, name: true, email: true, role: true, status: true },
+        });
+        if (!staffAdmin || staffAdmin.role !== 'admin') {
+          return res.status(401).json({ message: 'Session invalid' });
+        }
+        if (staffAdmin.status !== 'approved') {
+          return res.status(403).json({ message: 'Account is not approved' });
+        }
+        return res.json({
+          user: { id: staffAdmin.id, name: staffAdmin.name, email: staffAdmin.email, role: 'admin' },
+        });
       }
       case 'student': {
         const student = await prisma.student.findUnique({
