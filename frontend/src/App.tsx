@@ -15,6 +15,7 @@ import Dashboard from "@/pages/Dashboard";
 import ManageStudents from "@/pages/admin/ManageStudents";
 import ManageParents from "@/pages/admin/ManageParents";
 import Staffs from "@/pages/admin/Staffs";
+import DataManagement from "@/pages/admin/DataManagement";
 import Settings from "@/pages/settings";
 import Register from "@/pages/Register";
 import PendingApprovals from "@/pages/PendingApprovals";
@@ -136,6 +137,7 @@ function AppShell() {
           <Route path="/staff-attendance" element={R(["admin", "finance"], <StaffAttendanceReport />)} />
           <Route path="/admin-profile" element={R(["admin"], <AdminProfile />)} />
           <Route path="/settings" element={R(["admin"], <Settings />)} />
+          <Route path="/data-management" element={R(["admin"], <DataManagement />)} />
 
           {/* Student */}
           <Route path="/student/order" element={R(["student"], <OrderDisplay mode="student" />)} />

@@ -1166,6 +1166,8 @@ router.post('/subscribe-webhooks', async (_req: Request, res: Response) => {
   const eventTypes = [
     'buygoods_transaction_received',
     'buygoods_transaction_reversed',
+    // Bank-to-till (e.g. "400088-CO-OP TO TILL") and other till-to-till payments
+    'b2b_transaction_received',
     'settlement_transfer_completed',
     'customer_created',
   ];

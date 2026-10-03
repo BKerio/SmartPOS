@@ -12,6 +12,9 @@ node_modules
 dist-ssr
 *.local
 data/
+# Database backups (contain password hashes & fingerprint templates)
+backups/
+smartpos-backup-*.json
 
 # Editor directories and files
 .vscode/*

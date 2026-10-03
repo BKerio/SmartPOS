@@ -14,6 +14,7 @@ import {
   Fingerprint,
   UserCircle2,
   Truck,
+  DatabaseBackup,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -47,6 +48,7 @@ const menuSections: { title?: string; items: MenuItem[] }[] = [
       { name: "Staff Attendance", icon: Fingerprint, path: "/staff-attendance" },
       { name: "Collections & Reconciliations", icon: Receipt, path: "/collections" },
       { name: "Audit Logs", icon: Activity, path: "/audit-logs" },
+      { name: "Backup & Restore", icon: DatabaseBackup, path: "/data-management" },
       { name: "Settings", icon: Sliders, path: "/settings" },
     ],
   },

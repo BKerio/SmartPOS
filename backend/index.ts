@@ -11,6 +11,7 @@ import { Server } from 'socket.io';
 
 import authRoutes      from '@/routes/auth';
 import adminRoutes      from '@/routes/admin';
+import backupRoutes     from '@/routes/backup';
 import studentRoutes    from '@/routes/students';
 import userRoutes       from '@/routes/users';
 import auditRoutes      from '@/routes/audit';
@@ -81,13 +82,17 @@ const corsOrigin = (origin: string | undefined, callback: (err: Error | null, al
 };
 
 app.set('etag', false);
-app.use(express.json({
+const jsonParser = express.json({
   verify: (req: any, _res, buf) => {
     if (req.originalUrl?.includes('/kopokopo/')) {
       req.rawBody = buf;
     }
   },
-}));
+});
+// Backup imports parse their own (much larger) bodies in routes/backup.ts.
+app.use((req, res, next) =>
+  req.path.startsWith('/api/admin/backup/') ? next() : jsonParser(req, res, next),
+);
 app.use(cors({
   origin: corsOrigin,
   credentials: true,
@@ -108,6 +113,7 @@ app.get('/health', async (_req: Request, res: Response) => {
 });
 
 app.use('/api/auth',        authRoutes);
+app.use('/api/admin/backup', backupRoutes);
 app.use('/api/admin',       adminRoutes);
 app.use('/api/students',    studentRoutes);
 app.use('/api/users',       userRoutes);

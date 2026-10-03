@@ -12,6 +12,8 @@
     "db:set-default-wallet-pins": "ts-node -r tsconfig-paths/register scripts/set-default-wallet-pins.ts",
     "db:apply-registration-fees": "tsx scripts/apply-registration-fees.ts",
     "db:studio": "prisma studio",
+    "db:backup": "ts-node -r tsconfig-paths/register scripts/backup-export.ts",
+    "db:restore": "ts-node -r tsconfig-paths/register scripts/backup-restore.ts",
     "postinstall": "prisma generate"
   },
   "keywords": [],
