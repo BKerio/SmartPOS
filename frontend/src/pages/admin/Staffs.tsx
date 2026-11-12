@@ -12,6 +12,8 @@ import {
 } from "@/services/fingerprintScanner";
 import { PageHeader, Segmented, StatTile, StatTiles } from "@/components/page/Page";
 import { PersonCell } from "@/components/page/DataTable";
+import { displayName } from "@/lib/text";
+import { ROLE_LABELS } from "@/components/layout/navigation";
 
 type StaffRole = "admin" | "finance" | "restaurant";
 type StaffStatus = "approved" | "pending" | "rejected";
@@ -184,7 +186,11 @@ const Staffs = () => {
 
   const removeStoredFingerprint = async () => {
     if (!editId) return;
-    const r = await toast.confirm("Remove stored fingerprint?", { confirmLabel: "Remove" });
+    const r = await toast.confirm("Remove the stored fingerprint?", {
+      description: "They won't be able to clock in with their finger until it is enrolled again.",
+      confirmLabel: "Remove fingerprint",
+      tone: "warning",
+    });
     if (!r) return;
     try {
       await API.delete(`/users/${editId}/fingerprint`);
@@ -217,7 +223,13 @@ const Staffs = () => {
   };
 
   const deleteStaff = async (id: string) => {
-    const r = await toast.confirm("Delete this staff member?", { confirmLabel: "Delete" });
+    const person = staff.find((u) => (u._id || u.id) === id);
+    const r = await toast.confirm("Delete this staff member?", {
+      description: "Their account is removed from SmartPOS. Sales and invoices they recorded stay in the reports.",
+      subject: person ? { name: displayName(person.name), detail: [ROLE_LABELS[person.role as keyof typeof ROLE_LABELS] ?? person.role, person.email].filter(Boolean).join(" · ") } : undefined,
+      points: ["They can no longer sign in or clock in", "Their attendance history is deleted too"],
+      confirmLabel: "Delete staff",
+    });
     if (!r) return;
     try {
       await API.delete(`/users/${id}`);

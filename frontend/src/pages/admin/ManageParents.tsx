@@ -76,7 +76,14 @@ const ManageParents: React.FC = () => {
   };
 
   const deleteParent = async (id: string) => {
-    const r = await toast.confirm("Delete parent?", { confirmLabel: "Delete" });
+    const parent = parents.find((p) => (p._id || p.id) === id);
+    const kids = (parent?.students || []).length;
+    const r = await toast.confirm("Delete this parent?", {
+      description: "Their parent account is removed. Their children stay in the system with their wallets untouched.",
+      subject: parent ? { name: displayName(parent.name), detail: [parent.phone, kids ? `${kids} linked ${kids === 1 ? "child" : "children"}` : "No linked children"].filter(Boolean).join(" · ") } : undefined,
+      points: ["They can no longer sign in or top up wallets", "Their children are unlinked from this account"],
+      confirmLabel: "Delete parent",
+    });
     if (!r) return;
     await API.delete(`/parents/${id}`);
     fetchData();

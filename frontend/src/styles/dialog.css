@@ -1,0 +1,66 @@
+/* ══ Confirmation sheet (toast.confirm in services/toast.ts, .cf-*) ═══════════════════════════════ */
+.swal2-container:has(.cf-popup) { background: rgba(10, 27, 46, .45) !important; backdrop-filter: blur(3px); }
+
+.swal2-popup.cf-popup {
+  width: min(460px, calc(100vw - 24px));
+  padding: 0;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 60px rgba(10, 27, 46, .28), 0 4px 12px rgba(10, 27, 46, .08);
+  text-align: left;
+  overflow: hidden;
+}
+.cf-popup .cf-body { margin: 0; padding: 24px 24px 4px; text-align: left; color: var(--ink-2); font-size: 14px; line-height: 1.5; overflow: visible; }
+
+.cf-head { display: flex; gap: 16px; align-items: flex-start; }
+.cf-icon { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; flex: none; }
+.cf-icon.cf-danger { background: var(--red-soft); color: var(--red); box-shadow: inset 0 0 0 1px #F3C7C7; }
+.cf-icon.cf-warning { background: var(--amber-soft); color: var(--amber); box-shadow: inset 0 0 0 1px #F1DDB2; }
+.cf-icon.cf-primary { background: var(--green-light); color: var(--green); box-shadow: inset 0 0 0 1px #D3DDF6; }
+.cf-text { min-width: 0; padding-top: 2px; }
+.cf-title { margin: 0; font-size: 17.5px; font-weight: 750; line-height: 1.3; color: var(--ink); letter-spacing: -.01em; }
+.cf-desc { margin: 6px 0 0; font-size: 14px; color: var(--muted); line-height: 1.5; }
+
+.cf-subject { display: flex; align-items: center; gap: 12px; margin: 18px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.cf-av { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 13.5px; font-weight: 800; color: var(--green); background: var(--green-light); flex: none; }
+.cf-subject-meta { display: flex; flex-direction: column; min-width: 0; }
+.cf-subject-meta b { font-size: 14.5px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-subject-meta span { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.cf-points { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cf-points li { position: relative; padding-left: 22px; font-size: 13.5px; color: var(--ink-2); }
+.cf-points li::before { content: ""; position: absolute; left: 4px; top: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); }
+.cf-points.cf-danger li::before { background: var(--red); }
+.cf-points.cf-warning li::before { background: var(--amber); }
+.cf-points.cf-primary li::before { background: var(--green); }
+
+.cf-type { display: block; margin: 18px 0 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.cf-type b { font-family: var(--font-mono, ui-monospace, monospace); color: var(--red); letter-spacing: .04em; }
+.cf-type-input { width: 100%; font-family: var(--font-mono, ui-monospace, monospace); letter-spacing: .06em; text-transform: uppercase; }
+
+.cf-note { margin: 14px 0 0; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.cf-note::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+
+.cf-popup .cf-actions {
+  width: 100%; margin: 20px 0 0; padding: 14px 24px; gap: 10px;
+  justify-content: flex-end; flex-wrap: nowrap;
+  background: var(--surface-2); border-top: 1px solid var(--border);
+}
+.cf-popup .cf-actions .btn { min-width: 108px; justify-content: center; margin: 0; }
+.cf-popup .cf-actions .btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-warning { background: var(--amber); color: #fff; }
+.btn-warning:hover { filter: brightness(.94); }
+
+@media (max-width: 480px) {
+  .cf-popup .cf-body { padding: 20px 18px 2px; }
+  .cf-head { gap: 12px; }
+  .cf-icon { width: 42px; height: 42px; border-radius: 12px; }
+  .cf-popup .cf-actions { padding: 12px 18px; }
+  .cf-popup .cf-actions .btn { flex: 1; min-width: 0; }
+}
+
+/* entrance: a short rise + fade (respects reduced motion via the global rule in design.css) */
+.cf-in { animation: cf-in .18s cubic-bezier(.2, .8, .2, 1); }
+.cf-out { animation: cf-out .12s ease-in forwards; }
+@keyframes cf-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes cf-out { to { opacity: 0; transform: translateY(4px) scale(.985); } }

@@ -4,6 +4,7 @@
 @import "./styles/dashboard.css";
 @import "./styles/page.css";
 @import "./styles/account.css";
+@import "./styles/dialog.css";
 
 @tailwind base;
 @tailwind components;

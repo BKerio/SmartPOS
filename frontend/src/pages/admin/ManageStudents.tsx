@@ -327,7 +327,11 @@ const ManageStudents: React.FC = () => {
 
   const removeStoredFingerprint = async () => {
     if (!editId) return;
-    const r = await toast.confirm("Remove stored fingerprint?", { confirmLabel: "Remove" });
+    const r = await toast.confirm("Remove the stored fingerprint?", {
+      description: "The student will need to pay with their PIN until a fingerprint is enrolled again.",
+      confirmLabel: "Remove fingerprint",
+      tone: "warning",
+    });
     if (!r) return;
     try {
       await API.delete(`/students/${editId}/fingerprint`);
@@ -364,7 +368,15 @@ const ManageStudents: React.FC = () => {
   };
 
   const deleteStudent = async (id: string) => {
-    const r = await toast.confirm("Delete student?", { confirmLabel: "Delete" });
+    const st = students.find((s) => (s._id || s.id) === id);
+    const balance = Number(st?.walletBalance || 0);
+    const r = await toast.confirm("Delete this student?", {
+      description: "The student, their wallet and their wallet history are removed for good.",
+      subject: st ? { name: displayName(st.name), detail: [st.regNo, st.className, `Wallet KES ${balance.toLocaleString()}`].filter(Boolean).join(" · ") } : undefined,
+      points: balance > 0 ? [`KES ${balance.toLocaleString()} is still in their wallet. Refund or move it first.`, "Their purchase history disappears from reports"] : ["Their purchase history disappears from reports"],
+      typeToConfirm: balance > 0 ? "DELETE" : undefined,
+      confirmLabel: "Delete student",
+    });
     if (!r) return;
     await API.delete(`/students/${id}`);
     fetchData();
