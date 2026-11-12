@@ -3,7 +3,8 @@ import { prefetchRoute } from "@/pagesRegistry";
 import { Link, useLocation } from "react-router-dom";
 import { LogOut, MoreHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import BrandMark, { BrandEmblem } from "@/components/layout/BrandMark";
+import logoWide from "@/assets/logo-wide.png";
+import logoMark from "@/assets/logo-mark.png";
 import { NAVIGATION, ROLE_LABELS, findActiveItem } from "./navigation";
 
 interface SidebarProps {
@@ -70,12 +71,13 @@ function Sidebar({ collapsed, onToggleCollapse, onSignOut }: SidebarProps) {
             >
               {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
             </button>
-            <BrandEmblem className="brand-emblem" />
-            <div className="brand-logo">
-              <BrandMark className="brand-mark" title="Better Forks" />
+            {/* The company logo (LOGO.png, trimmed) on a white card: its dark-green lettering needs a light
+                background. Collapsed, just the fork arc in the round tile. */}
+            <div className="brand-card">
+              <img src={logoWide} alt="Better Fork Restaurant Limited" className="brand-card-img" draggable={false} />
             </div>
-            <div className="brand-text">
-              <span className="brand-org">RESTAURANT LIMITED</span>
+            <div className="brand-logo">
+              <img src={logoMark} alt="Better Fork" className="brand-logo-mark" draggable={false} />
             </div>
           </div>
 
