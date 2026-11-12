@@ -1,0 +1,367 @@
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Package, AlertTriangle, ArrowDownCircle, ArrowUpCircle, Boxes, TrendingUp, ChefHat, PackagePlus, ArrowDownUp, Truck } from "lucide-react";
+import { ChoiceCards, ChoicePills, FieldLabel, FormCard, FormSection } from "@/components/shared/FormModal";
+import API from "@/services/api";
+import { toast } from "@/services/toast";
+import KitchenPanel from "@/components/KitchenPanel";
+import { PageHeader } from "@/components/page/Page";
+
+interface InventoryItem {
+  id: string; name: string; category: string; unit: string;
+  stockLevel: number; reorderLevel: number; unitCost: number;
+}
+
+interface SupplierOption {
+  id: string;
+  name: string;
+}
+
+const InventoryPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") === "stock" ? "stock" : "kitchen";
+
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
+  const [newItem, setNewItem] = useState({ name: "", category: "Grains", unit: "kg", reorderLevel: "10", unitCost: "0" });
+  const [movement, setMovement] = useState({
+    inventoryItemId: "",
+    type: "IN",
+    quantity: "",
+    reason: "purchase",
+    notes: "",
+    supplierId: "",
+    reference: "",
+  });
+
+  const fetchItems = async () => {
+    try {
+      const { data } = await API.get("/inventory/items");
+      setItems(data);
+    } catch (e: any) {
+      toast.error("Error", e.response?.data?.message);
+    }
+  };
+
+  const fetchSuppliers = async () => {
+    try {
+      const { data } = await API.get<SupplierOption[]>("/inventory/suppliers");
+      setSuppliers(data);
+    } catch {
+      // Non-blocking — movements still work without supplier list
+    }
+  };
+
+  useEffect(() => {
+    fetchItems();
+    fetchSuppliers();
+  }, []);
+
+  const addItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await API.post("/inventory/items", {
+        ...newItem,
+        reorderLevel: Number(newItem.reorderLevel),
+        unitCost: Number(newItem.unitCost),
+      });
+      setNewItem({ name: "", category: "Grains", unit: "kg", reorderLevel: "10", unitCost: "0" });
+      fetchItems();
+      toast.success("Item added");
+    } catch (e: any) {
+      toast.error("Error", e.response?.data?.message);
+    }
+  };
+
+  const recordMovement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const isPurchaseIn = movement.type === "IN" && movement.reason === "purchase";
+    if (isPurchaseIn && !movement.supplierId) {
+      toast.error("Select a supplier for purchase deliveries");
+      return;
+    }
+    try {
+      await API.post("/inventory/movements", {
+        inventoryItemId: movement.inventoryItemId,
+        type: movement.type,
+        quantity: Number(movement.quantity),
+        reason: movement.reason,
+        notes: movement.notes || undefined,
+        supplierId: isPurchaseIn ? movement.supplierId : undefined,
+        reference: movement.reference.trim() || undefined,
+      });
+      setMovement({
+        inventoryItemId: "",
+        type: "IN",
+        quantity: "",
+        reason: "purchase",
+        notes: "",
+        supplierId: "",
+        reference: "",
+      });
+      fetchItems();
+      toast.success("Movement recorded");
+    } catch (e: any) {
+      toast.error("Error", e.response?.data?.message);
+    }
+  };
+
+  const showSupplierFields = movement.type === "IN" && movement.reason === "purchase";
+
+  const lowStock = items.filter((i) => i.stockLevel <= i.reorderLevel);
+  const totalValue = items.reduce((sum, item) => sum + item.stockLevel * item.unitCost, 0);
+  const totalItems = items.length;
+
+  return (
+    <div className="p-4 md:p-8 bg-page min-h-screen font-sans space-y-6">
+      <PageHeader icon={Package} eyebrow="Kitchen" title="Inventory & kitchen" subtitle="Raw stock, cooking batches, and the sales each batch should bring in" />
+
+      <div className="flex gap-2 p-1 bg-white rounded-xl border border-slate-100 w-fit shadow-sm">
+        <button
+          onClick={() => setSearchParams({ tab: "kitchen" })}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-extrabold transition ${
+            tab === "kitchen" ? "bg-brand text-white" : "text-gray-500 hover:bg-slate-50"
+          }`}
+        >
+          <ChefHat size={16} /> Cook & Track Sales
+        </button>
+        <button
+          onClick={() => setSearchParams({ tab: "stock" })}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-extrabold transition ${
+            tab === "stock" ? "bg-brand text-white" : "text-gray-500 hover:bg-slate-50"
+          }`}
+        >
+          <Boxes size={16} /> Raw Stock
+        </button>
+      </div>
+
+      {tab === "kitchen" ? (
+        <KitchenPanel onProductionRecorded={fetchItems} />
+      ) : (
+        <>
+      {/* Low Stock Banner */}
+      {lowStock.length > 0 && (
+        <div className="bg-amber-50 border border-amber-250 rounded-2xl p-4 flex items-start gap-3 animate-in fade-in duration-200">
+          <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+          <div>
+            <p className="font-extrabold text-amber-900 text-sm">Low Stock Warning</p>
+            <p className="text-xs text-amber-700 mt-1 leading-normal">
+              The following items have fallen below their reorder thresholds:{" "}
+              <span className="font-bold">{lowStock.map((i) => `${i.name} (${i.stockLevel} ${i.unit})`).join(", ")}</span>
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* KPI Cards Section */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* KPI 1: Total Items */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center justify-between select-none">
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wider font-extrabold">Total Items</p>
+            <p className="text-2xl font-black text-brand mt-1">{totalItems}</p>
+          </div>
+          <div className="h-10 w-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+            <Boxes size={20} />
+          </div>
+        </div>
+
+        {/* KPI 2: Low Stock Warning */}
+        <div className={`bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center justify-between select-none`}>
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wider font-extrabold">Low Stock Warning</p>
+            <p className={`text-2xl font-black mt-1 ${lowStock.length > 0 ? "text-amber-600 animate-pulse" : "text-brand"}`}>
+              {lowStock.length}
+            </p>
+          </div>
+          <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${lowStock.length > 0 ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}`}>
+            <AlertTriangle size={20} />
+          </div>
+        </div>
+
+        {/* KPI 3: Estimated Stock Value */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center justify-between select-none">
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wider font-extrabold">Stock Valuation</p>
+            <p className="text-xl font-black text-brand mt-1.5">KES {totalValue.toLocaleString()}</p>
+          </div>
+          <div className="h-10 w-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
+            <TrendingUp size={20} />
+          </div>
+        </div>
+      </div>
+
+      {/* Forms Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <FormCard
+          icon={PackagePlus}
+          title="Add inventory item"
+          subtitle="Track a new raw ingredient or supply."
+          statusLabel="New item"
+          statusDetail={newItem.name}
+          submitLabel="Add item"
+          onSubmit={addItem}
+        >
+          <FormSection id="item" icon={Package} title="Item">
+            <div className="field">
+              <FieldLabel htmlFor="inv-name" required>Item name</FieldLabel>
+              <input id="inv-name" className="input" placeholder="e.g. Baking flour" value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} required />
+            </div>
+            <div className="field">
+              <FieldLabel>Category</FieldLabel>
+              <ChoicePills
+                label="Category"
+                value={newItem.category}
+                options={["Grains", "Vegetables", "Meat", "Dairy", "Spices", "Other"].map((c) => ({ value: c, label: c }))}
+                onChange={(v) => setNewItem({ ...newItem, category: v })}
+              />
+            </div>
+            <div className="field">
+              <FieldLabel>Unit of measure</FieldLabel>
+              <ChoicePills
+                label="Unit of measure"
+                value={newItem.unit}
+                options={["kg", "liters", "pieces", "bags"].map((u) => ({ value: u, label: u }))}
+                onChange={(v) => setNewItem({ ...newItem, unit: v })}
+              />
+            </div>
+            <div className="fm-grid-2">
+              <div className="field">
+                <FieldLabel htmlFor="inv-reorder" hint={newItem.unit}>Reorder alert level</FieldLabel>
+                <input id="inv-reorder" type="number" min="0" className="input" placeholder="10" value={newItem.reorderLevel} onChange={(e) => setNewItem({ ...newItem, reorderLevel: e.target.value })} />
+              </div>
+              <div className="field">
+                <FieldLabel htmlFor="inv-cost" hint={`KES per ${newItem.unit}`}>Unit cost</FieldLabel>
+                <input id="inv-cost" type="number" min="0" step="0.01" className="input" placeholder="0" value={newItem.unitCost} onChange={(e) => setNewItem({ ...newItem, unitCost: e.target.value })} />
+              </div>
+            </div>
+          </FormSection>
+        </FormCard>
+
+        <FormCard
+          icon={ArrowDownUp}
+          title="Record stock movement"
+          subtitle="Log deliveries, usage, spoilage or corrections."
+          statusLabel={movement.type === "IN" ? "Stock in" : "Stock out"}
+          statusDetail={items.find((i) => i.id === movement.inventoryItemId)?.name}
+          submitLabel="Record movement"
+          onSubmit={recordMovement}
+        >
+          <FormSection id="movement" icon={Boxes} title="Movement">
+            <div className="field">
+              <FieldLabel htmlFor="mv-item" required>Inventory item</FieldLabel>
+              <select id="mv-item" className="input" value={movement.inventoryItemId} onChange={(e) => setMovement({ ...movement, inventoryItemId: e.target.value })} required>
+                <option value="">Select item to adjust</option>
+                {items.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.stockLevel} {i.unit} in stock)</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <FieldLabel required>Direction</FieldLabel>
+              <ChoiceCards
+                label="Direction"
+                columns={2}
+                options={[
+                  { value: "IN", label: "Stock in", sub: "Adds to the stock level", tile: "+" },
+                  { value: "OUT", label: "Stock out", sub: "Removes from the stock level", tile: "−" },
+                ]}
+                selected={[movement.type]}
+                onToggle={(v) => setMovement({ ...movement, type: v })}
+              />
+            </div>
+            <div className="fm-grid-2">
+              <div className="field">
+                <FieldLabel htmlFor="mv-qty" required hint={items.find((i) => i.id === movement.inventoryItemId)?.unit}>Quantity</FieldLabel>
+                <input id="mv-qty" type="number" min="0" step="any" className="input" placeholder="0" value={movement.quantity} onChange={(e) => setMovement({ ...movement, quantity: e.target.value })} required />
+              </div>
+              <div className="field">
+                <FieldLabel htmlFor="mv-notes" hint="Optional">Notes</FieldLabel>
+                <input id="mv-notes" className="input" placeholder="e.g. receipt details" value={movement.notes} onChange={(e) => setMovement({ ...movement, notes: e.target.value })} />
+              </div>
+            </div>
+            <div className="field">
+              <FieldLabel>Reason</FieldLabel>
+              <ChoicePills
+                label="Reason"
+                value={movement.reason}
+                options={[
+                  { value: "purchase", label: "Purchase" },
+                  { value: "usage", label: "Usage" },
+                  { value: "spoilage", label: "Spoilage" },
+                  { value: "adjustment", label: "Adjustment" },
+                ]}
+                onChange={(v) => setMovement({ ...movement, reason: v, supplierId: "" })}
+              />
+            </div>
+          </FormSection>
+
+          {showSupplierFields && (
+            <FormSection id="supplier" icon={Truck} title="Delivery">
+              <div className="fm-grid-2">
+                <div className="field">
+                  <FieldLabel htmlFor="mv-supplier" required>Supplier</FieldLabel>
+                  <select id="mv-supplier" className="input" value={movement.supplierId} onChange={(e) => setMovement({ ...movement, supplierId: e.target.value })} required>
+                    <option value="">Select supplier</option>
+                    {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  {suppliers.length === 0 && <p className="fm-note">Add suppliers first under Suppliers.</p>}
+                </div>
+                <div className="field">
+                  <FieldLabel htmlFor="mv-ref" hint="Optional">Invoice / LPO no.</FieldLabel>
+                  <input id="mv-ref" className="input" placeholder="e.g. INV-2026-042" value={movement.reference} onChange={(e) => setMovement({ ...movement, reference: e.target.value })} />
+                </div>
+              </div>
+            </FormSection>
+          )}
+        </FormCard>
+      </div>
+
+      {/* Inventory Table */}
+      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-gray-500 uppercase text-[10px] border-b border-slate-100">
+            <tr>
+              <th className="px-5 py-4 text-left font-extrabold tracking-wider">Item</th>
+              <th className="px-5 py-4 text-left font-extrabold tracking-wider">Category</th>
+              <th className="px-5 py-4 text-right font-extrabold tracking-wider">Stock Level</th>
+              <th className="px-5 py-4 text-right font-extrabold tracking-wider">Reorder threshold</th>
+              <th className="px-5 py-4 text-right font-extrabold tracking-wider">Estimated Value</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-5 py-10 text-center text-gray-400">
+                  No inventory items cataloged yet.
+                </td>
+              </tr>
+            ) : (
+              items.map((item) => {
+                const isLow = item.stockLevel <= item.reorderLevel;
+                return (
+                  <tr key={item.id} className={`hover:bg-slate-50/50 transition duration-150 ${isLow ? "bg-amber-50/20" : ""}`}>
+                    <td className="px-5 py-4 font-extrabold text-brand">{item.name}</td>
+                    <td className="px-5 py-4">
+                      <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold uppercase tracking-wider">{item.category}</span>
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${isLow ? "text-amber-700 bg-amber-50" : "text-emerald-700 bg-emerald-50"}`}>
+                        {isLow ? <ArrowDownCircle size={14} className="text-amber-500 animate-bounce" /> : <ArrowUpCircle size={14} className="text-emerald-500" />}
+                        {item.stockLevel} {item.unit}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-right text-gray-500 font-semibold">{item.reorderLevel} {item.unit}</td>
+                    <td className="px-5 py-4 text-right font-black text-brand">KES {(item.stockLevel * item.unitCost).toLocaleString()}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default InventoryPage;

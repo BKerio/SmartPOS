@@ -1,0 +1,5 @@
+# Local archives (e.g. old-system.zip): may contain .env secrets and exceed GitHub limits
+*.zip
+
+# Claude Code local settings
+.claude/

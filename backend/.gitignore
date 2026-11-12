@@ -1,0 +1,37 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+.env
+dist-ssr
+*.local
+data/
+# Database backups (contain password hashes & fingerprint templates)
+backups/
+smartpos-backup-*.json
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+dist
+
+# Neon CLI link + credentials written by `neon` (never commit)
+.neon
+.env.local
+
+# Student / parent import sheets (personal data): keep out of git
+/*.csv
+/*.xlsx

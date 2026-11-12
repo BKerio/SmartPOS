@@ -4,13 +4,44 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch: # "Run workflow" button in the Actions tab, to redeploy without a new commit
 
+# One deploy at a time. Never cancel a running deploy: stopping half-way through a schema change or a
+# pm2 restart is worse than letting it finish and deploying the next commit after it.
 concurrency:
   group: deploy-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  build:
+    name: Build check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend (install, Prisma client, TypeScript build)
+        working-directory: backend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Frontend (install, production build)
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
   deploy:
+    name: Deploy to server
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Deploy over SSH
@@ -20,16 +51,22 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          command_timeout: 30m
           script_stop: true
           script: |
+            set -euo pipefail
             cd /home/pceaserver/SmartPOS
-            # First deploy: pull deploy script before it exists on disk
-            if [[ ! -f scripts/deploy.sh ]]; then
-              cp backend/.env /tmp/smartpos-backend.env.bak
-              test -f frontend/.env && cp frontend/.env /tmp/smartpos-frontend.env.bak
-              git fetch origin
-              git reset --hard origin/master
-              cp /tmp/smartpos-backend.env.bak backend/.env
-              test -f /tmp/smartpos-frontend.env.bak && cp /tmp/smartpos-frontend.env.bak frontend/.env
-            fi
-            bash scripts/deploy.sh
+
+            # Server-only settings are untracked, so a reset leaves them alone; keep a copy anyway.
+            cp backend/.env /tmp/smartpos-backend.env.bak
+            test -f frontend/.env && cp frontend/.env /tmp/smartpos-frontend.env.bak || true
+
+            # Move to exactly the commit that passed the build check, THEN run that commit's deploy
+            # script (running the old script would deploy new code with old steps).
+            git fetch origin
+            git reset --hard ${{ github.sha }}
+
+            test -f backend/.env || cp /tmp/smartpos-backend.env.bak backend/.env
+            test -f frontend/.env || { test -f /tmp/smartpos-frontend.env.bak && cp /tmp/smartpos-frontend.env.bak frontend/.env; } || true
+
+            SKIP_PULL=1 bash scripts/deploy.sh

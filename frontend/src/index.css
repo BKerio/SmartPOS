@@ -1,0 +1,19 @@
+@import "./styles/design.css";
+@import "./styles/smartpos.css";
+@import "./styles/kiosk.css";
+@import "./styles/dashboard.css";
+@import "./styles/page.css";
+@import "./styles/account.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}

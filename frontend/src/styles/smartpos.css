@@ -1,0 +1,152 @@
+/*
+ * SmartPOS additions on top of design.css: brand logo, page body, mobile "More" drawer,
+ * top bar details, and the login illustration.
+ */
+
+/* ── Shell ── */
+.brand-logo { overflow: hidden; }
+.brand-logo-img { width: 100%; height: 100%; object-fit: cover; border-radius: 999px; user-select: none; }
+.brand-org { letter-spacing: .2em; font-size: 9.5px; }
+.page-body { flex: 1; min-width: 0; }
+
+.topbar h1 { line-height: 1.2; }
+.topbar-sub { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--muted); text-transform: uppercase; }
+@media (max-width: 859px) {
+  .topbar-toggle { display: none; }
+  .page-body { padding-bottom: 76px; } /* room for the bottom nav */
+}
+@media (max-width: 520px) {
+  .topbar-clock { display: none; }
+}
+
+/* Mobile "More" drawer: the nav items on a light surface instead of the dark rail */
+.nav-drawer { width: min(340px, 88vw); }
+.nav-drawer-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px 16px 14px; border-bottom: 1px solid var(--border);
+}
+.nav-drawer-name { font-size: 14px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-drawer-body { flex: 1; overflow-y: auto; padding: 6px 10px 12px; }
+.nav-drawer-body .nav-group-label { color: var(--muted-2); }
+.nav-drawer-body .nav-item { color: var(--ink-2); font-size: 14.5px; }
+.nav-drawer-body .nav-item:hover { background: var(--surface-3); color: var(--ink); }
+.nav-drawer-body .nav-item.active { background: var(--green); color: #fff; }
+.nav-drawer-foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); }
+
+/* ── Login ── */
+.lp-logo { display: block; width: 88px; height: 88px; margin: 0 auto 14px; object-fit: contain; border-radius: 999px; box-shadow: 5px 5px 0 #0A9BE2; background: #fff; }
+.lp-hint { line-height: 1.5; }
+.lp-link { color: var(--lp-blue); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.lp-link:hover { text-decoration: underline; }
+
+.lp-deco { position: absolute; bottom: 0; fill: var(--lp-blue); }
+.lp-deco .lp-cut { fill: #fff; }
+.lp-deco-left { left: 8px; width: 140px; }
+.lp-deco-right { right: 4px; width: 170px; }
+.lp-steam { fill: none; stroke: var(--lp-blue); stroke-width: 5; stroke-linecap: round; opacity: .55; animation: lp-steam 3s ease-in-out infinite; }
+.lp-steam:nth-child(2) { animation-delay: -1s; }
+.lp-steam:nth-child(3) { animation-delay: -2s; }
+@keyframes lp-steam { 0%, 100% { transform: translateY(0); opacity: .25; } 50% { transform: translateY(-6px); opacity: .7; } }
+
+@media (max-width: 859px) {
+  .lp-deco-left { width: 96px; }
+  .lp-deco-right { width: 120px; }
+}
+
+/* Login scene: 6s loop. Receipt prints, the green key is tapped, coins fly out. */
+.lps-stage { position: relative; z-index: 1; width: 360px; max-width: 100%; aspect-ratio: 360 / 320; flex-shrink: 0; }
+.lps-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.lps-ring { fill: none; stroke: #fff; stroke-width: 1.5; stroke-dasharray: 3 8; opacity: .22; }
+.lps-body { fill: #fff; }
+.lps-paper { fill: #fff; stroke: #CBE5F8; stroke-width: 1.5; }
+.lps-ink { fill: #0B5CB5; }
+.lps-ink-soft { fill: #8CC9F2; }
+.lps-key { fill: #DCEFFD; }
+.lps-key-go { fill: #169A5B; }
+.lps-screen-label { fill: #7E93A8; font: 700 11px var(--font-sans); letter-spacing: .08em; }
+.lps-screen-amount { fill: #FFC83D; font: 700 20px var(--font-mono); }
+.lps-receipt { animation: lps-print 6s ease-in-out infinite both; }
+.lps-tap { fill: none; stroke: #fff; stroke-width: 2.5; opacity: 0; transform-box: fill-box; transform-origin: center; animation: lps-tap 6s ease-out infinite both; }
+.lps-coin {
+  position: absolute; left: 47%; top: 44%;
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  background: #FFC83D; color: #7A5600; box-shadow: 3px 3px 0 #08458A;
+  font: 800 10px var(--font-sans); letter-spacing: .02em;
+  opacity: 0; animation: lps-coin 6s cubic-bezier(.3, 0, .3, 1) infinite both;
+}
+.lps-coin-1 { --dx: -128px; --dy: -150px; }
+.lps-coin-2 { --dx: 6px; --dy: -205px; animation-delay: .12s; }
+.lps-coin-3 { --dx: 126px; --dy: -140px; animation-delay: .24s; }
+
+@keyframes lps-print {
+  0%, 8% { transform: translateY(88px); }
+  30%, 84% { transform: translateY(0); }
+  94%, 100% { transform: translateY(88px); }
+}
+@keyframes lps-tap {
+  0%, 34% { transform: scale(.4); opacity: 0; }
+  36% { opacity: .95; }
+  50%, 100% { transform: scale(2.6); opacity: 0; }
+}
+@keyframes lps-coin {
+  0%, 40% { transform: translate(0, 0) scale(.3); opacity: 0; }
+  46% { opacity: 1; }
+  70% { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 1; }
+  82%, 100% { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lps-receipt, .lps-tap, .lps-coin, .lp-steam { animation: none !important; }
+  .lps-receipt { transform: none; }
+  .lps-tap { opacity: 0; }
+  .lps-coin { opacity: 1; transform: translate(var(--dx), var(--dy)); }
+}
+
+/* ── Inline form card (FormCard): FormModal's card, placed in a page ── */
+.fm.fm-inline { max-width: none; border: 1px solid var(--border); box-shadow: var(--shadow-sm); border-radius: 16px; }
+.fm-inline .fm-head { padding: 20px 22px 0; }
+.fm-inline .fm-head-row { padding-bottom: 16px; }
+.fm-inline .fm-head-icon { width: 42px; height: 42px; border-radius: 12px; }
+.fm-inline .fm-head-text h2 { font-size: 17px; }
+.fm-inline .fm-body { overflow: visible; padding: 0 22px; }
+.fm-inline .fm-section { padding: 18px 0 20px; }
+.fm-inline .fm-foot { padding: 14px 22px; }
+.fm-inline .fm-btn { height: 44px; }
+/* Selects get the same chevron treatment as inputs */
+select.input, .eoc-select { appearance: none; -webkit-appearance: none; padding-right: 38px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%236B7670' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; }
+.input:disabled { background: var(--surface-3); color: var(--muted); cursor: not-allowed; }
+.fm-btn.fm-btn-danger { background: var(--red); border-color: var(--red); }
+.fm-btn.fm-btn-danger:hover:not(:disabled) { background: #BC1F1F; }
+/* Image picker preview inside .fm-drop */
+.fm-drop-preview { position: relative; width: 100%; height: 180px; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); }
+.fm-drop-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fm-drop-preview-actions { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 8px; }
+.fm-drop.dragging { border-color: var(--green); background: var(--green-light); }
+.fm-drop.disabled { opacity: .55; cursor: not-allowed; }
+/* Summary/preview box inside a form section */
+.fm-preview { display: flex; gap: 14px; align-items: center; padding: 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); }
+.fm-preview img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; flex-shrink: 0; }
+.fm-preview b { display: block; font-size: 15px; color: var(--ink); }
+.fm-preview span { font-size: 13px; color: var(--muted); }
+.fm-preview.danger { border-color: color-mix(in srgb, var(--red) 25%, transparent); background: var(--red-soft); }
+.fm-row-3 { display: grid; grid-template-columns: 1fr 150px auto; gap: 10px; align-items: end; }
+@media (max-width: 640px) { .fm-row-3 { grid-template-columns: 1fr 1fr auto; } }
+
+/* ── Sidebar: chef emblem + roomier layout on tablet and desktop ─────────────────────────── */
+.sidebar { width: 280px; }
+.sidebar.collapsed { width: 76px; }
+.sidebar.collapsed.peek .sidebar-inner { width: 280px; }
+.sidebar-head { gap: 6px; padding: 22px 18px 14px; }
+.brand-emblem { display: block; width: 124px; height: auto; color: #fff; --bm-bg: var(--nav-bg); font-family: var(--font-display, inherit); }
+.sidebar .brand-logo { display: none; }
+.sidebar.collapsed:not(.peek) .brand-emblem { display: none; }
+.sidebar.collapsed:not(.peek) .brand-logo { display: flex; width: 44px; height: 44px; }
+.brand-org { font-size: 11px; letter-spacing: .26em; margin-top: 2px; }
+.brand-tag { font-size: 10.5px; margin-top: 8px; }
+.nav-scroll { padding: 4px 12px 14px; }
+.nav-group-label { font-size: 11.5px; padding: 8px 14px 8px; }
+.nav-item { font-size: 16.5px; gap: 14px; padding: 11px 14px; }
+.nav-item svg { width: 22px; height: 22px; }
+.sidebar.collapsed:not(.peek) .nav-item { padding: 11px; }
