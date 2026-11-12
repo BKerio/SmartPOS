@@ -45,10 +45,11 @@ function withPoolSettings(url: string | undefined): string | undefined {
  * Prisma's query event stream sees every statement, so caches subscribe here instead of each write site.
  * COMMIT fires again at the end of a transaction, so a read that ran mid-transaction can't stick.
  */
-const writeListeners = new Set<() => void>();
+const writeListeners = new Set<(sql: string) => void>();
 const WRITE_SQL = /^\s*(INSERT|UPDATE|DELETE|COMMIT)\b/i;
 
-export function onDatabaseWrite(listener: () => void): () => void {
+/** listener receives the statement text, so a subscriber can react only to the tables it cares about. */
+export function onDatabaseWrite(listener: (sql: string) => void): () => void {
   writeListeners.add(listener);
   return () => writeListeners.delete(listener);
 }
@@ -82,7 +83,7 @@ function buildClient(url: string | undefined, transactionOptions: { maxWait: num
     transactionOptions,
   });
   client.$on('query', (e) => {
-    if (writeListeners.size > 0 && WRITE_SQL.test(e.query)) for (const fn of writeListeners) fn();
+    if (writeListeners.size > 0 && WRITE_SQL.test(e.query)) for (const fn of writeListeners) fn(e.query);
   });
   client.$on('error', (e) => logPrismaMessage('error', e.message));
   if (process.env.NODE_ENV === 'development') client.$on('warn', (e) => logPrismaMessage('warn', e.message));

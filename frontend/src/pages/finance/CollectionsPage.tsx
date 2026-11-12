@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Receipt, FileJson, X, Copy, Check, Search, Filter, Wallet, UserPlus, AlertTriangle, ClipboardPlus, Phone, GraduationCap } from "lucide-react";
 import FormModal, { FieldLabel, FormSection } from "@/components/shared/FormModal";
 import API from "@/services/api";
+import { useLiveRefresh } from "@/services/live";
+import LiveBadge from "@/components/page/LiveBadge";
 import Loader from "@/components/ui/loader";
 import { toast } from "@/services/toast";
 import StudentPicker, { type StudentOption } from "@/components/StudentPicker";
@@ -645,9 +647,12 @@ const CollectionsPage = () => {
   }, [filters.source, filters.status, filters.startDate, filters.endDate, search]);
 
   /** Fetches one filtered page; the server does the filtering, totals and counts. */
+  const seenIds = useRef<Set<string>>(new Set());
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const fetchRows = useCallback(
-    async (fresh = false) => {
-      setLoading(true);
+    /** fresh: wait for exact figures. silent: a live update, no loading state and new rows highlighted. */
+    async (fresh = false, silent = false) => {
+      if (!silent) setLoading(true);
       const params: Record<string, string> = { page: String(page), limit: String(PAGE_SIZE) };
       if (filters.startDate) params.startDate = filters.startDate;
       if (filters.endDate) params.endDate = filters.endDate;
@@ -657,7 +662,16 @@ const CollectionsPage = () => {
       if (fresh) params.fresh = "1";
       try {
         const { data } = await API.get<CollectionsPageMeta & { rows: CollectionRow[] }>("/finance/collections", { params });
-        setRows(data.rows || []);
+        const next = data.rows || [];
+        if (silent) {
+          const arrived = next.map((r) => r.id).filter((id): id is string => !!id && !seenIds.current.has(id));
+          if (arrived.length) {
+            setNewIds(new Set(arrived));
+            window.setTimeout(() => setNewIds(new Set()), 4_000);
+          }
+        }
+        seenIds.current = new Set(next.map((r) => r.id).filter((id): id is string => !!id));
+        setRows(next);
         setMeta(data);
       } catch {
         /* keep the previous page on screen */
@@ -671,6 +685,10 @@ const CollectionsPage = () => {
   useEffect(() => {
     fetchRows();
   }, [fetchRows]);
+
+  // New payments appear without reloading the page. Date-filtered views ask for exact figures, since
+  // only the unfiltered report is rebuilt ahead of time.
+  const live = useLiveRefresh(() => fetchRows(Boolean(filters.startDate || filters.endDate), true));
 
   useEffect(() => {
     API.get("/kopokopo/webhook-status")
@@ -770,7 +788,7 @@ const CollectionsPage = () => {
       <PageHeader
         icon={Receipt}
         eyebrow="Finance"
-        title="Collections"
+        title={<>Collections <LiveBadge live={live} /></>}
         subtitle="Till M-Pesa, guest cash and STK sales, wallet top-ups and wallet spending"
         actions={
           <>
@@ -917,7 +935,7 @@ const CollectionsPage = () => {
                   (r.attemptedAmount ?? 0) > 0;
 
                 return (
-                  <tr key={`${r.id || r.transactionRef || r.date}-${idx}`} className="border-t border-gray-100 align-top">
+                  <tr key={`${r.id || r.transactionRef || r.date}-${idx}`} className={`border-t border-gray-100 align-top${r.id && newIds.has(r.id) ? " row-new" : ""}`}>
                     <td className="py-3 px-4 text-gray-500">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                     <td className="py-3 px-4">{r.name ? <PersonCell name={r.name} /> : <span className="text-gray-400">-</span>}</td>
                     <td className="py-3 px-4 text-gray-600 font-mono text-xs">{r.admNo || "-"}</td>

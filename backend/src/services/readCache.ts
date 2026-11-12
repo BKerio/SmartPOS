@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { invalidateCollections } from '@/services/collectionsQuery';
+import { invalidateCollections, scheduleCollectionsRefresh } from '@/services/collectionsQuery';
 import { onDatabaseWrite } from '@/services/prisma';
 
 /*
@@ -92,8 +92,22 @@ export function registerReadCache(app: FastifyInstance): void {
     return payload;
   });
 
-  onDatabaseWrite(() => {
+  // Tables the Collections report is built from. Other writes (audit log, attendance, menu...) don't
+  // touch it, so they no longer mark it stale or trigger a rebuild.
+  const PAYMENT_TABLE = /"(kopo_payments|wallet_transactions|pos_transactions|pos_transaction_items|students)"/i;
+  let paymentWriteInTx = false;
+  onDatabaseWrite((sql) => {
     clearReadCache();
-    invalidateCollections();
+    if (PAYMENT_TABLE.test(sql)) {
+      paymentWriteInTx = true;
+      invalidateCollections();
+      scheduleCollectionsRefresh();
+    } else if (/^\s*COMMIT\b/i.test(sql) && paymentWriteInTx) {
+      // The rows only become visible to other connections at COMMIT: invalidate again so a rebuild
+      // that read before the commit isn't kept as current.
+      paymentWriteInTx = false;
+      invalidateCollections();
+      scheduleCollectionsRefresh();
+    }
   });
 }

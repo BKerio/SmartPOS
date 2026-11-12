@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import API from "@/services/api";
+import { useLiveRefresh } from "@/services/live";
+import LiveBadge from "@/components/page/LiveBadge";
 import Loader from "@/components/ui/loader";
 import WalletAdjustModal from "@/components/WalletAdjustModal";
 import { useAuth } from "@/context/AuthContext";
@@ -179,17 +181,24 @@ const Dashboard = () => {
     }
   }, []);
 
-  const loadCollections = useCallback(async () => {
-    setRowsLoading(true);
+  /** silent: a live update; keep what's on screen while fetching and on failure. */
+  const loadCollections = useCallback(async (silent = false) => {
+    if (!silent) setRowsLoading(true);
     try {
       const r = await API.get<Overview>("/finance/overview", { params: { days: range } });
       setOverview(r.data);
     } catch {
-      setOverview(null);
+      if (!silent) setOverview(null);
     } finally {
       setRowsLoading(false);
     }
   }, [range]);
+
+  // New payments refresh the figures, chart and latest transactions without reloading the page.
+  const live = useLiveRefresh(() => {
+    loadCounts();
+    loadCollections(true);
+  });
 
   useEffect(() => {
     loadCounts();
@@ -231,7 +240,10 @@ const Dashboard = () => {
         <div>
           <p className="db-eyebrow">{today}</p>
           <h1 className="db-title">{greeting()}, {firstName}</h1>
-          <p className="db-sub">Here's how the cafeteria is doing.</p>
+          <p className="db-sub">
+            Here's how the cafeteria is doing.
+            <LiveBadge live={live} />
+          </p>
         </div>
         <div className="db-actions">
           <Link to="/students" className="btn btn-primary"><UserPlus size={16} /> Add student</Link>

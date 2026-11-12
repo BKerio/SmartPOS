@@ -206,13 +206,30 @@ export function collectionsOverview(data: CollectionsData, days: number) {
 const CACHE_TTL_MS = 30_000;
 type Entry = { at: number; data?: CollectionsData; pending?: Promise<CollectionsData>; stale?: boolean };
 const cache = new Map<string, Entry>();
+// Bumped by every invalidation. A build that started before a payment write must not mark its (older)
+// result as fresh, or that payment would stay invisible until the next write.
+let invalidations = 0;
+const rebuiltListeners = new Set<(key: string, data: CollectionsData) => void>();
+
+/** Called after a report finishes rebuilding (used to push "new payments" to open pages). */
+export function onCollectionsRebuilt(listener: (key: string, data: CollectionsData) => void): () => void {
+  rebuiltListeners.add(listener);
+  return () => rebuiltListeners.delete(listener);
+}
 
 function rebuild(key: string, build: () => Promise<CollectionsData>): Promise<CollectionsData> {
   const existing = cache.get(key);
   if (existing?.pending) return existing.pending;
+  const startedAt = invalidations;
   const pending = build()
     .then((data) => {
-      cache.set(key, { at: Date.now(), data });
+      const stale = invalidations !== startedAt;
+      cache.set(key, { at: Date.now(), data, stale });
+      for (const fn of rebuiltListeners) {
+        try { fn(key, data); } catch { /* a listener must not break the report */ }
+      }
+      // A payment arrived while this was building: go again so it shows up.
+      if (stale && key === LIVE_KEY) scheduleCollectionsRefresh();
       return data;
     })
     .catch((err) => {
@@ -252,5 +269,45 @@ export async function getCollectionsFast(key: string, build: () => Promise<Colle
 
 /** Marks cached reports out of date after a write; the next exact read rebuilds, fast reads refresh in the background. */
 export function invalidateCollections() {
+  invalidations++;
   for (const [key, entry] of cache) cache.set(key, { ...entry, stale: true });
+}
+
+// ── Live refresh ──────────────────────────────────────────────────────────────
+/*
+ * After a payment is written, rebuild the default (unfiltered) report proactively instead of waiting for
+ * the next page view, so open dashboards and Collections pages can be told "new data is ready".
+ * Payments that land close together share one rebuild: it starts 1.5 s after the last one, and never
+ * later than 6 s after the first, so a busy lunch hour still updates every few seconds.
+ */
+export const LIVE_KEY = '|';
+let liveBuilder: (() => Promise<CollectionsData>) | null = null;
+let liveTimer: ReturnType<typeof setTimeout> | null = null;
+let liveFirstAt = 0;
+
+export function setLiveRefreshBuilder(build: () => Promise<CollectionsData>) {
+  liveBuilder = build;
+}
+
+export function scheduleCollectionsRefresh() {
+  if (!liveBuilder) return;
+  const now = Date.now();
+  if (!liveTimer) liveFirstAt = now;
+  else clearTimeout(liveTimer);
+  const wait = Math.max(0, Math.min(1_500, liveFirstAt + 6_000 - now));
+  liveTimer = setTimeout(() => {
+    liveTimer = null;
+    rebuild(LIVE_KEY, liveBuilder!).catch((err) => console.error('[collections] live refresh failed:', err?.message || err));
+  }, wait);
+}
+
+/** Cheap fingerprint of a report: changes when a payment is added or changes status/amount. */
+export function collectionsFingerprint(data: CollectionsData): string {
+  let success = 0;
+  let amount = 0;
+  for (const r of data.rows) {
+    if (statusBucket(r.status) === 'success') success++;
+    amount += Number(r.amount) || 0;
+  }
+  return `${data.rows.length}:${data.rows[0]?.id ?? ''}:${success}:${Math.round(amount)}`;
 }

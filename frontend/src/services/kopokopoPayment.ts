@@ -32,7 +32,7 @@ export type StkPaymentResult = {
   purpose?: string;
 };
 
-function resolveSocketUrl(): string {
+export function resolveSocketUrl(): string {
   const apiUrl = import.meta.env.VITE_API_URL as string | undefined;
   const socketUrl = (import.meta.env.VITE_SOCKET_URL || "").toString();
   if (socketUrl) return socketUrl;

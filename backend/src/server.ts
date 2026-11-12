@@ -2,7 +2,7 @@ import { ALLOWED_ORIGINS, PORT } from '@/lib/env';
 import { buildApp } from '@/app';
 import prisma, { connectDatabase } from '@/services/prisma';
 import { getStorageConfigError } from '@/services/storage';
-import { getCollectionsFast } from '@/services/collectionsQuery';
+import { LIVE_KEY, collectionsFingerprint, getCollectionsFast, onCollectionsRebuilt, setLiveRefreshBuilder } from '@/services/collectionsQuery';
 import { buildCollections } from '@/modules/finance/finance.routes';
 import { warmStaffNames } from '@/services/staffNames';
 
@@ -22,7 +22,19 @@ async function main() {
     await connectDatabase();
     console.log('Database connected');
     // Build the Collections report in the background so the first dashboard visit is instant.
-    getCollectionsFast('|', () => buildCollections(undefined)).catch((err) => console.error('Collections warm-up failed:', err?.message || err));
+    // Live updates: payments trigger a background rebuild; when the numbers actually change, every open
+    // dashboard / Collections page is told to refetch (socket event "collections:updated").
+    setLiveRefreshBuilder(() => buildCollections(undefined));
+    let lastFingerprint = '';
+    onCollectionsRebuilt((key, data) => {
+      if (key !== LIVE_KEY) return;
+      const fp = collectionsFingerprint(data);
+      if (fp === lastFingerprint) return;
+      const first = !lastFingerprint;
+      lastFingerprint = fp;
+      if (!first) app.io.emit('collections:updated', { at: Date.now(), total: data.rows.length });
+    });
+    getCollectionsFast(LIVE_KEY, () => buildCollections(undefined)).catch((err) => console.error('Collections warm-up failed:', err?.message || err));
     void warmStaffNames();
   } catch (err: any) {
     console.error('Database connection failed on startup:', err?.message || err);
