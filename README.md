@@ -1,84 +1,86 @@
-# SmartPOS
+# Better Forks SmartPOS
 
-School cafeteria point-of-sale: student wallets, M-Pesa (KopoKopo) payments, kiosk ordering,
-fingerprint enrolment, inventory, finance and staff attendance.
+A cafeteria point-of-sale system for schools. Students pay for meals from a prepaid wallet, parents top
+up that wallet with M-Pesa, and the restaurant team runs sales, the kitchen, stock and finances from one
+place.
 
-| Folder | Stack |
+![SmartPOS admin dashboard](docs/images/dashboard.png)
+
+## How it works
+
+**Wallets and payments**
+- Every student has a wallet. Parents top it up from their phone with an M-Pesa prompt (STK push), and
+  the money appears in the wallet as soon as M-Pesa confirms it.
+- Payments made straight to the till (Buy Goods) are picked up automatically and can be matched to a
+  student by finance.
+- Parents can set daily and weekly spending limits and freeze a wallet.
+
+**Selling food**
+- At the counter, staff sell from the POS. A student pays from their wallet (PIN or fingerprint);
+  visitors pay cash or M-Pesa.
+- Students can also order themselves at the self-service kiosk.
+- Food served now and paid later goes on a sales invoice, which names the waiter who served it so
+  unpaid bills can be followed up. Invoices can be paid in cash, by M-Pesa code or by M-Pesa prompt.
+
+**Kitchen and stock**
+- Menu items have recipes. Every sale deducts the ingredients it used from the store.
+- Procurement records every purchase into the store and every issue out of it, with a running stock
+  card per item.
+- Cooked batches track how many portions were made and sold.
+
+**Running the business**
+- The daily report shows sales, money collected, ingredients used and their cost, purchases and margin
+  for any day.
+- Collections lists every payment (M-Pesa, cash, wallet) for reconciliation.
+- Staff clock in and out with a fingerprint at the attendance terminal.
+- Every important action is recorded in the audit log, and the whole database can be backed up and
+  restored from the admin pages.
+
+**Who uses it**
+
+| Role | What they do |
 |---|---|
-| `backend/` | Fastify 5, TypeScript, Prisma 6 (PostgreSQL), socket.io |
-| `frontend/` | React + Vite + Tailwind |
+| Admin | Everything: students, parents, staff, settings, reports, backups |
+| Restaurant staff | POS, invoices, kiosk, menu, kitchen and stock |
+| Finance | Collections, invoices, expenses, receipts, reports |
+| Parent | Top up and manage their children's wallets |
+| Student | See their wallet and purchase history |
 
-## Backend
+## Built with
+
+A Node.js API (Fastify, Prisma, PostgreSQL) and a React web app (Vite, Tailwind). M-Pesa payments go
+through KopoKopo, SMS through Advanta, and fingerprints through a small local scanner service for ZKTeco
+USB readers.
+
+## Running it locally
+
+You need Node.js 20 or newer and a PostgreSQL database.
 
 ```bash
+# API: http://localhost:5000
 cd backend
-cp .env.example .env        # fill in DATABASE_URL, JWT_SECRET, KopoKopo, Supabase storage, SMS/mail
+cp .env.example .env     # add the database URL, JWT secret, KopoKopo and SMS keys
 npm install
-npx prisma db push          # create/update tables
-npm run dev                 # http://localhost:5000 (reloads on change)
-```
+npx prisma db push       # create the tables
+npm run dev
 
-Production:
-
-```bash
-npm ci
-npm run build               # prisma generate + tsc -> dist/
-npm start                   # node dist/server.js
-```
-
-Requires **Node.js 20+**.
-
-### Layout
-
-```
-backend/
-  src/
-    server.ts               starts the server (loads .env first via lib/env)
-    app.ts                  Fastify setup: body parsing, CORS, hooks, error handling, route registration
-    lib/                    env, socket.io, request types
-    middleware/auth.ts      JWT auth hooks: ensureAuthenticated / ensureAdmin / ensureFinanceOrAdmin
-    modules/<name>/         one route plugin per API area, mounted at /api/<name>
-    services/               business logic shared across modules (wallets, KopoKopo, fingerprints, backup, ...)
-  prisma/                   schema.prisma and seed.ts
-  scripts/                  one-off maintenance scripts (run with `npx tsx scripts/<file>.ts`)
-```
-
-### Conventions
-
-- Protect a route with an auth hook: `app.get('/x', { onRequest: ensureAdmin }, handler)`.
-  Auth hooks run on `onRequest`, so unauthorised requests are rejected before their body is read.
-- Errors use `{ error: string }` (auth, 404, bad JSON); most handlers return `{ message: string }`.
-- JSON is the only body type parsed. `/api/menu/upload-image` takes `multipart/form-data` (field `image`).
-- `/api/kopokopo/*` requests keep the raw body (`req.rawBody`) for webhook signature checks.
-- socket.io runs on the same port; route handlers reach it through `req.server.io`.
-
-### Database backup and restore
-
-```bash
-npm run db:backup                                    # -> backups/smartpos-backup-<timestamp>.json
-npm run db:restore -- backup.json --dry-run          # validate only
-npm run db:restore -- backup.json --mode=replace --yes
-```
-
-The same is available in the admin UI under Backup & Restore.
-
-## Frontend
-
-```bash
+# Web app: http://localhost:5173
 cd frontend
-cp .env.example .env        # VITE_API_URL etc.
+cp .env.example .env
 npm install
-npm run dev                 # http://localhost:5173
-npm run build               # -> dist/
+npm run dev
 ```
 
-## Migrating from the Express backend
+## Deploying
 
-The API is unchanged: same URLs, request bodies, responses and status codes, so the frontend works
-without edits. It was checked against the Express backend side by side (73 requests compared). The only
-intended differences:
+Pushing to `master` deploys automatically. GitHub Actions first builds the API and the web app; if that
+passes, it connects to the server and runs the deploy script, which:
 
-- Invalid JSON bodies get `400 { "error": "..." }` instead of an HTML error page with a stack trace.
-- `req.ip` is the real client address behind nginx (`X-Forwarded-For` is trusted from loopback only).
-- Preflight requests from origins that aren't allowed get 404 instead of 204; neither response has CORS headers, so browsers block both.
-- The start command is now `npm run build && npm start` (compiled JavaScript) instead of `ts-node`.
+1. backs up the database,
+2. applies any new database changes (it refuses changes that would delete data),
+3. builds the API and the web app,
+4. restarts the API and checks that it is healthy.
+
+If anything fails before the restart, the live site keeps running the previous version.
+
+The server's own settings (`.env` files) are never stored in git and are not touched by a deploy.
