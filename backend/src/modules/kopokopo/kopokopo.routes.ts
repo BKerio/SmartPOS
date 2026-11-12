@@ -691,6 +691,47 @@ async function supersedeDuplicatePayments(allocated: {
   return result.count;
 }
 
+/*
+ * KopoKopo signs every webhook and callback: X-KopoKopo-Signature = HMAC-SHA256(raw body, API key).
+ * Anything without a valid signature is rejected. Before, a request with NO signature header skipped the
+ * check entirely, so anyone who knew the URL could post a fake "payment received" event naming a student
+ * and get the wallet credited. KOPOKOPO_ALLOW_UNSIGNED=1 is an emergency switch to restore the old
+ * behaviour should KopoKopo ever stop signing; every accepted unsigned request is logged loudly.
+ */
+function verifyKopoSignature(req: Req, res: FastifyReply, route: string): boolean {
+  const signature = req.headers['x-kopokopo-signature'] as string | undefined;
+  const rawBody = (req as any).rawBody as Buffer | undefined;
+  if (signature && rawBody && validateWebhookSignature(rawBody, signature)) return true;
+  if (!signature && process.env.KOPOKOPO_ALLOW_UNSIGNED === '1') {
+    console.warn(`[Kopokopo] ACCEPTING UNSIGNED request on ${route} from ${req.ip} (KOPOKOPO_ALLOW_UNSIGNED=1)`);
+    return true;
+  }
+  console.warn(`[Kopokopo] Rejected ${signature ? 'invalid' : 'missing'} signature on ${route} from ${req.ip}`);
+  res.status(401).send({ error: 'Invalid signature' });
+  return false;
+}
+
+/*
+ * KopoKopo can deliver the same event several times within a second (one per webhook subscription, plus
+ * retries). Run the handling for one M-Pesa reference one at a time, so the second delivery finds the
+ * payment the first one stored instead of racing it and inserting a duplicate.
+ * (Single API process, see backend/ecosystem.config.cjs, so an in-memory lock is enough.)
+ */
+const refLocks = new Map<string, Promise<unknown>>();
+async function withRefLock<T>(ref: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const key = String(ref || '').trim().toUpperCase();
+  if (!key) return fn();
+  const previous = refLocks.get(key) ?? Promise.resolve();
+  const run = previous.catch(() => {}).then(fn);
+  const tail = run.catch(() => {});
+  refLocks.set(key, tail);
+  try {
+    return await run;
+  } finally {
+    if (refLocks.get(key) === tail) refLocks.delete(key);
+  }
+}
+
 function ensureFinanceOrAdmin(req: Req, res: FastifyReply): boolean {
   if (!req.user || !['admin', 'finance'].includes(req.user.role)) {
     res.status(403).send({ error: 'Admin or finance access required' });
@@ -1061,17 +1102,7 @@ export default async function kopokopoRoutes(app: App) {
 
   // POST /api/kopokopo/payment/callback
   app.post('/payment/callback', async (req: Req, res: FastifyReply) => {
-    const signature = req.headers['x-kopokopo-signature'] as string;
-    const rawBody = (req as any).rawBody as Buffer;
-
-    if (signature && rawBody) {
-      const valid = validateWebhookSignature(rawBody, signature);
-      if (!valid) {
-        console.warn('[Kopokopo] Invalid webhook signature!');
-        res.status(401).send({ error: 'Invalid signature' });
-        return;
-      }
-    }
+    if (!verifyKopoSignature(req, res, '/payment/callback')) return;
 
     const payload = req.body;
     console.log('[Kopokopo] Payment Callback received:', JSON.stringify(payload, null, 2));
@@ -1161,17 +1192,7 @@ export default async function kopokopoRoutes(app: App) {
 
   // POST /api/kopokopo/webhooks
   app.post('/webhooks', async (req: Req, res: FastifyReply) => {
-    const signature = req.headers['x-kopokopo-signature'] as string;
-    const rawBody = (req as any).rawBody as Buffer;
-
-    if (signature && rawBody) {
-      const valid = validateWebhookSignature(rawBody, signature);
-      if (!valid) {
-        console.warn('[Kopokopo] Invalid webhook signature on /webhooks');
-        res.status(401).send({ error: 'Invalid signature' });
-        return;
-      }
-    }
+    if (!verifyKopoSignature(req, res, '/webhooks')) return;
 
     const payload = req.body;
     const eventType: string = payload?.topic ?? payload?.event?.type ?? 'unknown';
@@ -1195,6 +1216,7 @@ export default async function kopokopoRoutes(app: App) {
           parsed.status = 'success';
           parsed.rawStatus = 'Received';
 
+        await withRefLock(parsed.transactionReference, async () => {
         let payment = await findKopoPayment(parsed);
         let posReceiptNo: string | undefined;
         let posTransactionId: string | undefined;
@@ -1259,6 +1281,7 @@ export default async function kopokopoRoutes(app: App) {
         }
 
         emitKopokopoUpdate(req, buildKopoEmitPayload(payment, parsed, { posReceiptNo, posTransactionId }));
+        });
         }
       }
 
@@ -1270,7 +1293,8 @@ export default async function kopokopoRoutes(app: App) {
   });
 
   // POST /api/kopokopo/subscribe-webhooks
-  app.post('/subscribe-webhooks', async (_req: Req, res: FastifyReply) => {
+  app.post('/subscribe-webhooks', { onRequest: ensureAuthenticated }, async (_req: Req, res: FastifyReply) => {
+    if (!ensureFinanceOrAdmin(_req, res)) return;
     const webhookUrl = process.env.KOPOKOPO_WEBHOOK_URL;
     if (!webhookUrl) {
       res.status(400).send({ error: 'KOPOKOPO_WEBHOOK_URL is not configured' });
@@ -1303,7 +1327,8 @@ export default async function kopokopoRoutes(app: App) {
   });
 
   // POST /api/kopokopo/reconcile-pos — complete successful guest POS M-Pesa sales still pending
-  app.post('/reconcile-pos', async (_req: Req, res: FastifyReply) => {
+  app.post('/reconcile-pos', { onRequest: ensureAuthenticated }, async (_req: Req, res: FastifyReply) => {
+    if (!ensureFinanceOrAdmin(_req, res)) return;
     try {
       const pending = await prisma.kopoPayment.findMany({
         where: {
@@ -1331,7 +1356,8 @@ export default async function kopokopoRoutes(app: App) {
   });
 
   // POST /api/kopokopo/reconcile — manually credit any successful but uncredited payments
-  app.post('/reconcile', async (_req: Req, res: FastifyReply) => {
+  app.post('/reconcile', { onRequest: ensureAuthenticated }, async (_req: Req, res: FastifyReply) => {
+    if (!ensureFinanceOrAdmin(_req, res)) return;
     try {
       const pending = await prisma.kopoPayment.findMany({
         where: {
@@ -1721,7 +1747,8 @@ export default async function kopokopoRoutes(app: App) {
   });
 
   // GET /api/kopokopo/transactions
-  app.get('/transactions', async (_req: Req, res: FastifyReply) => {
+  app.get('/transactions', { onRequest: ensureAuthenticated }, async (_req: Req, res: FastifyReply) => {
+    if (!ensureFinanceOrAdmin(_req, res)) return;
     try {
       const transactions = await prisma.kopoPayment.findMany({
         orderBy: { createdAt: 'desc' },
