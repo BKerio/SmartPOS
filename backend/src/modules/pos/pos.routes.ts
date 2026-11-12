@@ -1,6 +1,7 @@
 import type { FastifyReply } from 'fastify';
 import type { App, Req } from '@/lib/http';
 import bcrypt from 'bcrypt';
+import type { Prisma } from '@prisma/client';
 import prisma from '@/services/prisma';
 import { staffNames } from '@/services/staffNames';
 import { ensureAuthenticated } from '@/middleware/auth';
@@ -346,12 +347,14 @@ async function executeSelfServiceOrder(
 
     await deductStockForOrder(tx, orderLines, { userId: cashierId, receiptNo });
 
+    const dailyNo = await nextDailyNo(tx);
     const posTx = await tx.posTransaction.create({
       data: {
         studentId: student.id,
         cashierId,
         totalAmount,
         receiptNo,
+        dailyNo,
         items: { create: orderLines },
       },
       include: { items: { include: { menuItem: { select: { name: true } } } } },
@@ -417,11 +420,13 @@ export async function executeGuestSale(
 
     await deductStockForOrder(tx, orderLines, { userId: cashierId, receiptNo });
 
+    const dailyNo = await nextDailyNo(tx);
     const posTx = await tx.posTransaction.create({
       data: {
         cashierId,
         totalAmount,
         receiptNo,
+        dailyNo,
         paymentMethod,
         paymentReference: paymentReference || null,
         items: { create: orderLines },
@@ -433,13 +438,46 @@ export async function executeGuestSale(
   }, POS_TX_OPTIONS);
 }
 
+/**
+ * Next order number of the day (Kenyan time), printed on receipts as 0001, 0002...
+ * The advisory lock serialises numbering between concurrent sales (held until the sale commits).
+ * GREATEST(max, count) keeps it right on the day this was introduced, before old rows are backfilled.
+ */
+async function nextDailyNo(tx: Prisma.TransactionClient): Promise<number> {
+  // $executeRaw, not $queryRaw: the lock function returns void, which $queryRaw can't deserialize.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(724001)`;
+  const eatDay = new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10);
+  const start = new Date(`${eatDay}T00:00:00+03:00`);
+  const [{ next }] = await tx.$queryRaw<{ next: number }[]>`
+    SELECT (GREATEST(COALESCE(MAX(daily_no), 0), COUNT(*)) + 1)::int AS next
+    FROM pos_transactions WHERE "createdAt" >= ${start}`;
+  return Number(next);
+}
+
+/** Gives past sales their daily numbers once (idempotent: only rows without one). Run at start-up.
+ *  (pos_transactions keeps the Prisma column name "createdAt"; only daily_no is snake_case.) */
+export async function backfillDailyNumbers(): Promise<number> {
+  return prisma.$executeRaw`
+    UPDATE pos_transactions p SET daily_no = s.n
+    FROM (
+      SELECT id, row_number() OVER (
+        PARTITION BY ("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi')::date
+        ORDER BY "createdAt", id
+      ) AS n
+      FROM pos_transactions
+    ) s
+    WHERE p.id = s.id AND p.daily_no IS NULL`;
+}
+
 /** @deprecated use executeGuestSale */
 export async function executeGuestMpesaSale(
   cashierId: string,
   items: CartLine[],
-  _mpesaReference: string,
+  mpesaReference: string,
 ) {
-  return executeGuestSale(cashierId, items, 'mpesa');
+  // Keep the M-Pesa code on the sale so the receipt can show it.
+  const ref = String(mpesaReference || '').trim().toUpperCase();
+  return executeGuestSale(cashierId, items, 'mpesa', /^[A-Z0-9]{8,12}$/.test(ref) ? ref : null);
 }
 
 function respondSaleError(res: FastifyReply, error: unknown, logLabel: string) {

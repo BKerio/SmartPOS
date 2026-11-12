@@ -10,6 +10,8 @@ export function receiptFromPosTransaction(
     totalAmount: number;
     createdAt: string;
     paymentMethod?: string;
+    paymentReference?: string | null;
+    dailyNo?: number | null;
     cashierName?: string | null;
     servedBy?: string | null;
     items: { quantity: number; price: number; menuItem: { name: string } }[];
@@ -29,8 +31,21 @@ export function receiptFromPosTransaction(
     receipt.cashierName?.trim() ||
     undefined;
 
+  // Payment mode as the customer knows it. A cash sale with an M-Pesa code is a payment to our till.
+  const ref = receipt.paymentReference?.trim() || null;
+  const mode =
+    receipt.paymentMethod === "mpesa"
+      ? { paymentMode: "M-Pesa (STK prompt)", mpesaCode: ref, paidToTill: true }
+      : receipt.paymentMethod === "cash"
+        ? ref
+          ? { paymentMode: "M-Pesa till", mpesaCode: ref, paidToTill: true }
+          : { paymentMode: "Cash", mpesaCode: null, paidToTill: false }
+        : { paymentMode: "Student wallet", mpesaCode: null, paidToTill: false };
+
   return {
     receiptNo,
+    orderNo: receipt.dailyNo ?? null,
+    ...mode,
     studentName: student?.name ?? "Guest",
     regNo: student?.regNo ?? "Walk-in",
     items: receipt.items.map((i) => ({
@@ -58,6 +73,7 @@ export function receiptFromGuestCash(
     createdAt: string;
     paymentMethod?: string;
     paymentReference?: string | null;
+    dailyNo?: number | null;
     cashierName?: string | null;
     servedBy?: string | null;
     items: { quantity: number; price: number; menuItem: { name: string } }[];
@@ -82,6 +98,8 @@ export function receiptFromApiResponse(
     totalAmount: number;
     createdAt: string;
     paymentMethod?: string;
+    paymentReference?: string | null;
+    dailyNo?: number | null;
     cashierName?: string | null;
     servedBy?: string | null;
     items: { quantity: number; price: number; menuItem: { name: string } }[];

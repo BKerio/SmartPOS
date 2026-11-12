@@ -193,6 +193,7 @@ model MenuItemIngredient {
 model PosTransaction {
   id               String   @id @default(cuid())
   receiptNo        String?  @unique
+  dailyNo          Int?     @map("daily_no") // order number of the day (Kenyan time): 1, 2, 3... printed as 0001
   studentId        String?
   student          Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
   cashierId        String // The User (restaurant staff) who processed it

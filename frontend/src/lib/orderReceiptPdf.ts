@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { brandEmblemPng } from "@/lib/brandEmblem";
+import defaultLogoUrl from "@/assets/LOGO.png";
 import type { OrderReceiptData } from "@/lib/orderReceiptTypes";
 
 const formatMoney = (amount: number) => `KES ${amount.toLocaleString()}`;
@@ -22,11 +22,77 @@ async function loadImageDataUrl(src: string): Promise<string | null> {
   }
 }
 
+type ReceiptLogo = { dataUrl: string; aspect: number };
+const logoCache = new Map<string, Promise<ReceiptLogo | null>>();
+
+/**
+ * LOGO.png is a 1024x1024 square with the artwork in a band across the middle. Trim the white margins
+ * so the logo itself can fill the receipt width, and keep every source pixel (lossless PNG).
+ */
+function loadReceiptLogo(src: string): Promise<ReceiptLogo | null> {
+  if (!logoCache.has(src)) {
+    logoCache.set(
+      src,
+      new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          try {
+            const w = img.naturalWidth;
+            const h = img.naturalHeight;
+            const canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            if (!ctx) return resolve(null);
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0);
+            const px = ctx.getImageData(0, 0, w, h).data;
+            let minX = w, minY = h, maxX = -1, maxY = -1;
+            for (let y = 0; y < h; y++) {
+              for (let x = 0; x < w; x++) {
+                const i = (y * w + x) * 4;
+                if (px[i] < 238 || px[i + 1] < 238 || px[i + 2] < 238) {
+                  if (x < minX) minX = x;
+                  if (x > maxX) maxX = x;
+                  if (y < minY) minY = y;
+                  if (y > maxY) maxY = y;
+                }
+              }
+            }
+            if (maxX < 0) return resolve(null);
+            const pad = Math.round(Math.max(maxX - minX, maxY - minY) * 0.02);
+            const sx = Math.max(0, minX - pad);
+            const sy = Math.max(0, minY - pad);
+            const sw = Math.min(w, maxX + pad + 1) - sx;
+            const sh = Math.min(h, maxY + pad + 1) - sy;
+            const out = document.createElement("canvas");
+            out.width = sw;
+            out.height = sh;
+            const octx = out.getContext("2d");
+            if (!octx) return resolve(null);
+            octx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+            resolve({ dataUrl: out.toDataURL("image/png"), aspect: sh / sw });
+          } catch {
+            resolve(null);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = src;
+      }),
+    );
+  }
+  return logoCache.get(src)!;
+}
+
 function safeFilename(receiptNo: string) {
   return `receipt-${receiptNo.replace(/[^a-z0-9-]/gi, "_")}.pdf`;
 }
 
 const PAGE_W = 80; // mm, standard thermal roll
+/** Our Lipa na M-Pesa (Buy Goods) till, printed on every receipt. Override with VITE_TILL_NUMBER. */
+const TILL_NUMBER = String(import.meta.env.VITE_TILL_NUMBER || "3611959");
 const M = 5; // side margin
 const INK: [number, number, number] = [17, 24, 39];
 const MUTED: [number, number, number] = [100, 108, 120];
@@ -53,53 +119,59 @@ function dashed(doc: jsPDF, y: number) {
  * Draws the receipt top to bottom and returns where it ended, so the caller can size the page to fit
  * (thermal rolls are cut after the last line; a fixed tall page left a long blank tail).
  */
-function drawReceipt(doc: jsPDF, data: OrderReceiptData, emblem: string | null, logoFallback: string | null): number {
+function drawReceipt(doc: jsPDF, data: OrderReceiptData, logo: ReceiptLogo | null, logoFallback: string | null): number {
   const cx = PAGE_W / 2;
   const right = PAGE_W - M;
   let y = 5;
 
-  // ── Brand ──
-  if (emblem) {
-    const w = 44;
-    const h = (w * 128) / 216;
-    doc.addImage(emblem, "PNG", cx - w / 2, y, w, h, "emblem", "FAST");
-    y += h + 2.5;
+  // ── Brand: the logo (it carries "Better Fork · Restaurant Limited") across most of the roll ──
+  if (logo) {
+    const w = 58;
+    const h = w * logo.aspect;
+    // alias "logo" + no recompression: embedded once per PDF, every source pixel kept
+    doc.addImage(logo.dataUrl, "PNG", cx - w / 2, y, w, h, "logo", "NONE");
+    y += h + 3.2;
   } else if (logoFallback) {
-    doc.addImage(logoFallback, "PNG", cx - 15, y, 30, 30);
-    y += 32;
+    doc.addImage(logoFallback, "PNG", cx - 20, y - 6, 40, 40, "logo", "NONE");
+    y += 31;
   }
-  doc.setTextColor(...INK);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  spaced(doc, "RESTAURANT LIMITED", cx, y, "center", 1.1);
-  y += 3.6;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(6.5);
   doc.setTextColor(...MUTED);
   doc.text("School cafeteria", cx, y, { align: "center" });
   y += 4.5;
 
-  // ── Receipt number ──
+  // ── Order number of the day (0001, 0002...) ──
+  const hasNo = data.orderNo != null && data.orderNo > 0;
   doc.setDrawColor(...INK);
   doc.setLineWidth(0.45);
-  doc.roundedRect(M, y, PAGE_W - 2 * M, 12, 1.6, 1.6, "S");
+  doc.roundedRect(M, y, PAGE_W - 2 * M, hasNo ? 16 : 12, 1.6, 1.6, "S");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(6.5);
   doc.setTextColor(...MUTED);
-  spaced(doc, "SALES RECEIPT", cx, y + 4, "center", 0.8);
-  doc.setFontSize(11.5);
+  spaced(doc, hasNo ? "ORDER NO." : "SALES RECEIPT", cx, y + 4.2, "center", 0.8);
   doc.setTextColor(...INK);
-  spaced(doc, data.receiptNo, cx, y + 9.4, "center", 0.3);
-  y += 17;
+  if (hasNo) {
+    doc.setFontSize(22);
+    spaced(doc, String(data.orderNo).padStart(4, "0"), cx, y + 12.6, "center", 1.2);
+    y += 21;
+  } else {
+    doc.setFontSize(11.5);
+    spaced(doc, data.receiptNo, cx, y + 9.4, "center", 0.3);
+    y += 17;
+  }
 
-  // ── Details ──
+  // ── Details (no customer name; admission no. only for wallet sales, so a payment can be traced) ──
   const isGuest = !data.regNo || /walk-in/i.test(data.regNo) || data.studentName === "Guest";
+  const mode = data.paymentMode || data.paymentMethod || "Wallet";
   const rows: [string, string][] = [
+    ...(hasNo ? ([["Receipt ref.", data.receiptNo]] as [string, string][]) : []),
     ["Date", formatDateTime(data.paidAt)],
-    ["Customer", isGuest ? "Walk-in guest" : titleCase(data.studentName)],
     ...(!isGuest ? ([["Adm no.", data.regNo]] as [string, string][]) : []),
     ...(data.servedBy ? ([["Served by", titleCase(data.servedBy)]] as [string, string][]) : []),
-    ["Payment", data.paymentMethod || "Wallet"],
+    ["Payment", mode],
+    ...(data.mpesaCode ? ([["M-Pesa code", data.mpesaCode]] as [string, string][]) : []),
+    ...(data.paidToTill ? ([["Till no.", TILL_NUMBER]] as [string, string][]) : []),
   ];
   doc.setFontSize(7.8);
   for (const [label, value] of rows) {
@@ -177,20 +249,32 @@ function drawReceipt(doc: jsPDF, data: OrderReceiptData, emblem: string | null, 
   doc.setFontSize(6.6);
   doc.setTextColor(...MUTED);
   doc.text("Keep this receipt for your records.", cx, y, { align: "center" });
-  y += 3.2;
+  y += 4.6;
+  // Till box: how to pay us by M-Pesa next time
+  doc.setDrawColor(150, 156, 166);
+  doc.setLineWidth(0.25);
+  doc.roundedRect(M + 6, y - 3.4, PAGE_W - 2 * M - 12, 6.4, 1.2, 1.2, "S");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.4);
+  doc.setTextColor(...INK);
+  doc.text(`Lipa na M-Pesa · Buy Goods Till ${TILL_NUMBER}`, cx, y + 0.9, { align: "center" });
+  y += 6.4;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.6);
+  doc.setTextColor(...MUTED);
   doc.text("Better Forks Restaurant Limited · SmartPOS", cx, y, { align: "center" });
   return y + 5;
 }
 
-export async function buildReceiptPdf(data: OrderReceiptData, logoUrl?: string): Promise<jsPDF> {
-  const emblem = await brandEmblemPng();
-  const fallback = !emblem && logoUrl ? await loadImageDataUrl(logoUrl) : null;
+export async function buildReceiptPdf(data: OrderReceiptData, logoUrl: string = defaultLogoUrl): Promise<jsPDF> {
+  const logo = await loadReceiptLogo(logoUrl);
+  const fallback = !logo ? await loadImageDataUrl(logoUrl) : null;
   // Measure on a tall scratch page, then draw again on a page exactly as long as the content.
   const scratch = new jsPDF({ unit: "mm", format: [PAGE_W, 600], orientation: "portrait" });
-  const height = Math.max(90, Math.ceil(drawReceipt(scratch, data, emblem, fallback)));
+  const height = Math.max(90, Math.ceil(drawReceipt(scratch, data, logo, fallback)));
   const doc = new jsPDF({ unit: "mm", format: [PAGE_W, height], orientation: "portrait" });
   doc.setProperties({ title: `Receipt ${data.receiptNo}`, author: "Better Forks Restaurant Limited", creator: "SmartPOS" });
-  drawReceipt(doc, data, emblem, fallback);
+  drawReceipt(doc, data, logo, fallback);
   return doc;
 }
 

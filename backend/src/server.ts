@@ -5,6 +5,7 @@ import { getStorageConfigError } from '@/services/storage';
 import { LIVE_KEY, collectionsFingerprint, getCollectionsFast, onCollectionsRebuilt, setLiveRefreshBuilder } from '@/services/collectionsQuery';
 import { buildCollections } from '@/modules/finance/finance.routes';
 import { warmStaffNames } from '@/services/staffNames';
+import { backfillDailyNumbers } from '@/modules/pos/pos.routes';
 
 async function main() {
   const app = await buildApp();
@@ -36,6 +37,9 @@ async function main() {
     });
     getCollectionsFast(LIVE_KEY, () => buildCollections(undefined)).catch((err) => console.error('Collections warm-up failed:', err?.message || err));
     void warmStaffNames();
+    backfillDailyNumbers()
+      .then((n) => n > 0 && console.log(`Numbered ${n} past sales with their daily order number`))
+      .catch((err) => console.error('Daily order number backfill failed:', err?.message || err));
   } catch (err: any) {
     console.error('Database connection failed on startup:', err?.message || err);
     console.error('Check the database is running and DATABASE_URL in backend/.env is correct.\n');
