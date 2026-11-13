@@ -562,7 +562,7 @@ const ManageStudents: React.FC = () => {
                           <PersonCell name={s.name} sub={<><span className="dt-mono" style={{ fontSize: 12 }}>{s.regNo}</span>{s.gender ? ` · ${s.gender[0].toUpperCase()}${s.gender.slice(1)}` : ""}</>} />
                         </td>
                         <td className="hide-sm">
-                          {s.course ? <span style={{ color: "var(--ink-2)" }}>{s.course}</span> : <span className="dt-muted">—</span>}
+                          {s.course ? <span style={{ color: "var(--ink-2)" }}>{s.course}</span> : <span className="dt-muted">-</span>}
                           {s.className && <div className="dt-muted" style={{ fontSize: 12 }}>{s.className}</div>}
                         </td>
                         <td>

@@ -45,7 +45,7 @@ async function readImageUpload(req: Req): Promise<UploadedImage | null> {
 }
 
 // ─── GET /api/menu/display ────────────────────────────────────────────────────
-// Public cafeteria menu for kiosks — same stock rules as staff POS
+// Public cafeteria menu for kiosks: same stock rules as staff POS
 function isMenuItemVisible(item: {
   isAvailable: boolean;
   stockLevel: number | null;

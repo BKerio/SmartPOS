@@ -384,9 +384,9 @@ const Dashboard = () => {
                         return (
                           <tr key={r.id || i}>
                             <td>{new Date(r.date).toLocaleString("en-KE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
-                            <td className="db-who">{r.name ? <PersonCell name={r.name} /> : "—"}</td>
+                            <td className="db-who">{r.name ? <PersonCell name={r.name} /> : "-"}</td>
                             <td><span className={`pill ${spend ? "pill-gold" : "pill-blue"}`}>{spend ? "Wallet purchase" : r.method}</span></td>
-                            <td className="mono db-ref" title={spend ? undefined : r.transactionRef}>{spend ? "—" : r.transactionRef || "—"}</td>
+                            <td className="mono db-ref" title={spend ? undefined : r.transactionRef}>{spend ? "-" : r.transactionRef || "-"}</td>
                             <td className="db-amount" style={spend ? { color: "var(--amber)" } : undefined}>
                               {spend ? "−" : ""}{kes(Math.abs(r.amount))}
                             </td>

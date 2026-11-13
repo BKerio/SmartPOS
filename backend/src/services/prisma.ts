@@ -141,7 +141,7 @@ export async function withDbRetry<T>(operation: () => Promise<T>): Promise<T> {
       return await operation();
     } catch (error) {
       if (!isRetryableDbError(error) || attempt === maxAttempts) throw error;
-      console.warn(`Database unreachable — retrying (${attempt}/${maxAttempts - 1})...`);
+      console.warn(`Database unreachable, retrying (${attempt}/${maxAttempts - 1})...`);
       await prisma.$disconnect().catch(() => {});
       await new Promise((r) => setTimeout(r, 400 * attempt));
       await prisma.$connect().catch(() => {});

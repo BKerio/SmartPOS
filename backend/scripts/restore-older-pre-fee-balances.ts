@@ -2,7 +2,7 @@
  * Restore older students to wallet balances as they were before the
  * registration-fee rollout (fee reverse + put back wiped openings).
  *
- * Openings come from the original onboard wallet column only as a delta —
+ * Openings come from the original onboard wallet column only as a delta,
  * this does not re-import students or overwrite later top-ups/purchases.
  *
  * Usage (from backend/):
@@ -38,7 +38,7 @@ function loadOpeningsFromCsv(): Map<string, number> {
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('Rank,')) continue;
-    // Rank,Name,Adm No.,Wallet,Category — wallet may contain commas inside quotes
+    // Rank,Name,Adm No.,Wallet,Category: wallet may contain commas inside quotes
     const match = trimmed.match(/^(\d+),(.*),([A-Za-z0-9-]+),("?\*\*?KSh?\s*([\d,]+)\*\*?"?|[^,]*),(.*)$/i);
     if (match) {
       const reg = normalizeRegNo(match[3]);

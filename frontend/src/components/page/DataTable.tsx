@@ -24,7 +24,7 @@ export function PersonCell({ name, sub, extra }: { name?: string | null; sub?: R
     <div className="dt-person">
       <Avatar name={name} />
       <div className="min-w-0">
-        <b title={name || undefined}>{displayName(name) || "—"}</b>
+        <b title={name || undefined}>{displayName(name) || "-"}</b>
         {sub != null && sub !== "" && <span>{sub}</span>}
         {extra}
       </div>

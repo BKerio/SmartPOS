@@ -1,4 +1,4 @@
-# SmartPOS — start all local services (Windows PowerShell)
+# SmartPOS: start all local services (Windows PowerShell)
 # Usage: .\scripts\start-local.ps1
 
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)

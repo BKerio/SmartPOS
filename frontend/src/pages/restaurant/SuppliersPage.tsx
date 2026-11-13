@@ -257,10 +257,10 @@ const SuppliersPage = () => {
                       {s.contactPerson ? (
                         <div className="dt-person"><Avatar name={s.contactPerson} size="sm" /><span style={{ color: "var(--ink-2)" }}>{displayName(s.contactPerson)}</span></div>
                       ) : (
-                        <span className="dt-muted">—</span>
+                        <span className="dt-muted">-</span>
                       )}
                     </td>
-                    <td>{s.phone ? <a className="dt-mono" href={`tel:${s.phone}`} onClick={(e) => e.stopPropagation()}>{s.phone}</a> : <span className="dt-muted">—</span>}</td>
+                    <td>{s.phone ? <a className="dt-mono" href={`tel:${s.phone}`} onClick={(e) => e.stopPropagation()}>{s.phone}</a> : <span className="dt-muted">-</span>}</td>
                     <td className="hide-sm">{s.email ? <span style={{ color: "var(--ink-2)" }}>{s.email}</span> : <span className="pill pill-gray">No email</span>}</td>
                     <td className="num"><span className="dt-amount">{s._count?.stockMovements ?? 0}</span></td>
                     <td className="act" onClick={(e) => e.stopPropagation()}>
@@ -319,8 +319,8 @@ const SuppliersPage = () => {
                     <td className="px-5 py-3 text-right">
                       {m.quantity} {m.inventoryItem.unit}
                     </td>
-                    <td className="px-5 py-3 text-gray-600">{m.reference || "—"}</td>
-                    <td className="px-5 py-3 text-gray-500">{m.notes || "—"}</td>
+                    <td className="px-5 py-3 text-gray-600">{m.reference || "-"}</td>
+                    <td className="px-5 py-3 text-gray-500">{m.notes || "-"}</td>
                   </tr>
                 ))}
               </tbody>

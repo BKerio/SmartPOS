@@ -46,7 +46,7 @@ export function ProfileHero({
         </span>
         <div className="ac-hero-text">
           <div className="ac-hero-title">
-            <h1 title={name}>{displayName(name) || "—"}</h1>
+            <h1 title={name}>{displayName(name) || "-"}</h1>
             <span className="pill pill-blue">{role}</span>
             {badges}
           </div>
@@ -417,4 +417,4 @@ export function errorText(e: any, fallback = "Something went wrong. Please try a
 
 /** "Member since 12 Mar 2026" style date. */
 export const fmtDay = (d?: string | Date | null) =>
-  d ? new Date(d).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }) : "—";
+  d ? new Date(d).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }) : "-";

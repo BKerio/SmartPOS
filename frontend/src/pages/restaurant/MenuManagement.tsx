@@ -593,7 +593,7 @@ const MenuManagement = ({ initialTab = "list", showTabs = true }: Props) => {
                     </td>
                     <td className="px-5 py-4 text-center">
                       {item.stockLevel == null ? (
-                        <span className="text-xs text-gray-400">—</span>
+                        <span className="text-xs text-gray-400">-</span>
                       ) : (
                         <span className={`text-xs font-bold ${item.stockLevel <= 0 ? "text-red-600" : "text-gray-700"}`}>
                           {item.stockLevel}

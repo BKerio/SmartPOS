@@ -99,7 +99,7 @@ function parseKopoPayload(payload: any): ParsedKopoPayload {
   const metadata = attrs?.metadata ?? payload?.metadata ?? {};
 
   // Prefer Incoming Payment attributes.status (Pending|Success|Failed).
-  // resource.status ("Received") is the buygoods result after M-Pesa PIN — not before.
+  // resource.status ("Received") is the buygoods result after M-Pesa PIN: not before.
   // Never default to "Received" (that caused premature "Payment Successful" before PIN).
   const rawStatus = String(
     attrs.status || resource.status || payload?.event?.resource?.status || 'Pending',
@@ -213,7 +213,7 @@ async function creditStudentWallet(
   reference: string,
 ) {
   if (!studentId || amount <= 0) {
-    console.warn('[Kopokopo] Skip wallet credit — missing studentId or invalid amount', {
+    console.warn('[Kopokopo] Skip wallet credit: missing studentId or invalid amount', {
       paymentId,
       studentId,
       amount,
@@ -254,11 +254,11 @@ async function creditStudentWallet(
               walletCredited: true,
               studentId,
               status: 'superseded',
-              description: `Superseded — M-Pesa ${mpesaRef} already credited via ${siblingCredited.id}`,
+              description: `Superseded: M-Pesa ${mpesaRef} already credited via ${siblingCredited.id}`,
             },
           });
           console.warn(
-            `[Kopokopo] Skip double credit — ${mpesaRef} already credited on ${siblingCredited.id}`,
+            `[Kopokopo] Skip double credit: ${mpesaRef} already credited on ${siblingCredited.id}`,
           );
           return false;
         }
@@ -277,11 +277,11 @@ async function creditStudentWallet(
               walletCredited: true,
               studentId: existingDeposit.studentId,
               status: 'superseded',
-              description: `Superseded — wallet deposit ${mpesaRef} already exists`,
+              description: `Superseded: wallet deposit ${mpesaRef} already exists`,
             },
           });
           console.warn(
-            `[Kopokopo] Skip double credit — wallet deposit already exists for ${mpesaRef}`,
+            `[Kopokopo] Skip double credit: wallet deposit already exists for ${mpesaRef}`,
           );
           return false;
         }
@@ -355,7 +355,7 @@ async function completePosSaleFromPayment(
 
   const cashierId = payment.payerUserId;
   if (!cashierId) {
-    console.warn('[Kopokopo] POS sale pending — no cashier on payment record', { paymentId });
+    console.warn('[Kopokopo] POS sale pending: no cashier on payment record', { paymentId });
     return null;
   }
 
@@ -554,7 +554,7 @@ async function resolvePhonePendingBlock(phone: string) {
 
   if (!newestLive?.location) return null;
 
-  // One Kopokopo status call max — do not sync every pending row (was making STK feel stuck)
+  // One Kopokopo status call max: do not sync every pending row (was making STK feel stuck)
   const updated = await syncPendingFromKopokopo(newestLive.id, newestLive.location);
   if (updated && updated.status !== 'pending') return null;
 
@@ -926,7 +926,7 @@ export default async function kopokopoRoutes(app: App) {
         if (isPendingPhoneBlockError(stkErr)) {
           const blocked = await resolvePhonePendingBlock(phone);
           if (blocked) {
-            console.log('[Kopokopo] 429 — resuming existing pending STK for', phoneKey(phone));
+            console.log('[Kopokopo] 429: resuming existing pending STK for', phoneKey(phone));
             respondPendingStk(res, blocked, numericAmount, true);
             return;
           }
@@ -982,7 +982,7 @@ export default async function kopokopoRoutes(app: App) {
     const normalized = normalizeLocation(location);
 
     try {
-      // Fast path: already finalized in DB — skip Kopokopo round-trip
+      // Fast path: already finalized in DB: skip Kopokopo round-trip
       const locId = locationId(normalized);
       const existing =
         (await prisma.kopoPayment.findFirst({
@@ -1052,7 +1052,7 @@ export default async function kopokopoRoutes(app: App) {
           posReceiptNo = result.posReceiptNo;
           posTransactionId = result.posTransactionId;
         } catch (creditErr: any) {
-          // Payment succeeded at M-Pesa — don't leave the UI hanging if wallet/POS post-processing fails
+          // Payment succeeded at M-Pesa: don't leave the UI hanging if wallet/POS post-processing fails
           console.error('[Kopokopo] Status apply failed after success:', creditErr?.message || creditErr);
           payment = await prisma.kopoPayment.update({
             where: { id: paymentId },
@@ -1326,7 +1326,7 @@ export default async function kopokopoRoutes(app: App) {
     res.send({ message: 'Webhook subscription complete', results });
   });
 
-  // POST /api/kopokopo/reconcile-pos — complete successful guest POS M-Pesa sales still pending
+  // POST /api/kopokopo/reconcile-pos: complete successful guest POS M-Pesa sales still pending
   app.post('/reconcile-pos', { onRequest: ensureAuthenticated }, async (_req: Req, res: FastifyReply) => {
     if (!ensureFinanceOrAdmin(_req, res)) return;
     try {
@@ -1355,7 +1355,7 @@ export default async function kopokopoRoutes(app: App) {
     }
   });
 
-  // POST /api/kopokopo/reconcile — manually credit any successful but uncredited payments
+  // POST /api/kopokopo/reconcile: manually credit any successful but uncredited payments
   app.post('/reconcile', { onRequest: ensureAuthenticated }, async (_req: Req, res: FastifyReply) => {
     if (!ensureFinanceOrAdmin(_req, res)) return;
     try {
@@ -1387,7 +1387,7 @@ export default async function kopokopoRoutes(app: App) {
     }
   });
 
-  // GET /api/kopokopo/search?q= — find unallocated till payments by M-Pesa code, phone, or ref
+  // GET /api/kopokopo/search?q=: find unallocated till payments by M-Pesa code, phone, or ref
   app.get('/search', { onRequest: ensureAuthenticated }, async (req: Req, res: FastifyReply) => {
     if (!ensureFinanceOrAdmin(req, res)) return;
 
@@ -1449,7 +1449,7 @@ export default async function kopokopoRoutes(app: App) {
     }
   });
 
-  // POST /api/kopokopo/:id/allocate — assign till payment to a student and credit wallet
+  // POST /api/kopokopo/:id/allocate: assign till payment to a student and credit wallet
   app.post('/:id/allocate', { onRequest: ensureAuthenticated }, async (req: Req, res: FastifyReply) => {
     if (!ensureFinanceOrAdmin(req, res)) return;
 
@@ -1474,7 +1474,7 @@ export default async function kopokopoRoutes(app: App) {
 
       if (!isAllocatablePayment(payment)) {
         res.status(422).send({
-          error: 'Payment cannot be allocated — it may already be credited, failed, or is a POS sale',
+          error: 'Payment cannot be allocated: it may already be credited, failed, or is a POS sale',
         });
         return;
       }
@@ -1511,7 +1511,7 @@ export default async function kopokopoRoutes(app: App) {
             data: {
               walletCredited: true,
               status: 'superseded',
-              description: `Superseded — M-Pesa ${mpesaRef} already allocated`,
+              description: `Superseded: M-Pesa ${mpesaRef} already allocated`,
             },
           });
           res.status(409).send({
@@ -1533,7 +1533,7 @@ export default async function kopokopoRoutes(app: App) {
             data: {
               walletCredited: true,
               status: 'superseded',
-              description: `Superseded — wallet deposit ${mpesaRef} already exists`,
+              description: `Superseded: wallet deposit ${mpesaRef} already exists`,
             },
           });
           res.status(409).send({
@@ -1563,7 +1563,7 @@ export default async function kopokopoRoutes(app: App) {
       );
 
       if (!credited) {
-        res.status(409).send({ error: 'Wallet credit failed — payment may already be allocated' });
+        res.status(409).send({ error: 'Wallet credit failed: payment may already be allocated' });
         return;
       }
 
@@ -1612,7 +1612,7 @@ export default async function kopokopoRoutes(app: App) {
     }
   });
 
-  // GET /api/kopokopo/webhook-status — diagnostics for till webhook delivery
+  // GET /api/kopokopo/webhook-status: diagnostics for till webhook delivery
   app.get('/webhook-status', { onRequest: ensureAuthenticated }, async (req: Req, res: FastifyReply) => {
     if (!ensureFinanceOrAdmin(req, res)) return;
 
@@ -1653,7 +1653,7 @@ export default async function kopokopoRoutes(app: App) {
     }
   });
 
-  // POST /api/kopokopo/register-manual — register a till payment from M-Pesa SMS when webhook missed it
+  // POST /api/kopokopo/register-manual: register a till payment from M-Pesa SMS when webhook missed it
   app.post('/register-manual', { onRequest: ensureAuthenticated }, async (req: Req, res: FastifyReply) => {
     if (!ensureFinanceOrAdmin(req, res)) return;
 
@@ -1731,7 +1731,7 @@ export default async function kopokopoRoutes(app: App) {
       });
 
       res.status(201).send({
-        message: 'Payment registered — you can now allocate it to a student',
+        message: 'Payment registered: you can now allocate it to a student',
         payment: {
           id: payment.id,
           amount: payment.amount,

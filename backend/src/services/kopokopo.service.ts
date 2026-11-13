@@ -73,7 +73,7 @@ export interface StkPushResult {
   location: string;
 }
 
-/** Kopokopo allows at most 5 metadata keys — keep only what callbacks need. */
+/** Kopokopo allows at most 5 metadata keys: keep only what callbacks need. */
 function buildStkMetadata(opts: StkPushOptions): Record<string, string> {
   const purpose = opts.purpose || (opts.studentId ? 'wallet_topup' : 'general');
   const meta: Record<string, string> = {};
@@ -191,7 +191,7 @@ export const getPaymentStatus = async (location: string): Promise<PaymentStatus>
   const resourceStatus = String(resource.status || '').trim();
 
   let status = attrsStatus || resourceStatus || 'Pending';
-  // Never treat as paid without an M-Pesa receipt — avoids "success" before PIN.
+  // Never treat as paid without an M-Pesa receipt: avoids "success" before PIN.
   if (!mpesaRef) {
     const s = status.toLowerCase();
     if (s === 'success' || s === 'received' || s === 'complete' || s === 'completed' || s === 'paid') {

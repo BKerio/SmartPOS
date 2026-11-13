@@ -380,7 +380,7 @@ async function executeSelfServiceOrder(
   }, POS_TX_OPTIONS);
 }
 
-/** Guest walk-in sale (cash or M-Pesa) — no student wallet. */
+/** Guest walk-in sale (cash or M-Pesa): no student wallet. */
 export async function executeGuestSale(
   cashierId: string,
   items: CartLine[],
@@ -1008,7 +1008,7 @@ export default async function posRoutes(app: App) {
       const studentById = new Map(students.map((s) => [s.id, s]));
 
       const tillInflow = tillPayments.reduce((sum, p) => sum + p.amount, 0);
-      // POS M-Pesa is already counted in till webhook/callback rows — avoid double-counting
+      // POS M-Pesa is already counted in till webhook/callback rows: avoid double-counting
       const posNonMpesa = receipts
         .filter((r) => (r.paymentMethod || 'wallet').toLowerCase() !== 'mpesa')
         .reduce((sum, r) => sum + r.totalAmount, 0);

@@ -36,7 +36,7 @@ async function main() {
   console.log(`Target database: ${target}`);
   console.log(`Reading ${path.resolve(file)} ...`);
   const backup = JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
-  console.log(`Backup exported ${backup.exportedAt} — mode=${mode}${dryRun ? ' (dry run)' : ''}\n`);
+  console.log(`Backup exported ${backup.exportedAt}: mode=${mode}${dryRun ? ' (dry run)' : ''}\n`);
 
   const result = await restoreBackup(backup, { mode, dryRun, onProgress: (m) => console.log(`  ${m}`) });
 
@@ -47,8 +47,8 @@ async function main() {
   const inserted = result.tables.reduce((s, t) => s + t.inserted, 0);
   console.log(
     dryRun
-      ? `\nDry run OK — ${inserted} rows would be inserted. Nothing was changed.`
-      : `\nRestore complete — ${inserted} rows inserted.`,
+      ? `\nDry run OK: ${inserted} rows would be inserted. Nothing was changed.`
+      : `\nRestore complete: ${inserted} rows inserted.`,
   );
 }
 

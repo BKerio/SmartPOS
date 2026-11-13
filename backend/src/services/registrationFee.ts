@@ -152,7 +152,7 @@ export async function findStudentsMissingRegistrationFee() {
  * The fee rollout ran a ledger sync that wiped opening balances that were never
  * stored as deposit rows. We put those openings back as a single adjustment so:
  *   wallet = originalOpening + sum(existing non-restore transactions)
- * which is the balance before the registration-fee work — without re-importing
+ * which is the balance before the registration-fee work, without re-importing
  * students or overwriting later top-ups/purchases.
  */
 export async function restoreOlderStudentsPreRegistrationFee(

@@ -71,7 +71,7 @@ const KitchenPanel = ({ onProductionRecorded }: Props) => {
       const { data } = await API.post(`/menu/${dish.id}/produce`, { batchCount: 1 });
       toast.success(
         `${dish.name} cooked`,
-        `${data.yieldTotal} ready for sale — target KES ${data.expectedRevenue.toLocaleString()}`,
+        `${data.yieldTotal} ready for sale, target KES ${data.expectedRevenue.toLocaleString()}`,
       );
       await fetchBoard();
       onProductionRecorded?.();
@@ -188,7 +188,7 @@ const KitchenPanel = ({ onProductionRecorded }: Props) => {
                 {dish.ingredients.map((ing, i) => (
                   <p key={i}>
                     {ing.quantityPerBatch} {ing.unit} {ing.name}
-                    <span className="text-gray-400"> — {ing.stockLevel} {ing.unit} in stock</span>
+                    <span className="text-gray-400"> · {ing.stockLevel} {ing.unit} in stock</span>
                   </p>
                 ))}
               </div>

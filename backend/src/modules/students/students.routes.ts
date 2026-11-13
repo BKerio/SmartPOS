@@ -800,7 +800,7 @@ export default async function studentsRoutes(app: App) {
     }
   });
   
-  // ─── GET /api/students/:id/enrolled-fingerprint — POS local verify (staff only)
+  // ─── GET /api/students/:id/enrolled-fingerprint: POS local verify (staff only)
   app.get('/:id/enrolled-fingerprint', { onRequest: ensureAuthenticated }, async (req: Req, res: FastifyReply): Promise<any> => {
     if (!['admin', 'restaurant', 'finance'].includes(req.user!.role)) {
       return res.status(403).send({ message: 'Not authorized' });

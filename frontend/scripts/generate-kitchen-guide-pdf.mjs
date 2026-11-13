@@ -195,7 +195,7 @@ function buildGuide() {
   y = bullet(doc, "Stock and sales are tracked automatically", y, state);
   y = paragraph(
     doc,
-    "Example — Mandazi: Add flour to raw stock → Create Mandazi at KES 50 → Recipe: 1 kg flour makes 60 mandazis → Cook 1 batch → Sell on POS.",
+    "Example: Mandazi: Add flour to raw stock → Create Mandazi at KES 50 → Recipe: 1 kg flour makes 60 mandazis → Cook 1 batch → Sell on POS.",
     y,
     state,
   );
@@ -215,11 +215,11 @@ function buildGuide() {
   y = heading(doc, "4. Raw Stock (Ingredients)", y, state);
   y = paragraph(doc, "Go to: Inventory & Kitchen → Raw Stock tab", y, state, { bold: true, color: BRAND });
   y = heading(doc, "Add a new ingredient", y, state, 2);
-  y = bullet(doc, "Item Name — e.g. Baking Flour", y, state);
-  y = bullet(doc, "Category — Grains, Vegetables, Meat, Dairy, Spices, Other", y, state);
-  y = bullet(doc, "Unit — kg, liters, pieces, bags", y, state);
-  y = bullet(doc, "Reorder Level Alert — triggers low-stock warning", y, state);
-  y = bullet(doc, "Unit Cost (KES) — for stock valuation. Click Add Inventory Item.", y, state);
+  y = bullet(doc, "Item Name: e.g. Baking Flour", y, state);
+  y = bullet(doc, "Category: Grains, Vegetables, Meat, Dairy, Spices, Other", y, state);
+  y = bullet(doc, "Unit: kg, liters, pieces, bags", y, state);
+  y = bullet(doc, "Reorder Level Alert: triggers low-stock warning", y, state);
+  y = bullet(doc, "Unit Cost (KES): for stock valuation. Click Add Inventory Item.", y, state);
 
   y = heading(doc, "Record a delivery (Stock IN)", y, state, 2);
   y = bullet(doc, "Adjustment Type → Stock IN (+)", y, state);
@@ -242,18 +242,18 @@ function buildGuide() {
   y = bullet(doc, "Item Name, Price (KES), Category (required). Image and description optional.", y, state);
   y = bullet(doc, "Stock (portions): leave blank for unlimited, or set a fixed count.", y, state);
   y = heading(doc, "Manage items (All Items tab)", y, state, 2);
-  y = bullet(doc, "Available / Unavailable — toggle POS visibility", y, state);
+  y = bullet(doc, "Available / Unavailable: toggle POS visibility", y, state);
   y = bullet(doc, "Edit, Recipe, or Delete as needed", y, state);
 
   // Recipes
   y = heading(doc, "6. Recipes & Batch Cooking", y, state);
   y = paragraph(doc, "Go to: Sidebar → Menu Recipes", y, state, { bold: true, color: BRAND });
   y = bullet(doc, "Select Dish → set Batch yield (portions per cook), e.g. 60 mandazis.", y, state);
-  y = bullet(doc, "Add ingredients per batch — pick from raw stock with quantity.", y, state);
+  y = bullet(doc, "Add ingredients per batch: pick from raw stock with quantity.", y, state);
   y = bullet(doc, "Save Recipe. Item starts at 0 portions until you cook a batch.", y, state);
 
   // Kitchen
-  y = heading(doc, "7. Kitchen — Cook & Track Sales", y, state);
+  y = heading(doc, "7. Kitchen: Cook & Track Sales", y, state);
   y = paragraph(doc, "Go to: Inventory & Kitchen → Cook & Track Sales tab", y, state, {
     bold: true,
     color: BRAND,
@@ -285,7 +285,7 @@ function buildGuide() {
     state,
   );
   y = bullet(doc, "Pre-packaged items: stock decreases by 1 per sale; update manually when restocking.", y, state);
-  y = bullet(doc, "Unlimited items: leave stock blank — always available.", y, state);
+  y = bullet(doc, "Unlimited items: leave stock blank: always available.", y, state);
   y = heading(doc, "Checkout flow", y, state, 2);
   y = bullet(doc, "Filter by category or search → tap items to add to cart.", y, state);
   y = bullet(doc, "Students: search by name/reg no → Complete Sale (Wallet).", y, state);
@@ -329,7 +329,7 @@ function buildGuide() {
     [
       ["Item shows Out on POS", "Cook a batch or increase stock on menu item"],
       ["Not enough ingredients", "Record delivery under Raw Stock (Stock IN)"],
-      ["Unavailable after recipe", "Cook 1 batch first — starts at 0 portions"],
+      ["Unavailable after recipe", "Cook 1 batch first: starts at 0 portions"],
       ["Low stock warning", "Restock via Stock IN (+) / purchase"],
       ["No supplier on purchase", "Add supplier under Suppliers first"],
     ],

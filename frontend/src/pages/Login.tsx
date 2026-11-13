@@ -107,7 +107,7 @@ const Login: React.FC = () => {
       }
 
       const authUser = toAuthUser(data);
-      // Set session immediately from login response — don't block on a second round-trip
+      // Set session immediately from login response; don't block on a second round-trip
       login(authUser, data.token);
       void refreshSession();
       toast.success(`Welcome, ${data.name || "user"}!`);

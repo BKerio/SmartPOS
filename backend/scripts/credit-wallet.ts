@@ -27,7 +27,7 @@ async function main() {
   }
 
   if (!AMOUNT || AMOUNT <= 0) {
-    console.log(JSON.stringify({ student, message: 'Lookup only — pass amount as 2nd arg to credit' }, null, 2));
+    console.log(JSON.stringify({ student, message: 'Lookup only: pass amount as 2nd arg to credit' }, null, 2));
     return;
   }
 

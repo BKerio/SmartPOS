@@ -569,7 +569,7 @@ const DataManagement = () => {
                       </td>
                       <td className="num">{fmtNum(t.rows)}</td>
                       <td className="num">{fmtNum(currentRows(t.table) ?? 0)}</td>
-                      {result && <td className="num"><b>{r ? fmtNum(r.inserted) : "—"}</b></td>}
+                      {result && <td className="num"><b>{r ? fmtNum(r.inserted) : "-"}</b></td>}
                     </tr>
                   );
                 })}

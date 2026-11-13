@@ -112,7 +112,7 @@ export default async function backupRoutes(app: App) {
           action: mode === 'replace' ? 'Restore Data Backup (replace)' : 'Import Data Backup (merge)',
           description: `${mode === 'replace' ? 'Replaced database from' : 'Merged'} backup exported ${
           backup?.exportedAt || 'unknown date'
-        } — ${inserted} rows inserted`,
+        }: ${inserted} rows inserted`,
           metadata: { mode, exportedAt: backup?.exportedAt, tables: result.tables },
           ipAddress: req.ip,
         });
@@ -124,7 +124,7 @@ export default async function backupRoutes(app: App) {
         return res.status(422).send({ message: error.message });
       }
       console.error('Backup import error:', error);
-      return res.status(500).send({ message: error?.message || 'Restore failed — no changes were saved' });
+      return res.status(500).send({ message: error?.message || 'Restore failed: no changes were saved' });
     } finally {
       restoreInProgress = false;
     }

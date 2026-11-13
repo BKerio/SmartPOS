@@ -301,7 +301,7 @@ const PayloadModal = ({
           <div className="flex-1 flex flex-col min-h-0 min-w-0">
             {selected && (
               <div className="px-4 py-2 border-b border-gray-50 bg-gray-50/80 text-xs text-gray-600 shrink-0">
-                <span className="font-semibold text-brand">{selected.name || "—"}</span>
+                <span className="font-semibold text-brand">{selected.name || "-"}</span>
                 {selected.admNo && <span> · {selected.admNo}</span>}
                 <span> · {selected.method}</span>
               </div>
@@ -475,7 +475,7 @@ const FindPaymentModal = ({
                   <span className="fm-card-text">
                     <b>{formatKes(r.amount)} · {r.allocatable ? "Unallocated" : r.status}</b>
                     <span className="mono">{r.transactionReference || r.id}</span>
-                    <span>{r.phone || "—"} · {new Date(r.date).toLocaleString()}</span>
+                    <span>{r.phone || "-"} · {new Date(r.date).toLocaleString()}</span>
                   </span>
                 </button>
               ))}
@@ -978,7 +978,7 @@ const CollectionsPage = () => {
                           {formatKes(r.attemptedAmount || 0)} (not settled)
                         </span>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-gray-400">-</span>
                       )}
                     </td>
                     <td className="py-3 px-4 text-center">
@@ -994,7 +994,7 @@ const CollectionsPage = () => {
                       ) : r.walletCredited && isWalletTopUpRow(r) ? (
                         <span className="text-[10px] text-emerald-600 font-semibold">Credited</span>
                       ) : (
-                        <span className="text-[10px] text-gray-300">—</span>
+                        <span className="text-[10px] text-gray-300">-</span>
                       )}
                     </td>
                     <td className="py-3 px-4 text-center">

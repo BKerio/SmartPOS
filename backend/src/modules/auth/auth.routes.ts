@@ -230,7 +230,7 @@ export default async function authRoutes(app: App) {
         return res.status(401).send({ message: 'Invalid credentials' });
       }
 
-      // Phone → parent (if no parent match, fall through — numeric regNos can look like phones)
+      // Phone → parent (if no parent match, fall through: numeric regNos can look like phones)
       if (looksLikePhone(identifier)) {
         const candidates = phoneCandidates(identifier);
         const parent = await prisma.parent.findFirst({

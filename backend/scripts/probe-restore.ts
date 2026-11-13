@@ -9,7 +9,7 @@ import {
 
 /**
  * Restore older students to balances as they were immediately before the
- * registration-fee work — without using seed/import files.
+ * registration-fee work, without using seed/import files.
  *
  * Reconstruction:
  * - Remove any leftover registration-fee debit txns
@@ -27,7 +27,7 @@ import {
  * For students hurt by reconcile (opening balance wiped): we recover using
  * the fact that POS often allowed spending from the real wallet. The
  * "spent without recorded deposits" amount implies an implicit opening of
- * at least max(0, -ledgerSum) if they somehow spent — but that's a lower bound.
+ * at least max(0, -ledgerSum) if they somehow spent, but that's a lower bound.
  *
  * Better approach matching user ask:
  * Snapshot reconstruction from transaction timeline BEFORE first registration_fee
@@ -49,7 +49,7 @@ import {
  * ALTERNATIVE recoverable signal:
  * Many older students had walletBalance set from operations. The purchase
  * transactions were recorded while balance was positive. System may have
- * allowed purchases only when balance sufficient — so running balance through
+ * allowed purchases only when balance sufficient, so running balance through
  * purchases in reverse order from 0 doesn't help.
  *
  * Best recoverable method without seed:
@@ -78,7 +78,7 @@ import {
  *
  * Without O from seed, recover O from: minimum balance that would allow all
  * purchases in chronological order without going negative before each purchase
- * (assuming they couldn't buy if insufficient — but POS may have allowed negative).
+ * (assuming they couldn't buy if insufficient, but POS may have allowed negative).
  *
  * If POS enforced sufficient funds: running through purchases chronologically
  * starting from unknown O, O must be large enough that balance never went

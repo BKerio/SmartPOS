@@ -29,7 +29,7 @@ type InvoiceDetail = InvoiceRow & {
 };
 
 const PAGE_SIZE = 25;
-const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }) : "—");
+const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }) : "-");
 const STATUS_PILL: Record<string, string> = { unpaid: "pill-red", partial: "pill-amber", paid: "pill-green", cancelled: "pill-gray" };
 const STATUS_LABEL: Record<string, string> = { unpaid: "Unpaid", partial: "Part paid", paid: "Paid", cancelled: "Cancelled" };
 

@@ -316,7 +316,7 @@ const Staffs = () => {
                     <td>
                       <span className={`pill ${u.role === "admin" ? "pill-blue" : u.role === "finance" ? "pill-green" : "pill-gold"}`}>{roleLabel(u.role)}</span>
                     </td>
-                    <td className="hide-sm">{u.phone ? <span className="dt-mono">{u.phone}</span> : <span className="dt-muted">—</span>}</td>
+                    <td className="hide-sm">{u.phone ? <span className="dt-mono">{u.phone}</span> : <span className="dt-muted">-</span>}</td>
                     <td>
                       {u.hasFingerprint ? <span className="pill pill-green"><Fingerprint size={12} /> Enrolled</span> : <span className="pill pill-gray">Not enrolled</span>}
                     </td>

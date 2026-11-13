@@ -161,13 +161,13 @@ const ProcurementPage = () => {
                           </span>
                         </td>
                         <td className="num"><span className="dt-amount" style={{ color: m.type === "IN" ? "var(--color-status-success, #169A5B)" : "var(--amber)" }}>{m.type === "IN" ? "+" : "−"}{m.quantity.toLocaleString()} {m.inventoryItem.unit}</span></td>
-                        <td className="num hide-sm">{m.unitCost ? m.unitCost.toLocaleString() : "—"}</td>
+                        <td className="num hide-sm">{m.unitCost ? m.unitCost.toLocaleString() : "-"}</td>
                         <td className="num"><span className="dt-amount">{kes(m.value)}</span></td>
                         <td>
                           {m.type === "IN" ? (
-                            <span>{m.supplier ? displayName(m.supplier.name) : "—"}{m.reference && <div className="dt-muted dt-mono" style={{ fontSize: 11.5 }}>{m.reference}</div>}</span>
+                            <span>{m.supplier ? displayName(m.supplier.name) : "-"}{m.reference && <div className="dt-muted dt-mono" style={{ fontSize: 11.5 }}>{m.reference}</div>}</span>
                           ) : (
-                            <span>{m.issuedTo || (m.reason === "production" ? "Kitchen (recipe)" : "—")}{m.notes && <div className="dt-muted" style={{ fontSize: 11.5, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.notes}</div>}</span>
+                            <span>{m.issuedTo || (m.reason === "production" ? "Kitchen (recipe)" : "-")}{m.notes && <div className="dt-muted" style={{ fontSize: 11.5, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.notes}</div>}</span>
                           )}
                         </td>
                         <td className="hide-sm"><div className="dt-person"><Avatar name={m.recordedBy} size="sm" /><span style={{ color: "var(--ink-2)" }}>{displayName(m.recordedBy)}</span></div></td>
@@ -205,7 +205,7 @@ const ProcurementPage = () => {
                         <td className="num">{r.type === "IN" ? r.quantity.toLocaleString() : ""}</td>
                         <td className="num">{r.type === "OUT" ? r.quantity.toLocaleString() : ""}</td>
                         <td className="num"><span className="dt-amount">{r.balance.toLocaleString()}</span></td>
-                        <td>{r.type === "IN" ? r.supplier || "—" : r.issuedTo || (r.reason === "production" ? "Kitchen (recipe)" : "—")}</td>
+                        <td>{r.type === "IN" ? r.supplier || "-" : r.issuedTo || (r.reason === "production" ? "Kitchen (recipe)" : "-")}</td>
                         <td className="hide-sm">{displayName(r.recordedBy)}</td>
                       </tr>
                     ))}

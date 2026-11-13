@@ -48,7 +48,7 @@ const InventoryPage = () => {
       const { data } = await API.get<SupplierOption[]>("/inventory/suppliers");
       setSuppliers(data);
     } catch {
-      // Non-blocking — movements still work without supplier list
+      // Non-blocking: movements still work without supplier list
     }
   };
 

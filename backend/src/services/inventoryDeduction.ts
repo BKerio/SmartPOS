@@ -43,7 +43,7 @@ export async function deductStockForOrder(
     if (trackedStock < qty) {
       throw new Error(
         menuItem.batchYield
-          ? `INSUFFICIENT_STOCK:${menuItem.name} — cook a batch first`
+          ? `INSUFFICIENT_STOCK:${menuItem.name} (cook a batch first)`
           : `INSUFFICIENT_STOCK:${menuItem.name}`,
       );
     }

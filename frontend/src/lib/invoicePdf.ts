@@ -41,7 +41,7 @@ export type InvoicePdfData = {
 const STATUS_TEXT: Record<string, string> = { unpaid: "UNPAID", partial: "PART PAID", paid: "PAID IN FULL", cancelled: "CANCELLED" };
 const METHOD_TEXT: Record<string, string> = { mpesa: "M-Pesa", cash: "Cash", bank: "Bank", card: "Card" };
 const fmtDay = (iso?: string | null) =>
-  iso ? new Date(iso).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }) : "—";
+  iso ? new Date(iso).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }) : "-";
 
 function drawInvoice(doc: jsPDF, inv: InvoicePdfData, logo: ReceiptLogo | null): number {
   const cx = PAGE_W / 2;

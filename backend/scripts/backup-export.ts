@@ -28,7 +28,7 @@ async function main() {
   await new Promise<void>((resolve, reject) => stream.end((err?: Error | null) => (err ? reject(err) : resolve())));
 
   for (const [table, n] of Object.entries(counts)) console.log(`  ${table.padEnd(24)} ${n}`);
-  console.log(`\nDone — ${Object.values(counts).reduce((a, b) => a + b, 0)} rows.`);
+  console.log(`\nDone: ${Object.values(counts).reduce((a, b) => a + b, 0)} rows.`);
 }
 
 main()

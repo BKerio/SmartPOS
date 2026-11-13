@@ -158,7 +158,7 @@ const DailyReportPage = () => {
                       <td className="hide-sm"><span className="pill pill-gray">{i.category}</span></td>
                       <td className="num">{i.quantity.toLocaleString()}</td>
                       <td className="num"><span className="dt-amount">{kes(i.revenue)}</span></td>
-                      <td className="num hide-sm">{s!.salesAmount ? `${((i.revenue / s!.salesAmount) * 100).toFixed(0)}%` : "—"}</td>
+                      <td className="num hide-sm">{s!.salesAmount ? `${((i.revenue / s!.salesAmount) * 100).toFixed(0)}%` : "-"}</td>
                     </tr>
                   ))}</tbody>
                 </table></div>

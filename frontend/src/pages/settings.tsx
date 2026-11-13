@@ -187,7 +187,7 @@ const Settings = () => {
                         label: "Last till payment",
                         value: payments.latestPayment
                           ? `${kes(payments.latestPayment.amount)} · ${ago(payments.latestPayment.createdAt)}`
-                          : "—",
+                          : "-",
                       },
                     ]}
                   />

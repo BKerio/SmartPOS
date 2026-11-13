@@ -42,7 +42,7 @@ async function nextAttendanceType(userId: string): Promise<'check_in' | 'check_o
 
 export default async function attendanceRoutes(app: App) {
 
-  // GET /api/attendance/staff — public terminal staff picker
+  // GET /api/attendance/staff: public terminal staff picker
   app.get('/staff', async (_req: Req, res: FastifyReply): Promise<any> => {
     const dayStart = startOfLocalDay(new Date());
     const dayEnd = endOfLocalDay(new Date());
@@ -103,7 +103,7 @@ export default async function attendanceRoutes(app: App) {
     }
   });
 
-  // GET /api/attendance/staff/:userId/enrolled-fingerprint — terminal local verify
+  // GET /api/attendance/staff/:userId/enrolled-fingerprint: terminal local verify
   app.get('/staff/:userId/enrolled-fingerprint', async (req: Req, res: FastifyReply): Promise<any> => {
     try {
       const user = await prisma.user.findFirst({
@@ -119,7 +119,7 @@ export default async function attendanceRoutes(app: App) {
     }
   });
 
-  // POST /api/attendance/clock — public terminal (select profile + fingerprint scan)
+  // POST /api/attendance/clock: public terminal (select profile + fingerprint scan)
   app.post('/clock', async (req: Req, res: FastifyReply): Promise<any> => {
     const { fingerprintTemplate, userId, fingerprintMatchScore } = req.body;
 
@@ -242,7 +242,7 @@ export default async function attendanceRoutes(app: App) {
     }
   });
 
-  // GET /api/attendance/today — summary for today
+  // GET /api/attendance/today: summary for today
   app.get('/today', { onRequest: ensureAuthenticated }, async (req: Req, res: FastifyReply): Promise<any> => {
     if (!['admin', 'finance', 'restaurant'].includes(req.user!.role)) {
       return res.status(403).send({ message: 'Not authorized' });

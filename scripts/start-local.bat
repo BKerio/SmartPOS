@@ -1,5 +1,5 @@
 @echo off
-REM SmartPOS local stack — run each service in its own terminal, or use start-local.ps1
+REM SmartPOS local stack: run each service in its own terminal, or use start-local.ps1
 echo SmartPOS local setup
 echo.
 echo 1. Backend:    cd backend ^&^& npm run dev          (http://localhost:5000)

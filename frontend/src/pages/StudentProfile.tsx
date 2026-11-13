@@ -78,7 +78,7 @@ const StudentProfile = () => {
     }
   };
 
-  const category = me.category ? (me.category === "sponsored" ? "Sponsored" : me.category[0].toUpperCase() + me.category.slice(1)) : "—";
+  const category = me.category ? (me.category === "sponsored" ? "Sponsored" : me.category[0].toUpperCase() + me.category.slice(1)) : "-";
 
   return (
     <div className="ac-page">
@@ -147,7 +147,7 @@ const StudentProfile = () => {
               <InfoList
                 items={[
                   { label: "Admission no.", value: me.regNo, icon: Hash, mono: true },
-                  { label: "Class", value: me.className || "—", icon: GraduationCap },
+                  { label: "Class", value: me.className || "-", icon: GraduationCap },
                   ...(me.course ? [{ label: "Course", value: me.course, icon: BookOpen }] : []),
                   { label: "Category", value: category, icon: Wallet },
                 ]}

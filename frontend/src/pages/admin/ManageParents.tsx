@@ -256,7 +256,7 @@ const ManageParents: React.FC = () => {
                           {p.phone ? (
                             <a className="dt-mono" href={`tel:${p.phone}`} onClick={(e) => e.stopPropagation()}>{p.phone}</a>
                           ) : (
-                            <span className="dt-muted">—</span>
+                            <span className="dt-muted">-</span>
                           )}
                         </td>
                         <td className="hide-sm">
@@ -281,7 +281,7 @@ const ManageParents: React.FC = () => {
                           )}
                         </td>
                         <td className="num">
-                          {kids.length ? <span className="dt-amount">{kes(walletsOf(p))}</span> : <span className="dt-muted">—</span>}
+                          {kids.length ? <span className="dt-amount">{kes(walletsOf(p))}</span> : <span className="dt-muted">-</span>}
                         </td>
                         <td className="act" onClick={(e) => e.stopPropagation()}>
                           <button type="button" className="dt-icon" title="Edit parent" aria-label={`Edit ${p.name}`} onClick={() => editParent(p)}><Edit size={16} /></button>
