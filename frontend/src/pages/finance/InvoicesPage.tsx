@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { AlertTriangle, Banknote, FileText, Pencil, Plus, Printer, Search, Trash2, Wallet, X, XCircle } from "lucide-react";
+import { AlertTriangle, Banknote, Download, FileText, Pencil, Plus, Printer, Search, Trash2, Wallet, X, XCircle } from "lucide-react";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
@@ -9,6 +9,7 @@ import { Avatar, PersonCell, TablePager } from "@/components/page/DataTable";
 import InvoiceFormModal, { type EditableInvoice } from "@/components/invoices/InvoiceFormModal";
 import InvoicePaymentModal from "@/components/invoices/InvoicePaymentModal";
 import { useAuth } from "@/context/AuthContext";
+import { downloadInvoicePdf, printInvoicePdf } from "@/lib/invoicePdf";
 import { displayName, kes } from "@/lib/text";
 
 type Status = "open" | "unpaid" | "partial" | "paid" | "cancelled" | "all";
@@ -122,10 +123,19 @@ const InvoicesPage = () => {
     }
   };
 
-  const printInvoice = () => {
-    document.body.classList.add("printing-invoice");
-    window.addEventListener("afterprint", () => document.body.classList.remove("printing-invoice"), { once: true });
-    window.print();
+  // Same thermal-roll style as the POS receipt (lib/invoicePdf.ts).
+  const [pdfBusy, setPdfBusy] = useState<null | "print" | "download">(null);
+  const invoicePdf = async (inv: InvoiceDetail, action: "print" | "download") => {
+    setPdfBusy(action);
+    try {
+      const data = { ...inv, createdByName: inv.createdByName, waiterName: inv.waiterName };
+      if (action === "print") await printInvoicePdf(data);
+      else await downloadInvoicePdf(data);
+    } catch (e: any) {
+      toast.error(action === "print" ? "Could not print" : "Could not download", e?.message);
+    } finally {
+      setPdfBusy(null);
+    }
   };
 
   const s = data?.summary;
@@ -337,7 +347,8 @@ const InvoicesPage = () => {
               )}
             </div>
             <div className="iv-drawer-foot">
-              <button type="button" className="btn btn-ghost" onClick={printInvoice}><Printer size={16} /> Print</button>
+              <button type="button" className="btn btn-ghost" onClick={() => invoicePdf(detail, "print")} disabled={!!pdfBusy}><Printer size={16} /> {pdfBusy === "print" ? "Preparing…" : "Print"}</button>
+              <button type="button" className="btn btn-ghost" onClick={() => invoicePdf(detail, "download")} disabled={!!pdfBusy} title="Download PDF"><Download size={16} /> {pdfBusy === "download" ? "Preparing…" : "PDF"}</button>
               {canRaise && detail.status !== "cancelled" && (
                 <button type="button" className="btn btn-ghost" onClick={() => startEdit(detail.id)}><Pencil size={16} /> Edit</button>
               )}

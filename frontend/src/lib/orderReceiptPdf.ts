@@ -1,13 +1,14 @@
 import { jsPDF } from "jspdf";
 import defaultLogoUrl from "@/assets/LOGO.png";
+export { defaultLogoUrl };
 import type { OrderReceiptData } from "@/lib/orderReceiptTypes";
 
-const formatMoney = (amount: number) => `KES ${amount.toLocaleString()}`;
+export const formatMoney = (amount: number) => `KES ${amount.toLocaleString()}`;
 
-const formatDateTime = (iso: string) =>
+export const formatDateTime = (iso: string) =>
   new Date(iso).toLocaleString("en-KE", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 
-async function loadImageDataUrl(src: string): Promise<string | null> {
+export async function loadImageDataUrl(src: string): Promise<string | null> {
   try {
     const response = await fetch(src);
     const blob = await response.blob();
@@ -22,14 +23,14 @@ async function loadImageDataUrl(src: string): Promise<string | null> {
   }
 }
 
-type ReceiptLogo = { dataUrl: string; aspect: number };
+export type ReceiptLogo = { dataUrl: string; aspect: number };
 const logoCache = new Map<string, Promise<ReceiptLogo | null>>();
 
 /**
  * LOGO.png is a 1024x1024 square with the artwork in a band across the middle. Trim the white margins
  * so the logo itself can fill the receipt width, and keep every source pixel (lossless PNG).
  */
-function loadReceiptLogo(src: string): Promise<ReceiptLogo | null> {
+export function loadReceiptLogo(src: string): Promise<ReceiptLogo | null> {
   if (!logoCache.has(src)) {
     logoCache.set(
       src,
@@ -90,24 +91,24 @@ function safeFilename(receiptNo: string) {
   return `receipt-${receiptNo.replace(/[^a-z0-9-]/gi, "_")}.pdf`;
 }
 
-const PAGE_W = 80; // mm, standard thermal roll
+export const PAGE_W = 80; // mm, standard thermal roll
 /** Our Lipa na M-Pesa (Buy Goods) till, printed on every receipt. Override with VITE_TILL_NUMBER. */
-const TILL_NUMBER = String(import.meta.env.VITE_TILL_NUMBER || "3611959");
-const M = 5; // side margin
-const INK: [number, number, number] = [17, 24, 39];
-const MUTED: [number, number, number] = [100, 108, 120];
+export const TILL_NUMBER = String(import.meta.env.VITE_TILL_NUMBER || "3611959");
+export const M = 5; // side margin
+export const INK: [number, number, number] = [17, 24, 39];
+export const MUTED: [number, number, number] = [100, 108, 120];
 
-const titleCase = (s: string) =>
-  s === s.toUpperCase() || s === s.toLowerCase() ? s.toLowerCase().replace(/(^|[\s'-])\p{L}/gu, (c) => c.toUpperCase()) : s;
+export const titleCase = (s: string) =>
+  s === s.toUpperCase() || s === s.toLowerCase() ? s.toLowerCase().replace(/(^|[\s'(/-])\p{L}/gu, (c) => c.toUpperCase()) : s;
 
 /** Letter-spaced text. jsPDF ignores charSpace when centring/right-aligning, so place it by hand. */
-function spaced(doc: jsPDF, text: string, x: number, y: number, align: "left" | "center" | "right", charSpace: number) {
+export function spaced(doc: jsPDF, text: string, x: number, y: number, align: "left" | "center" | "right", charSpace: number) {
   const width = doc.getTextWidth(text) + charSpace * Math.max(0, text.length - 1);
   const left = align === "center" ? x - width / 2 : align === "right" ? x - width : x;
   doc.text(text, left, y, { charSpace });
 }
 
-function dashed(doc: jsPDF, y: number) {
+export function dashed(doc: jsPDF, y: number) {
   doc.setDrawColor(150, 156, 166);
   doc.setLineWidth(0.25);
   doc.setLineDashPattern([0.9, 0.9], 0);
