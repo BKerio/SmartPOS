@@ -130,7 +130,7 @@ const WalletAdjustModal = ({
         </div>
         <div className="fm-grid-2">
           <div className="field">
-            <FieldLabel htmlFor="wa-amount" required hint="KES">Amount(KSH)</FieldLabel>
+            <FieldLabel htmlFor="wa-amount" required hint="KES">Amount</FieldLabel>
             <input id="wa-amount" type="number" min={1} step="0.01" className="input" placeholder="e.g. 1000" value={amount} onChange={(e) => setAmount(e.target.value)} required />
           </div>
           <div className="field">
