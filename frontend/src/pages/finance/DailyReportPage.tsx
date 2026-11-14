@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChefHat, ChevronLeft, ChevronRight, Download, Flame, Printer, ShoppingBag, TrendingDown, TrendingUp, Truck } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { BarChart3, ChefHat, ChevronLeft, ChevronRight, Download, Flame, LineChart, Printer, ShoppingBag, TrendingDown, TrendingUp, Truck } from "lucide-react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
-import { PageHeader, StatTile, StatTiles } from "@/components/page/Page";
+import { PageHeader, Segmented, StatTile, StatTiles } from "@/components/page/Page";
 import { displayName, kes } from "@/lib/text";
 
 type Daily = {
@@ -48,6 +48,21 @@ function HourTooltip({ active, payload, label }: { active?: boolean; payload?: {
 
 const DailyReportPage = () => {
   const [date, setDate] = useState(eatToday());
+  const [chartType, setChartType] = useState<"lines" | "bars">(() => {
+    try {
+      return localStorage.getItem("dailyReport.chart") === "bars" ? "bars" : "lines";
+    } catch {
+      return "lines";
+    }
+  });
+  const pickChart = (t: "lines" | "bars") => {
+    setChartType(t);
+    try {
+      localStorage.setItem("dailyReport.chart", t);
+    } catch {
+      /* private mode: just don't remember */
+    }
+  };
   const [data, setData] = useState<Daily | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -66,6 +81,8 @@ const DailyReportPage = () => {
 
   const s = data?.summary;
   const change = s && s.previousSalesAmount > 0 ? ((s.salesAmount - s.previousSalesAmount) / s.previousSalesAmount) * 100 : null;
+  // One data set for both the line and the bar view of "Sales by hour".
+  const hourly = (data?.hourly ?? []).map((h) => ({ ...h, previousAmount: h.previousAmount ?? 0, label: `${String(h.hour).padStart(2, "0")}:00` }));
   const isToday = date === eatToday();
   const longDate = new Date(`${date}T12:00:00`).toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
@@ -130,7 +147,19 @@ const DailyReportPage = () => {
 
           <div className="dr-grid">
             <section className="card">
-              <div className="card-head"><span className="card-title">Sales by hour</span><span className="muted" style={{ fontSize: 12.5 }}>{s!.studentSales} student · {s!.guestSales} guest sales</span></div>
+              <div className="card-head" style={{ flexWrap: "wrap", gap: 10 }}>
+                <span className="card-title">Sales by hour</span>
+                <span className="muted dr-chart-counts" style={{ fontSize: 12.5 }}>{s!.studentSales} student · {s!.guestSales} guest sales</span>
+                <Segmented<"lines" | "bars">
+                  label="Chart type"
+                  value={chartType}
+                  onChange={pickChart}
+                  options={[
+                    { value: "lines", label: "Lines", icon: LineChart },
+                    { value: "bars", label: "Bars", icon: BarChart3 },
+                  ]}
+                />
+              </div>
               <div style={{ padding: "14px 16px 6px" }}>
                 <div className="db-legend" style={{ marginBottom: 10 }}>
                   <span><i style={{ background: "#1E3A8A" }} /> Sales · {kes(s!.salesAmount)}</span>
@@ -138,27 +167,35 @@ const DailyReportPage = () => {
                 </div>
                 <div style={{ width: "100%", height: 250 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <AreaChart
-                      data={data.hourly.map((h) => ({ ...h, previousAmount: h.previousAmount ?? 0, label: `${String(h.hour).padStart(2, "0")}:00` }))}
-                      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                    >
-                      <defs>
-                        <linearGradient id="drSales" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#1E3A8A" stopOpacity={0.22} />
-                          <stop offset="100%" stopColor="#1E3A8A" stopOpacity={0.02} />
-                        </linearGradient>
-                        <linearGradient id="drPrev" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#D4A017" stopOpacity={0.18} />
-                          <stop offset="100%" stopColor="#D4A017" stopOpacity={0.02} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid stroke="#E3E8E5" strokeDasharray="3 4" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 11.5, fill: "#6B7670" }} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={18} />
-                      <YAxis tick={{ fontSize: 11.5, fill: "#6B7670" }} tickLine={false} axisLine={false} width={44} tickFormatter={compactKes} />
-                      <Tooltip content={<HourTooltip />} cursor={{ stroke: "#D3DAD6" }} />
-                      <Area type="monotone" dataKey="previousAmount" stroke="#D4A017" strokeWidth={2.5} fill="url(#drPrev)" />
-                      <Area type="monotone" dataKey="amount" stroke="#1E3A8A" strokeWidth={2.5} fill="url(#drSales)" />
-                    </AreaChart>
+                    {chartType === "lines" ? (
+                      <AreaChart data={hourly} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="drSales" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#1E3A8A" stopOpacity={0.22} />
+                            <stop offset="100%" stopColor="#1E3A8A" stopOpacity={0.02} />
+                          </linearGradient>
+                          <linearGradient id="drPrev" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#D4A017" stopOpacity={0.18} />
+                            <stop offset="100%" stopColor="#D4A017" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke="#E3E8E5" strokeDasharray="3 4" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 11.5, fill: "#6B7670" }} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={18} />
+                        <YAxis tick={{ fontSize: 11.5, fill: "#6B7670" }} tickLine={false} axisLine={false} width={44} tickFormatter={compactKes} />
+                        <Tooltip content={<HourTooltip />} cursor={{ stroke: "#D3DAD6" }} />
+                        <Area type="monotone" dataKey="previousAmount" stroke="#D4A017" strokeWidth={2.5} fill="url(#drPrev)" />
+                        <Area type="monotone" dataKey="amount" stroke="#1E3A8A" strokeWidth={2.5} fill="url(#drSales)" />
+                      </AreaChart>
+                    ) : (
+                      <BarChart data={hourly} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2} barCategoryGap="12%">
+                        <CartesianGrid stroke="#E3E8E5" strokeDasharray="3 4" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 11.5, fill: "#6B7670" }} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={18} />
+                        <YAxis tick={{ fontSize: 11.5, fill: "#6B7670" }} tickLine={false} axisLine={false} width={44} tickFormatter={compactKes} />
+                        <Tooltip content={<HourTooltip />} cursor={{ fill: "#F1F5F3" }} />
+                        <Bar dataKey="amount" fill="#1E3A8A" radius={[4, 4, 0, 0]} maxBarSize={22} />
+                        <Bar dataKey="previousAmount" fill="#D4A017" radius={[4, 4, 0, 0]} maxBarSize={22} />
+                      </BarChart>
+                    )}
                   </ResponsiveContainer>
                 </div>
               </div>
