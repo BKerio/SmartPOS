@@ -20,11 +20,6 @@ function todayEat() {
   return new Date(Date.now() + EAT_OFFSET_MS).toISOString().slice(0, 10);
 }
 
-async function salesTotal(start: Date, end: Date) {
-  const r = await prisma.posTransaction.aggregate({ _sum: { totalAmount: true }, _count: true, where: { status: 'completed', createdAt: { gte: start, lt: end } } });
-  return { total: r._sum.totalAmount ?? 0, count: r._count };
-}
-
 export default async function reportRoutes(app: App) {
   app.get('/daily', { onRequest: ensureAuthenticated }, async (req: Req, res: FastifyReply): Promise<any> => {
     if (!['admin', 'finance', 'restaurant'].includes(req.user!.role)) return res.status(403).send({ message: 'Not authorized' });
@@ -58,7 +53,11 @@ export default async function reportRoutes(app: App) {
         prisma.salesInvoice.aggregate({ _count: true, _sum: { totalAmount: true }, where: { createdAt: range, status: { not: 'cancelled' } } }),
         prisma.invoicePayment.findMany({ where: { createdAt: range }, select: { amount: true, method: true } }),
         prisma.expense.aggregate({ _sum: { amount: true }, _count: true, where: { date: range } }),
-        salesTotal(prev.start, prev.end),
+        // Previous day by hour (for the comparison line on the chart); its total is summed below.
+        prisma.posTransaction.findMany({
+          where: { status: 'completed', createdAt: { gte: prev.start, lt: prev.end } },
+          select: { createdAt: true, totalAmount: true },
+        }),
       ]);
 
       // ── Sales ──
@@ -71,6 +70,12 @@ export default async function reportRoutes(app: App) {
         m.count++; m.amount += t.totalAmount; byMethod.set(t.paymentMethod, m);
         const h = new Date(t.createdAt.getTime() + EAT_OFFSET_MS).getUTCHours();
         byHour[h].amount += t.totalAmount; byHour[h].count++;
+      }
+      const prevByHour = new Array<number>(24).fill(0);
+      let previousTotal = 0;
+      for (const t of previous) {
+        previousTotal += t.totalAmount;
+        prevByHour[new Date(t.createdAt.getTime() + EAT_OFFSET_MS).getUTCHours()] += t.totalAmount;
       }
       const byItem = new Map<string, { menuItemId: string; name: string; category: string; quantity: number; revenue: number }>();
       for (const it of items) {
@@ -115,7 +120,7 @@ export default async function reportRoutes(app: App) {
         summary: {
           salesAmount: round2(salesAmount),
           salesCount: transactions.length,
-          previousSalesAmount: round2(previous.total),
+          previousSalesAmount: round2(previousTotal),
           invoicedAmount: round2(invoicedAmount),
           invoiceCount: invoicesRaised._count,
           collectedOnInvoices: round2(collectedOnInvoices),
@@ -133,7 +138,9 @@ export default async function reportRoutes(app: App) {
         invoicePaymentMethods: Object.entries(
           invoicePayments.reduce<Record<string, number>>((acc, p) => ({ ...acc, [p.method]: (acc[p.method] ?? 0) + p.amount }), {}),
         ).map(([method, amount]) => ({ method, amount: round2(amount) })),
-        hourly: byHour.filter((h) => h.hour >= 5 && h.hour <= 22).map((h) => ({ ...h, amount: round2(h.amount) })),
+        hourly: byHour
+          .filter((h) => h.hour >= 5 && h.hour <= 22)
+          .map((h) => ({ ...h, amount: round2(h.amount), previousAmount: round2(prevByHour[h.hour]) })),
         itemsSold: [...byItem.values()].map((r) => ({ ...r, revenue: round2(r.revenue) })).sort((a, b) => b.revenue - a.revenue),
         consumption: [...consumption.values()].filter((r) => r.quantity > 0.0001).map((r) => ({ ...r, quantity: round2(r.quantity), cost: round2(r.cost) })).sort((a, b) => b.cost - a.cost),
         purchases: [...purchases.values()].map((r) => ({ ...r, quantity: round2(r.quantity), cost: round2(r.cost) })).sort((a, b) => b.cost - a.cost),

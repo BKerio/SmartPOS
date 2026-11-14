@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ChefHat, ChevronLeft, ChevronRight, Download, Flame, Printer, ShoppingBag, TrendingDown, TrendingUp, Truck } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import Loader from "@/components/ui/loader";
@@ -16,7 +16,7 @@ type Daily = {
   };
   paymentMethods: { method: string; count: number; amount: number }[];
   invoicePaymentMethods: { method: string; amount: number }[];
-  hourly: { hour: number; amount: number; count: number }[];
+  hourly: { hour: number; amount: number; count: number; previousAmount?: number }[];
   itemsSold: { menuItemId: string; name: string; category: string; quantity: number; revenue: number }[];
   consumption: { inventoryItemId: string; name: string; unit: string; quantity: number; cost: number; reasons: Record<string, number> }[];
   purchases: { inventoryItemId: string; name: string; unit: string; quantity: number; cost: number }[];
@@ -27,6 +27,24 @@ const METHOD_LABEL: Record<string, string> = { wallet: "Student wallet", mpesa: 
 const REASON_LABEL: Record<string, string> = { production: "cooking", issue: "issued", usage: "other use", spoilage: "spoiled", adjustment: "correction", sale: "sold" };
 const eatToday = () => new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10);
 const shift = (date: string, days: number) => new Date(new Date(`${date}T12:00:00Z`).getTime() + days * 86400_000).toISOString().slice(0, 10);
+
+const compactKes = (n: number) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 10_000 ? `${Math.round(n / 1000)}k` : Math.round(n).toLocaleString();
+
+/** Same look as the dashboard's chart tooltip: the hour, then each line with its colour dot. */
+function HourTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number; dataKey: string; payload: { count: number } }[]; label?: string }) {
+  if (!active || !payload?.length) return null;
+  const v = (k: string) => payload.find((p) => p.dataKey === k)?.value ?? 0;
+  const count = payload[0]?.payload?.count ?? 0;
+  return (
+    <div className="card" style={{ padding: "10px 12px", fontSize: 12.5, boxShadow: "var(--shadow-md)", minWidth: 180 }}>
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
+      <div className="row" style={{ gap: 8 }}><i style={{ width: 8, height: 8, borderRadius: 99, background: "#1E3A8A", display: "inline-block" }} /> Sales <b style={{ marginLeft: "auto" }}>{kes(v("amount"))}</b></div>
+      <div className="row" style={{ gap: 8 }}><i style={{ width: 8, height: 8, borderRadius: 99, background: "#D4A017", display: "inline-block" }} /> Day before <b style={{ marginLeft: "auto" }}>{kes(v("previousAmount"))}</b></div>
+      <div className="muted" style={{ marginTop: 4, fontSize: 11.5 }}>{count} sale{count === 1 ? "" : "s"} this hour</div>
+    </div>
+  );
+}
 
 const DailyReportPage = () => {
   const [date, setDate] = useState(eatToday());
@@ -113,16 +131,36 @@ const DailyReportPage = () => {
           <div className="dr-grid">
             <section className="card">
               <div className="card-head"><span className="card-title">Sales by hour</span><span className="muted" style={{ fontSize: 12.5 }}>{s!.studentSales} student · {s!.guestSales} guest sales</span></div>
-              <div style={{ width: "100%", height: 240, padding: "12px 12px 4px" }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <BarChart data={data.hourly.map((h) => ({ ...h, label: `${String(h.hour).padStart(2, "0")}:00` }))} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                    <CartesianGrid stroke="#E3E8E5" strokeDasharray="3 4" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6B7670" }} tickLine={false} axisLine={false} interval={1} />
-                    <YAxis tick={{ fontSize: 11, fill: "#6B7670" }} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
-                    <Tooltip formatter={(v: number) => kes(v)} labelFormatter={(l) => `Hour ${l}`} cursor={{ fill: "#F1F5F3" }} />
-                    <Bar dataKey="amount" fill="#1E3A8A" radius={[6, 6, 0, 0]} maxBarSize={34} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div style={{ padding: "14px 16px 6px" }}>
+                <div className="db-legend" style={{ marginBottom: 10 }}>
+                  <span><i style={{ background: "#1E3A8A" }} /> Sales · {kes(s!.salesAmount)}</span>
+                  <span><i style={{ background: "#D4A017" }} /> Day before · {kes(s!.previousSalesAmount)}</span>
+                </div>
+                <div style={{ width: "100%", height: 250 }}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <AreaChart
+                      data={data.hourly.map((h) => ({ ...h, previousAmount: h.previousAmount ?? 0, label: `${String(h.hour).padStart(2, "0")}:00` }))}
+                      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient id="drSales" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#1E3A8A" stopOpacity={0.22} />
+                          <stop offset="100%" stopColor="#1E3A8A" stopOpacity={0.02} />
+                        </linearGradient>
+                        <linearGradient id="drPrev" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#D4A017" stopOpacity={0.18} />
+                          <stop offset="100%" stopColor="#D4A017" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="#E3E8E5" strokeDasharray="3 4" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 11.5, fill: "#6B7670" }} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={18} />
+                      <YAxis tick={{ fontSize: 11.5, fill: "#6B7670" }} tickLine={false} axisLine={false} width={44} tickFormatter={compactKes} />
+                      <Tooltip content={<HourTooltip />} cursor={{ stroke: "#D3DAD6" }} />
+                      <Area type="monotone" dataKey="previousAmount" stroke="#D4A017" strokeWidth={2.5} fill="url(#drPrev)" />
+                      <Area type="monotone" dataKey="amount" stroke="#1E3A8A" strokeWidth={2.5} fill="url(#drSales)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </section>
             <section className="card">
