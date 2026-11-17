@@ -424,7 +424,7 @@ model InvoicePayment {
 model SmsCampaign {
   id              String                 @id @default(cuid())
   title           String
-  message         String // template, may contain {name} {first_name} {student} {adm} {balance}
+  message         String // template, may contain {{name}} {{first_name}} {{student}} {{adm}} {{balance}}
   audience        String // parents_all | parents_selected | students_all | students_selected
   deliverTo       String                 @default("self") @map("deliver_to") // students: self | parent
   className       String?                @map("class_name") // students_all filtered to one class

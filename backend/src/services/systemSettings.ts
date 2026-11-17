@@ -4,10 +4,13 @@ import path from 'path';
 export type SystemSettings = {
   /** When true, no Advanta SMS is sent system-wide. */
   smsDisabled: boolean;
+  /** Signature added to the end of SMS campaign messages, e.g. "From Nancy Kemboi - BetterFork Restaurant Limited." */
+  smsSignature: string;
 };
 
 const DEFAULTS: SystemSettings = {
   smsDisabled: false,
+  smsSignature: '',
 };
 
 const SETTINGS_PATH = path.join(process.cwd(), 'data', 'system-settings.json');
@@ -20,6 +23,7 @@ function readFromDisk(): SystemSettings {
     const parsed = JSON.parse(raw) as Partial<SystemSettings>;
     return {
       smsDisabled: Boolean(parsed.smsDisabled),
+      smsSignature: typeof parsed.smsSignature === 'string' ? parsed.smsSignature : '',
     };
   } catch {
     return { ...DEFAULTS };

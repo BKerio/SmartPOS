@@ -313,3 +313,11 @@ tr.row-new > td { animation: row-new 3.5s ease-out; }
 .cp-recipients b { display: block; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cp-recipients small { display: block; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 520px) { .cp-stats b { font-size: 16px; } }
+.cp-hint { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.cp-hint code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
+.cp-tabs { display: flex; gap: 4px; padding: 8px 10px 0; background: var(--surface-2); }
+.cp-tabs button { display: inline-flex; align-items: center; gap: 7px; border: 1px solid transparent; border-bottom: 0; background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); padding: 8px 14px; border-radius: 9px 9px 0 0; cursor: pointer; }
+.cp-tabs button.on { background: var(--surface); border-color: var(--border); color: var(--ink); }
+.cp-tab-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: var(--green); color: #fff; font-size: 11px; display: inline-grid; place-items: center; }
+.cp-sig-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cp-sig-head .fm-label, .cp-sig-head label { flex: 1; margin-bottom: 6px; }

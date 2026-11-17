@@ -7,9 +7,15 @@ import { normalizeKenyanMobile, sendAdvantaSms, isSmsSendingEnabled } from '@/se
  * pages over socket.io ("campaign:progress"), and a campaign interrupted by a restart resumes on start-up.
  */
 
-export type Audience = 'parents_all' | 'parents_selected' | 'students_all' | 'students_selected';
-export const AUDIENCES: Audience[] = ['parents_all', 'parents_selected', 'students_all', 'students_selected'];
-export const PLACEHOLDERS = ['{name}', '{first_name}', '{student}', '{adm}', '{balance}'] as const;
+export type Audience =
+  | 'parents_all'
+  | 'parents_selected'
+  | 'students_all'
+  | 'students_selected'
+  | 'everyone' // all parents + all students
+  | 'mixed_selected'; // chosen parents + chosen students
+export const AUDIENCES: Audience[] = ['parents_all', 'parents_selected', 'students_all', 'students_selected', 'everyone', 'mixed_selected'];
+export const PLACEHOLDERS = ['{{name}}', '{{first_name}}', '{{student}}', '{{adm}}', '{{balance}}'] as const;
 
 type Draft = {
   recipientType: 'parent' | 'student';
@@ -26,6 +32,8 @@ const titleCase = (s: string) =>
 export function personalise(template: string, v: Draft['vars']): string {
   const name = titleCase(v.name || '').trim();
   return template
+    // {{name}} is the documented form; {name} still works. Spaces inside the braces are allowed.
+    .replace(/\{\{\s*(\w+)\s*\}\}/g, '{$1}')
     .replace(/\{name\}/g, name)
     .replace(/\{first_name\}/g, name.split(/\s+/)[0] || '')
     .replace(/\{student\}/g, v.student ? titleCase(v.student) : '')
@@ -37,15 +45,15 @@ export function personalise(template: string, v: Draft['vars']): string {
 
 /** SMS parts: 160 chars for one part, 153 per part when split (GSM-7). Unicode (emoji etc.) is 70 / 67. */
 export function smsParts(text: string): number {
-  const unicode = /[^\u0000-ÿ]/.test(text);
+  const unicode = /[^\x00-\xff]/.test(text);
   const single = unicode ? 70 : 160;
   const multi = unicode ? 67 : 153;
   return text.length <= single ? 1 : Math.ceil(text.length / multi);
 }
 
 /** Everyone the audience covers, with why anyone won't receive it (no phone, opted out, duplicate number). */
-export async function resolveAudience(opts: {
-  audience: Audience;
+async function draftsFor(opts: {
+  audience: 'parents_all' | 'parents_selected' | 'students_all' | 'students_selected';
   ids?: string[];
   deliverTo?: 'self' | 'parent';
   className?: string | null;
@@ -99,7 +107,37 @@ export async function resolveAudience(opts: {
     }
   }
 
-  // Phone checks + one message per number (a parent of three children gets it once).
+  return drafts;
+}
+
+/** Everyone the audience covers, with why anyone won't receive it (no phone, opted out, duplicate number). */
+export async function resolveAudience(opts: {
+  audience: Audience;
+  ids?: string[];
+  parentIds?: string[];
+  studentIds?: string[];
+  deliverTo?: 'self' | 'parent';
+  className?: string | null;
+}): Promise<Draft[]> {
+  let drafts: Draft[];
+  if (opts.audience === 'everyone') {
+    const [parents, students] = await Promise.all([
+      draftsFor({ audience: 'parents_all' }),
+      draftsFor({ audience: 'students_all', deliverTo: opts.deliverTo, className: opts.className }),
+    ]);
+    drafts = [...parents, ...students];
+  } else if (opts.audience === 'mixed_selected') {
+    const [parents, students] = await Promise.all([
+      opts.parentIds?.length ? draftsFor({ audience: 'parents_selected', ids: opts.parentIds }) : Promise.resolve([]),
+      opts.studentIds?.length ? draftsFor({ audience: 'students_selected', ids: opts.studentIds, deliverTo: opts.deliverTo }) : Promise.resolve([]),
+    ]);
+    drafts = [...parents, ...students];
+  } else {
+    drafts = await draftsFor({ audience: opts.audience, ids: opts.ids, deliverTo: opts.deliverTo, className: opts.className });
+  }
+
+  // Phone checks + one message per number across the whole list (a parent of three children, or a parent
+  // who is also reached through their child, gets it once).
   const seen = new Set<string>();
   for (const d of drafts) {
     if (d.skip) continue;

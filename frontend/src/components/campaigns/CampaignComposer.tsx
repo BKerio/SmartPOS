@@ -4,9 +4,12 @@ import FormModal, { ChoiceCards, ChoicePills, FieldLabel, FormSection } from "@/
 import API from "@/services/api";
 import { toast } from "@/services/toast";
 import { displayName } from "@/lib/text";
+import { useAuth } from "@/context/AuthContext";
+import { Switch } from "@/components/account/Account";
 
-export type Audience = "parents_all" | "parents_selected" | "students_all" | "students_selected";
-type Person = { id: string; name: string; detail?: string; phone: string | null; parentPhone?: string | null; optedOut?: boolean };
+export type Audience = "parents_all" | "parents_selected" | "students_all" | "students_selected" | "everyone" | "mixed_selected";
+type Kind = "parents" | "students";
+type Person = { id: string; name: string; detail?: string; phone: string | null; parentPhone?: string | null; optedOut?: boolean; kind?: Kind };
 type Preview = {
   total: number;
   reachable: number;
@@ -19,14 +22,16 @@ type Preview = {
 
 const MAX_LEN = 640;
 const FIELDS = [
-  { token: "{first_name}", label: "First name" },
-  { token: "{name}", label: "Full name" },
-  { token: "{student}", label: "Student" },
-  { token: "{adm}", label: "Adm no." },
-  { token: "{balance}", label: "Wallet balance" },
+  { token: "{{name}}", label: "Full name" },
+  { token: "{{first_name}}", label: "First name" },
+  { token: "{{student}}", label: "Student" },
+  { token: "{{adm}}", label: "Adm no." },
+  { token: "{{balance}}", label: "Wallet balance" },
 ];
+// GSM-7 / Latin-1 fits 160 chars per SMS; anything beyond (emoji, other scripts) switches to Unicode (70).
+const isUnicode = (text: string) => /[^\x00-\xff]/.test(text);
 const parts = (text: string) => {
-  const unicode = /[^\u0000-ÿ]/.test(text);
+  const unicode = isUnicode(text);
   const single = unicode ? 70 : 160;
   const multi = unicode ? 67 : 153;
   return text.length <= single ? 1 : Math.ceil(text.length / multi);
@@ -37,38 +42,53 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
   const [audience, setAudience] = useState<Audience>("parents_all");
   const [deliverTo, setDeliverTo] = useState<"self" | "parent">("parent");
   const [className, setClassName] = useState("");
-  const [picked, setPicked] = useState<Map<string, Person>>(new Map());
+  // Picks remember whether each person is a parent or a student, so both can be chosen for one campaign.
+  const [picked, setPicked] = useState<Map<string, Person & { kind: Kind }>>(new Map());
+  const [tab, setTab] = useState<Kind>("parents");
   const [search, setSearch] = useState("");
   const [people, setPeople] = useState<Person[]>([]);
   const [classes, setClasses] = useState<{ name: string; count: number }[]>([]);
   const [loadingPeople, setLoadingPeople] = useState(false);
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
+  // Signature on its own line at the end of every message. Defaults to the last one used (shared by all
+  // admins), or "From <your name> - BetterFork Restaurant Limited." the first time.
+  const { user } = useAuth();
+  const [useSignature, setUseSignature] = useState(true);
+  const [signature, setSignature] = useState("");
+  useEffect(() => {
+    const fallback = `From ${displayName(user?.name || "") || "the Admin"} - BetterFork Restaurant Limited.`;
+    API.get<{ signature?: string }>("/campaigns/status")
+      .then(({ data }) => setSignature(data.signature?.trim() || fallback))
+      .catch(() => setSignature(fallback));
+  }, [user?.name]);
+  const sig = useSignature ? signature.trim() : "";
+  /** Exactly what each person receives (before their personal fields are filled in). */
+  const fullText = sig ? `${message.trim()}\n${sig}` : message;
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [sending, setSending] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
-  const forStudents = audience.startsWith("students");
   const choosing = audience.endsWith("_selected");
-
-  // Switching between parents and students starts the selection again.
-  useEffect(() => {
-    setPicked(new Map());
-    setSearch("");
-  }, [forStudents]);
+  const mixed = audience === "mixed_selected";
+  /** Students are (also) in this audience: the "send to" choice applies. */
+  const withStudents = audience.startsWith("students") || audience === "everyone" || mixed;
+  /** Which list the picker shows right now. */
+  const listKind: Kind = mixed ? tab : audience.startsWith("students") ? "students" : "parents";
+  const forStudents = listKind === "students";
 
   // People for the picker (and the class list for students).
   useEffect(() => {
-    if (!choosing && !(forStudents && classes.length === 0)) return;
+    if (!choosing && !(audience === "students_all" && classes.length === 0)) return;
     const t = window.setTimeout(async () => {
       setLoadingPeople(true);
       try {
         const { data } = await API.get<{ rows: Person[]; classes: { name: string; count: number }[] }>("/campaigns/recipients", {
-          params: { type: forStudents ? "students" : "parents", ...(search.trim() ? { search: search.trim() } : {}) },
+          params: { type: choosing ? listKind : "students", ...(search.trim() ? { search: search.trim() } : {}) },
         });
-        setPeople(data.rows);
-        if (forStudents && data.classes.length) setClasses(data.classes);
+        setPeople(data.rows.map((r) => ({ ...r, kind: choosing ? listKind : "students" })));
+        if (data.classes.length) setClasses(data.classes);
       } catch {
         setPeople([]);
       } finally {
@@ -76,25 +96,30 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
       }
     }, 250);
     return () => window.clearTimeout(t);
-  }, [choosing, forStudents, search, classes.length]);
+  }, [choosing, listKind, audience, search, classes.length]);
 
   // Live preview: who gets it, who doesn't and why, SMS count, and a sample text.
-  const ids = useMemo(() => [...picked.keys()], [picked]);
+  const parentIds = useMemo(() => [...picked.values()].filter((p) => p.kind === "parents").map((p) => p.id), [picked]);
+  const studentIds = useMemo(() => [...picked.values()].filter((p) => p.kind === "students").map((p) => p.id), [picked]);
+  const chosenCount =
+    audience === "parents_selected" ? parentIds.length : audience === "students_selected" ? studentIds.length : mixed ? parentIds.length + studentIds.length : 0;
+  const audiencePayload = () => ({
+    audience,
+    ...(audience === "parents_selected" ? { ids: parentIds } : {}),
+    ...(audience === "students_selected" ? { ids: studentIds } : {}),
+    ...(mixed ? { parentIds, studentIds } : {}),
+    ...(withStudents ? { deliverTo } : {}),
+    ...(audience === "students_all" && className ? { className } : {}),
+  });
   useEffect(() => {
-    if (choosing && ids.length === 0) {
+    if (choosing && chosenCount === 0) {
       setPreview(null);
       return;
     }
     const t = window.setTimeout(async () => {
       setPreviewing(true);
       try {
-        const { data } = await API.post<Preview>("/campaigns/preview", {
-          audience,
-          ids: choosing ? ids : undefined,
-          deliverTo: forStudents ? deliverTo : undefined,
-          className: audience === "students_all" && className ? className : undefined,
-          message,
-        });
+        const { data } = await API.post<Preview>("/campaigns/preview", { ...audiencePayload(), message, ...(sig ? { signature: sig } : {}) });
         setPreview(data);
       } catch {
         setPreview(null);
@@ -103,7 +128,8 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
       }
     }, 400);
     return () => window.clearTimeout(t);
-  }, [audience, ids, deliverTo, className, message, choosing, forStudents]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audience, parentIds, studentIds, deliverTo, className, message, sig, choosing, chosenCount]);
 
   const insert = (token: string) => {
     const el = textRef.current;
@@ -117,28 +143,33 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
     });
   };
 
+  const keyOf = (p: Person) => `${p.kind ?? listKind}:${p.id}`;
   const toggle = (p: Person) =>
     setPicked((m) => {
       const next = new Map(m);
-      if (next.has(p.id)) next.delete(p.id);
-      else next.set(p.id, p);
+      const k = keyOf(p);
+      if (next.has(k)) next.delete(k);
+      else next.set(k, { ...p, kind: p.kind ?? listKind });
       return next;
     });
   const reachableShown = (p: Person) => (forStudents && deliverTo === "parent" ? p.parentPhone : p.phone) && !p.optedOut;
 
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
   const audienceLabel =
     audience === "parents_all" ? "All parents"
-      : audience === "parents_selected" ? `${picked.size} chosen parent${picked.size === 1 ? "" : "s"}`
+      : audience === "parents_selected" ? plural(parentIds.length, "chosen parent")
         : audience === "students_all" ? (className ? `Students in ${className}` : "All students")
-          : `${picked.size} chosen student${picked.size === 1 ? "" : "s"}`;
-  const len = message.length;
-  const canSend = smsReady && !!message.trim() && !!preview && preview.reachable > 0 && !(choosing && picked.size === 0);
+          : audience === "students_selected" ? plural(studentIds.length, "chosen student")
+            : audience === "everyone" ? "All parents and students"
+              : `${plural(parentIds.length, "parent")} + ${plural(studentIds.length, "student")}`;
+  const len = fullText.length;
+  const canSend = smsReady && !!message.trim() && !!preview && preview.reachable > 0 && !(choosing && chosenCount === 0);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSend || !preview) return;
     const ok = await toast.confirm(`Send this SMS to ${preview.reachable.toLocaleString()} ${preview.reachable === 1 ? "person" : "people"}?`, {
-      description: `${audienceLabel}${forStudents ? (deliverTo === "parent" ? ", sent to their parents' phones" : ", sent to the students' own phones") : ""}.`,
+      description: `${audienceLabel}${withStudents ? (deliverTo === "parent" ? ", sent to their parents' phones" : ", sent to the students' own phones") : ""}.`,
       points: [
         `${preview.smsUnits.toLocaleString()} SMS in total (${preview.smsParts} per message)`,
         ...(preview.skipped ? [`${preview.skipped} won't get it (no phone, opted out or duplicate number)`] : []),
@@ -151,12 +182,11 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
     setSending(true);
     try {
       const { data } = await API.post<{ id: string }>("/campaigns", {
+        ...audiencePayload(),
         title: title.trim() || undefined,
         message: message.trim(),
-        audience,
-        ids: choosing ? ids : undefined,
-        deliverTo: forStudents ? deliverTo : undefined,
-        className: audience === "students_all" && className ? className : undefined,
+        // only sent when ticked, so unticking for one campaign doesn't erase the saved default
+        ...(sig ? { signature: sig } : {}),
       });
       toast.success("Campaign started", `Sending to ${preview.reachable.toLocaleString()} ${preview.reachable === 1 ? "person" : "people"}. Progress updates live.`);
       onSent(data.id);
@@ -171,9 +201,9 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
     <FormModal
       icon={Send}
       title="New SMS campaign"
-      subtitle="Send an announcement to parents or students. Personal fields like {first_name} are filled in for each person."
+      subtitle="Send an announcement to parents or students. Personal fields like {{name}} are filled in for each person."
       steps={[
-        { id: "audience", label: "Audience", done: !choosing || picked.size > 0 },
+        { id: "audience", label: "Audience", done: !choosing || chosenCount > 0 },
         { id: "message", label: "Message", done: !!message.trim() },
         { id: "review", label: "Review", done: canSend },
       ]}
@@ -203,13 +233,15 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
             { value: "parents_selected", label: "Choose parents", sub: "Pick one or more parents", tile: "CP" },
             { value: "students_all", label: "All students", sub: "Everyone, or one class", tile: "AS" },
             { value: "students_selected", label: "Choose students", sub: "Pick one or more students", tile: "CS" },
+            { value: "everyone", label: "Everyone", sub: "All parents and all students", tile: "ALL" },
+            { value: "mixed_selected", label: "Choose parents & students", sub: "Pick from both lists", tile: "P+S" },
           ]}
           selected={[audience]}
           onToggle={(v) => setAudience(v as Audience)}
         />
-        {forStudents && (
+        {withStudents && (
           <div className="field">
-            <FieldLabel>Send to</FieldLabel>
+            <FieldLabel hint={audience === "everyone" || mixed ? "Applies to the students in this audience" : undefined}>Send student messages to</FieldLabel>
             <ChoicePills<"self" | "parent">
               label="Send to"
               value={deliverTo}
@@ -234,20 +266,33 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
         )}
         {choosing && (
           <div className="cp-picker">
+            {mixed && (
+              <div className="cp-tabs" role="tablist" aria-label="List">
+                {(["parents", "students"] as Kind[]).map((k) => {
+                  const n = k === "parents" ? parentIds.length : studentIds.length;
+                  return (
+                    <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); setSearch(""); }}>
+                      {k === "parents" ? "Parents" : "Students"}
+                      {n > 0 && <span className="cp-tab-count">{n}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <div className="cp-picker-head">
               <div className="input-icon" style={{ flex: 1 }}>
                 <input className="input" placeholder={forStudents ? "Search name, admission no. or phone" : "Search name or phone"} value={search} onChange={(e) => setSearch(e.target.value)} />
                 <Search />
               </div>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPicked((m) => { const n = new Map(m); people.filter(reachableShown).forEach((p) => n.set(p.id, p)); return n; })} disabled={!people.length}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPicked((m) => { const n = new Map(m); people.filter(reachableShown).forEach((p) => n.set(keyOf(p), { ...p, kind: p.kind ?? listKind })); return n; })} disabled={!people.length}>
                 Select shown
               </button>
-              {picked.size > 0 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPicked(new Map())}>Clear ({picked.size})</button>}
+              {chosenCount > 0 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPicked(new Map())}>Clear ({chosenCount})</button>}
             </div>
             <ul className="cp-list" aria-label="People" aria-busy={loadingPeople}>
               {!loadingPeople && people.length === 0 && <li className="cp-empty">No one matches.</li>}
               {people.map((p) => {
-                const on = picked.has(p.id);
+                const on = picked.has(keyOf(p));
                 const phone = forStudents && deliverTo === "parent" ? p.parentPhone : p.phone;
                 return (
                   <li key={p.id}>
@@ -274,14 +319,14 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
           <input id="cp-title" className="input" placeholder="e.g. Term 3 fees reminder" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
         </div>
         <div className="field">
-          <FieldLabel htmlFor="cp-msg" required>Text message</FieldLabel>
+          <FieldLabel htmlFor="cp-msg" required hint={`${len} chars · ${parts(fullText || " ")} SMS (${isUnicode(fullText) ? "Unicode" : "GSM-7"})`}>Message</FieldLabel>
           <textarea
             id="cp-msg"
             ref={textRef}
             className="input"
             rows={5}
             maxLength={MAX_LEN}
-            placeholder="Dear {first_name}, the cafeteria will be closed on Friday for maintenance. Better Forks."
+            placeholder="Hi {{name}}, ..."
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             style={{ resize: "vertical", minHeight: 110 }}
@@ -294,8 +339,32 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
                 </button>
               ))}
             </div>
-            <span className={`cp-count${len > 480 ? " warn" : ""}`}>{len}/{MAX_LEN} · {parts(message || " ")} SMS</span>
+            <span className={`cp-count${len > 480 ? " warn" : ""}`}>{len}/{MAX_LEN}</span>
           </div>
+          <p className="cp-hint">
+            Use <code>{"{{name}}"}</code> to personalise with each recipient's name. The buttons above add other fields:{" "}
+            <code>{"{{first_name}}"}</code>, <code>{"{{student}}"}</code>, <code>{"{{adm}}"}</code>, <code>{"{{balance}}"}</code>.
+          </p>
+        </div>
+        <div className="field">
+          <div className="cp-sig-head">
+            <FieldLabel htmlFor="cp-sig" hint="Added to the end of every message">Signature</FieldLabel>
+            <Switch id="cp-sig-on" label="Add signature" checked={useSignature} onChange={setUseSignature} />
+          </div>
+          <input
+            id="cp-sig"
+            className="input"
+            maxLength={80}
+            placeholder="From Nancy Kemboi - BetterFork Restaurant Limited."
+            value={signature}
+            onChange={(e) => setSignature(e.target.value)}
+            disabled={!useSignature}
+          />
+          <p className="cp-hint" style={{ marginTop: 6 }}>
+            {useSignature
+              ? "No need to type it in the message. The one you send with is remembered for next time."
+              : "No signature on this campaign."}
+          </p>
         </div>
       </FormSection>
 

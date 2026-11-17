@@ -4,7 +4,7 @@ import prisma from '@/services/prisma';
 import { ensureAdmin } from '@/middleware/auth';
 import { logAuditEvent } from '@/services/audit';
 import { isAdvantaSmsConfigured, isSmsSendingEnabled } from '@/services/sms';
-import { isSmsGloballyDisabled } from '@/services/systemSettings';
+import { getSystemSettings, isSmsGloballyDisabled, setSystemSettings } from '@/services/systemSettings';
 import { AUDIENCES, personalise, resolveAudience, runCampaign, summarise, type Audience } from '@/services/smsCampaigns';
 
 /*
@@ -23,16 +23,37 @@ import { AUDIENCES, personalise, resolveAudience, runCampaign, summarise, type A
 const MAX_LEN = 640; // 4 SMS parts
 const MAX_SELECTED = 2000;
 
-type Body = { title?: string; message?: string; audience?: Audience; ids?: string[]; deliverTo?: 'self' | 'parent'; className?: string | null };
+type Body = {
+  title?: string;
+  message?: string;
+  audience?: Audience;
+  ids?: string[];
+  parentIds?: string[]; // mixed_selected
+  studentIds?: string[]; // mixed_selected
+  deliverTo?: 'self' | 'parent';
+  className?: string | null;
+  /** Added on its own line at the end of every message. Empty = no signature. */
+  signature?: string;
+};
+
+const MAX_SIGNATURE = 80;
+/** The text that is actually sent: the message, then the signature on its own line. */
+const withSignature = (message: string, signature?: string) => {
+  const sig = (signature ?? '').trim();
+  return sig ? `${message.trim()}\n${sig}` : message.trim();
+};
+const includesStudents = (a: Audience) => a.startsWith('students') || a === 'everyone' || a === 'mixed_selected';
 
 function validate(body: Body, needMessage: boolean): string | null {
   if (!body.audience || !AUDIENCES.includes(body.audience)) return 'Choose who should get the message';
-  if (body.audience.endsWith('_selected') && !(body.ids?.length)) return 'Pick at least one person';
-  if ((body.ids?.length ?? 0) > MAX_SELECTED) return `Pick at most ${MAX_SELECTED} people, or send to everyone`;
+  const picked = body.audience === 'mixed_selected' ? (body.parentIds?.length ?? 0) + (body.studentIds?.length ?? 0) : body.ids?.length ?? 0;
+  if (body.audience.endsWith('_selected') && picked === 0) return 'Pick at least one person';
+  if (picked > MAX_SELECTED) return `Pick at most ${MAX_SELECTED} people, or send to everyone`;
   if (needMessage) {
     const m = (body.message ?? '').trim();
     if (!m) return 'Write the message';
-    if (m.length > MAX_LEN) return `Keep the message under ${MAX_LEN} characters (4 SMS)`;
+    if ((body.signature ?? '').trim().length > MAX_SIGNATURE) return `Keep the signature under ${MAX_SIGNATURE} characters`;
+    if (withSignature(m, body.signature).length > MAX_LEN) return `Keep the message and signature under ${MAX_LEN} characters (4 SMS)`;
   }
   return null;
 }
@@ -42,6 +63,7 @@ export default async function campaignRoutes(app: App) {
     configured: isAdvantaSmsConfigured(),
     paused: isSmsGloballyDisabled(),
     canSend: isSmsSendingEnabled(),
+    signature: getSystemSettings().smsSignature,
   }));
 
   app.get('/recipients', { onRequest: ensureAdmin }, async (req: Req): Promise<any> => {
@@ -81,8 +103,8 @@ export default async function campaignRoutes(app: App) {
     const body = (req.body ?? {}) as Body;
     const err = validate(body, false);
     if (err) return res.status(422).send({ message: err });
-    const drafts = await resolveAudience({ audience: body.audience!, ids: body.ids, deliverTo: body.deliverTo, className: body.className });
-    return summarise(drafts, (body.message ?? '').trim());
+    const drafts = await resolveAudience({ audience: body.audience!, ids: body.ids, parentIds: body.parentIds, studentIds: body.studentIds, deliverTo: body.deliverTo, className: body.className });
+    return summarise(drafts, withSignature(body.message ?? '', body.signature));
   });
 
   app.post('/', { onRequest: ensureAdmin }, async (req: Req, res: FastifyReply): Promise<any> => {
@@ -92,8 +114,8 @@ export default async function campaignRoutes(app: App) {
     if (!isSmsSendingEnabled()) {
       return res.status(409).send({ message: isSmsGloballyDisabled() ? 'SMS is paused in Settings. Turn it on to send campaigns.' : 'SMS is not set up on the server yet.' });
     }
-    const message = body.message!.trim();
-    const drafts = await resolveAudience({ audience: body.audience!, ids: body.ids, deliverTo: body.deliverTo, className: body.className });
+    const message = withSignature(body.message!, body.signature);
+    const drafts = await resolveAudience({ audience: body.audience!, ids: body.ids, parentIds: body.parentIds, studentIds: body.studentIds, deliverTo: body.deliverTo, className: body.className });
     const summary = summarise(drafts, message);
     if (summary.reachable === 0) return res.status(422).send({ message: 'Nobody in this audience can receive an SMS (no valid phone numbers).' });
 
@@ -103,8 +125,8 @@ export default async function campaignRoutes(app: App) {
         title,
         message,
         audience: body.audience!,
-        deliverTo: body.audience!.startsWith('students') ? body.deliverTo ?? 'self' : 'self',
-        className: body.audience === 'students_all' ? body.className || null : null,
+        deliverTo: includesStudents(body.audience!) ? body.deliverTo ?? 'self' : 'self',
+        className: body.audience === 'students_all' || body.audience === 'everyone' ? body.className || null : null,
         totalRecipients: drafts.length,
         skippedCount: summary.skipped,
         smsParts: summary.smsParts,
@@ -133,6 +155,9 @@ export default async function campaignRoutes(app: App) {
       metadata: { campaignId: campaign.id },
       ipAddress: req.ip,
     });
+    if (body.signature !== undefined && body.signature.trim() !== getSystemSettings().smsSignature) {
+      setSystemSettings({ smsSignature: body.signature.trim() });
+    }
     void runCampaign(campaign.id);
     return res.status(201).send({ ...campaign, preview: summary });
   });

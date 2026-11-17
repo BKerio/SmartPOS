@@ -44,6 +44,8 @@ const AUDIENCE_LABEL: Record<Audience, string> = {
   parents_selected: "Chosen parents",
   students_all: "All students",
   students_selected: "Chosen students",
+  everyone: "Everyone",
+  mixed_selected: "Chosen parents & students",
 };
 const STATUS: Record<Campaign["status"], { cls: string; label: string }> = {
   sending: { cls: "pill-blue", label: "Sending" },
@@ -59,7 +61,7 @@ const R_STATUS: Record<Recipient["status"], { cls: string; label: string }> = {
 };
 const when = (iso: string) => new Date(iso).toLocaleString("en-KE", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 const audienceText = (c: Campaign) =>
-  `${AUDIENCE_LABEL[c.audience]}${c.className ? ` · ${c.className}` : ""}${c.audience.startsWith("students") ? (c.deliverTo === "parent" ? " · to parents" : " · own phones") : ""}`;
+  `${AUDIENCE_LABEL[c.audience]}${c.className ? ` · ${c.className}` : ""}${c.audience.startsWith("students") || c.audience === "everyone" || c.audience === "mixed_selected" ? (c.deliverTo === "parent" ? " · students via parents" : " · students' own phones") : ""}`;
 
 function Progress({ c }: { c: Campaign }) {
   const target = Math.max(1, c.totalRecipients - c.skippedCount);
