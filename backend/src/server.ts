@@ -6,6 +6,7 @@ import { LIVE_KEY, collectionsFingerprint, getCollectionsFast, onCollectionsRebu
 import { buildCollections } from '@/modules/finance/finance.routes';
 import { warmStaffNames } from '@/services/staffNames';
 import { backfillDailyNumbers } from '@/modules/pos/pos.routes';
+import { resumeCampaigns, setCampaignEmitter } from '@/services/smsCampaigns';
 
 async function main() {
   const app = await buildApp();
@@ -37,6 +38,11 @@ async function main() {
     });
     getCollectionsFast(LIVE_KEY, () => buildCollections(undefined)).catch((err) => console.error('Collections warm-up failed:', err?.message || err));
     void warmStaffNames();
+    // SMS campaigns: push progress to open pages, and finish any that a restart interrupted.
+    setCampaignEmitter((event, payload) => app.io.emit(event, payload));
+    resumeCampaigns()
+      .then((n) => n > 0 && console.log(`Resumed ${n} SMS campaign(s)`))
+      .catch((err) => console.error('Resuming SMS campaigns failed:', err?.message || err));
     backfillDailyNumbers()
       .then((n) => n > 0 && console.log(`Numbered ${n} past sales with their daily order number`))
       .catch((err) => console.error('Daily order number backfill failed:', err?.message || err));

@@ -17,6 +17,7 @@ import {
   GraduationCap,
   Heart,
   LayoutDashboard,
+  Megaphone,
   Monitor,
   PiggyBank,
   PlusCircle,
@@ -70,6 +71,7 @@ export const NAVIGATION: Record<UserRole, NavSection[]> = {
         { label: "Procurement", path: "/procurement", Icon: PackageSearch },
         { label: "Sales Invoices", path: "/invoices", Icon: FileText, short: "Invoices" },
         { label: "Pending Approvals", path: "/pending-approvals", Icon: ShieldCheck, short: "Approvals" },
+        { label: "SMS Campaigns", path: "/campaigns", Icon: Megaphone, short: "SMS" },
       ],
     },
     {

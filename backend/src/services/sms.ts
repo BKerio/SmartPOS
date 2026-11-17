@@ -64,6 +64,13 @@ export async function sendAdvantaSms(toPhone: string, message: string): Promise<
       const respBody = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
       throw new Error(`Advanta SMS failed (${resp.status}): ${respBody}`);
     }
+    // Advanta can answer HTTP 200 while rejecting the message (bad number, no credit...): it reports that
+    // per message as responses[0]["response-code"], where 200 means accepted.
+    const first = (resp.data as any)?.responses?.[0];
+    const code = first?.['response-code'] ?? first?.respose_code ?? first?.response_code;
+    if (code != null && Number(code) !== 200) {
+      throw new Error(`Advanta rejected the SMS (${code}): ${first?.['response-description'] ?? first?.['response-message'] ?? 'unknown reason'}`);
+    }
   });
 }
 

@@ -5,6 +5,7 @@
 import { prefetch } from "@/services/api";
 
 export const pages = {
+  CampaignsPage: () => import("@/pages/admin/CampaignsPage"),
   Dashboard: () => import("@/pages/Dashboard"),
   ManageStudents: () => import("@/pages/admin/ManageStudents"),
   ManageParents: () => import("@/pages/admin/ManageParents"),
@@ -53,6 +54,7 @@ export const pages = {
 
 /** Route → page module, for the pages reachable from the sidebar. */
 const ROUTE_PAGES: Record<string, keyof typeof pages> = {
+  "/campaigns": "CampaignsPage",
   "/": "Dashboard",
   "/students": "ManageStudents",
   "/parents": "ManageParents",

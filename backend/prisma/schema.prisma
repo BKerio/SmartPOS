@@ -419,3 +419,45 @@ model InvoicePayment {
   @@index([createdAt])
   @@map("invoice_payments")
 }
+
+// ─── SMS campaigns (admin announcements to parents / students) ───────────────
+model SmsCampaign {
+  id              String                 @id @default(cuid())
+  title           String
+  message         String // template, may contain {name} {first_name} {student} {adm} {balance}
+  audience        String // parents_all | parents_selected | students_all | students_selected
+  deliverTo       String                 @default("self") @map("deliver_to") // students: self | parent
+  className       String?                @map("class_name") // students_all filtered to one class
+  status          String                 @default("sending") // sending | completed | partial | failed
+  totalRecipients Int                    @default(0) @map("total_recipients")
+  sentCount       Int                    @default(0) @map("sent_count")
+  failedCount     Int                    @default(0) @map("failed_count")
+  skippedCount    Int                    @default(0) @map("skipped_count")
+  smsParts        Int                    @default(1) @map("sms_parts") // segments per message (longest)
+  createdById     String                 @map("created_by_id")
+  createdByName   String                 @map("created_by_name")
+  createdAt       DateTime               @default(now()) @map("created_at")
+  completedAt     DateTime?              @map("completed_at")
+  recipients      SmsCampaignRecipient[]
+
+  @@index([createdAt])
+  @@index([status])
+  @@map("sms_campaigns")
+}
+
+model SmsCampaignRecipient {
+  id            String      @id @default(cuid())
+  campaignId    String      @map("campaign_id")
+  campaign      SmsCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipientType String      @map("recipient_type") // parent | student
+  recipientId   String      @map("recipient_id")
+  name          String
+  phone         String?
+  message       String // the personalised text actually sent
+  status        String      @default("pending") // pending | sent | failed | skipped
+  error         String?
+  sentAt        DateTime?   @map("sent_at")
+
+  @@index([campaignId, status])
+  @@map("sms_campaign_recipients")
+}

@@ -14,6 +14,7 @@ const ManageStudents = lazy(pages.ManageStudents);
 const ManageParents = lazy(pages.ManageParents);
 const Staffs = lazy(pages.Staffs);
 const DataManagement = lazy(pages.DataManagement);
+const CampaignsPage = lazy(pages.CampaignsPage);
 const Settings = lazy(pages.Settings);
 const Register = lazy(pages.Register);
 const PendingApprovals = lazy(pages.PendingApprovals);
@@ -136,6 +137,7 @@ function AppRoutes() {
           <Route path="/staff-attendance" element={R(["admin", "finance"], <StaffAttendanceReport />)} />
           <Route path="/admin-profile" element={R(["admin"], <AdminProfile />)} />
           <Route path="/settings" element={R(["admin"], <Settings />)} />
+          <Route path="/campaigns" element={R(["admin"], <CampaignsPage />)} />
           <Route path="/data-management" element={R(["admin"], <DataManagement />)} />
 
           {/* Student */}

@@ -25,6 +25,7 @@ import attendanceRoutes from '@/modules/attendance/attendance.routes';
 import invoiceRoutes from '@/modules/invoices/invoices.routes';
 import procurementRoutes from '@/modules/procurement/procurement.routes';
 import reportRoutes from '@/modules/reports/reports.routes';
+import campaignRoutes from '@/modules/campaigns/campaigns.routes';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -121,6 +122,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(invoiceRoutes, { prefix: '/api/invoices' });
   await app.register(procurementRoutes, { prefix: '/api/procurement' });
   await app.register(reportRoutes, { prefix: '/api/reports' });
+  await app.register(campaignRoutes, { prefix: '/api/campaigns' });
 
   return app;
 }
