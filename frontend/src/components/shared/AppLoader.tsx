@@ -63,7 +63,7 @@ function AppLoader({ size = 18, color, label, className, style }: AppLoaderProps
           // CSS vars don't resolve in presentation attributes, so stroke goes in style.
           style={{ stroke: color ?? s.color }}
           strokeWidth={12}
-          strokeLinecap="round"
+          strokeLinecap="rounding"
           opacity={s.opacity}
         />
       ))}
