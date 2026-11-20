@@ -220,7 +220,7 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
       {!smsReady && (
         <div className="ac-note warn" style={{ marginBottom: 6 }}>
           <AlertTriangle size={16} aria-hidden="true" />
-          <span>SMS is paused or not set up, so campaigns can't be sent. Turn SMS on in Settings first. You can still write and preview the message.</span>
+          <span>SMSs arepaused or not set up, so campaigns can't be sent. Turn SMS on in Settings first. You can still write and preview the message.</span>
         </div>
       )}
 
