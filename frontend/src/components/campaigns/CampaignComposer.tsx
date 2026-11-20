@@ -342,7 +342,7 @@ function CampaignComposer({ smsReady, onClose, onSent }: { smsReady: boolean; on
             <span className={`cp-count${len > 480 ? " warn" : ""}`}>{len}/{MAX_LEN}</span>
           </div>
           <p className="cp-hint">
-            Use <code>{"{{name}}"}</code> to personalise with each recipient's name. The buttons above add other fields:{" "}
+            Use <code>{"{{name}}"}</code> to personalizeee with each recipient's name. The buttons above add other fields:{" "}
             <code>{"{{first_name}}"}</code>, <code>{"{{student}}"}</code>, <code>{"{{adm}}"}</code>, <code>{"{{balance}}"}</code>.
           </p>
         </div>
