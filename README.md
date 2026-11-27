@@ -1,4 +1,7 @@
-# Better Forks SmartPOS
+﻿# Better Forks SmartPOS
+
+Tool Kit
+
 
 A cafeteria point-of-sale system for schools. Students pay for meals from a prepaid wallet, parents top
 up that wallet with M-Pesa, and the restaurant team runs sales, the kitchen, stock and finances from one
